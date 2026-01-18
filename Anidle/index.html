@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>🕵️‍♂️ Anidle</title>
+
+  <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
+
+    <h1>🕵️‍♂️ Guess the Anime 🕵️‍♂️</h1>
+
+    <!-- Zone droite : thème + aide -->
+    <div class="header-right">
+      <button id="themeToggle" class="toggle-btn">🌓</button>
+
+      <span class="info-wrap header-help">
+        <span class="info-icon" tabindex="0" aria-label="Aide">
+          <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor"
+              d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+          </svg>
+        </span>
+
+        <span class="info-tip" role="tooltip">
+          Devine l’anime mystère grâce aux indices. Tu commences avec 3000 points : chaque tentative enlève 150 points et chaque indice coûte 300 points. Les indices utilisent un code couleur (vert = correct, orange = proche, rouge = faux). L’indice d’année est orange si l’année est correcte mais pas la saison, et l’indice de score est orange s’il est à ±0,5. En utilisant un indice, les suggestions se filtrent pour t’aider à trouver la bonne réponse.
+        </span>
+      </span>
+    </div>
+  </header>
+
+  <!-- BANDEAU DAILY -->
+  <div id="daily-banner">
+    <span id="daily-status"></span>
+    <span id="daily-score"></span>
+    <button
+      id="switch-mode-btn"
+      class="toggle-btn"
+      style="margin-left: 1.4rem; font-size: 1rem; padding: 0.35rem 1rem;">
+    </button>
+  </div>
+
+  <!-- CONTENU PRINCIPAL -->
+  <div id="container" class="main-container">
+    <div style="display:flex; gap:20px; justify-content:center;">
+      
+      <!-- Suggestions / aide latérale -->
+      <div id="aideContainer" style="width:300px;"></div>
+
+      <!-- Jeu -->
+      <div style="flex:1;">
+        <div id="successContainer" style="display:none;"></div>
+
+        <div class="input-container">
+          <input
+            type="text"
+            id="animeInput"
+            placeholder="Entrez le nom d'un anime..."
+            autocomplete="off"
+          />
+
+          <div id="suggestions" class="suggestions"></div>
+
+          <div id="counter">Tentatives : 0 (-150)</div>
+
+          <div id="score-bar-container">
+            <div id="score-bar">
+              <span id="score-bar-label"></span>
+            </div>
+          </div>
+
+          <!-- INDICES -->
+          <div
+            id="indices-bar"
+            style="display:flex; gap:10px; margin:16px 0; flex-wrap:wrap; justify-content:center;"
+          >
+            <button id="btnIndiceStudio" class="indice-btn" disabled>
+              Indice Studio (-300)
+            </button>
+            <button id="btnIndiceSaison" class="indice-btn" disabled>
+              Indice Année (-300)
+            </button>
+            <button id="btnIndiceGenres" class="indice-btn" disabled>
+              Indice Genres/Thèmes (-300)
+            </button>
+            <button id="btnIndiceScore" class="indice-btn" disabled>
+              Indice Score (-300)
+            </button>
+          </div>
+        </div>
+
+        <div id="results"></div>
+      </div>
+    </div>
+
+    <canvas id="fireworks"></canvas>
+  </div>
+
+  <!-- FOOTER -->
+  <footer>
+    © 2025 mastermanga
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>🎤 Guess The Opening</title>
+  <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header id="main-header">
+    <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+      <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
+      <h1>🎤 Guess The Opening 🎤</h1>
+      <div class="header-right">
+        <button id="themeToggle" class="toggle-btn">🌓</button>
+    
+        <span class="info-wrap header-help">
+          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-blind">
+            <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor"
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+            </svg>
+          </span>
+    
+          <span class="info-tip" id="help-blind" role="tooltip">
+            Écoute l’opening en trois extraits (15 premières secondes, refrain, puis version complète) et devine l’anime en trois tentatives maximum. Tu peux gagner jusqu’à 3000 points : chaque écoute supplémentaire coûte 1000 points. Lors de la dernière écoute, choisis entre 3 ou 6 propositions : 3 choix rapportent 500 points, 6 choix rapportent 1000 points.
+          </span>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Bandeau Daily -->
+  <div id="daily-banner" style="display:none;">
+    <span id="daily-status"></span>
+    <span id="daily-score"></span>
+    <button id="switch-mode-btn" class="toggle-btn"></button>
+  </div>
+
+  <div id="container">
+    <!-- BARRE DE SCORE -->
+    <div id="score-bar-container" style="margin-bottom:12px;">
+      <div id="score-bar" style="width:100%;position:relative;">
+        <span id="score-bar-label" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-weight:bold;">3000 / 3000</span>
+      </div>
+    </div>
+    <div id="successContainer" style="display:none;"></div>
+    <div class="input-container">
+      <input type="text" id="openingInput" placeholder="Entrez le nom d'un anime..." autocomplete="off" />
+      <div id="suggestions" class="suggestions"></div>
+    </div>
+    <div id="listen-buttons" style="display:flex; justify-content:center; gap:12px; margin-bottom:16px;">
+      <button id="playTry1">Début</button>
+      <button id="playTry2" disabled>Refrain</button>
+      <button id="playTry3" disabled>Complet</button>
+    </div>
+  
+    <!-- INDICES ÉCOUTE 3 -->
+    <div id="indice-buttons" style="display:none;justify-content:center;gap:14px;margin-bottom:12px;">
+      <button id="btnIndice6" class="indice-btn" style="min-width:120px;">Indice 6 choix</button>
+      <button id="btnIndice3" class="indice-btn" style="min-width:120px;">Indice 3 choix</button>
+    </div>
+  
+    <div id="failedAttempts"></div>
+    <div id="result"></div>
+    <div id="timer"></div>
+    <button id="nextBtn" style="display:none; margin-top:1.1rem;"></button>
+    <canvas id="fireworks"></canvas>
+    <div id="playerWrapper" style="display:none;"></div>
+  </div>
+
+
+  <footer>
+    © 2025 mastermanga
+  </footer>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="script.js"></script>
+</body>
+</html>

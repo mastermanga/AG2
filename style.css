@@ -1,0 +1,553 @@
+body {
+  background: radial-gradient(circle at 50% 25%, #263859 0%, #121212 100%);
+  color: #eee;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1rem;
+  transition: background-color 0.3s, color 0.3s;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+/* Ajoute des petites particules animées pour un effet "anime" discret */
+body::before {
+  content: "";
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle, #00fff94d 2px, transparent 3px) 30vw 20vh/120px 120px repeat,
+    radial-gradient(circle, #42a5f577 1.5px, transparent 3px) 70vw 75vh/90px 90px repeat;
+  animation: moveParticles 18s linear infinite alternate;
+  opacity: 0.27;
+}
+@keyframes moveParticles {
+  0%   { background-position: 30vw 20vh, 70vw 75vh; }
+  100% { background-position: 33vw 22vh, 68vw 78vh; }
+}
+
+header {
+  width: 100%;
+  max-width: 370px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 0 1rem;
+  z-index: 2;
+  position: relative;
+}
+
+header h1 {
+  font-size: 2rem;
+  text-align: center;
+  flex-grow: 1;
+  margin-right: 1rem;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  letter-spacing: 1px;
+  font-weight: 800;
+  text-shadow:
+    0 0 6px #00eaff,
+    0 0 18px #00eaff99,
+    0 2px 8px #00bcd477,
+    0 0 10px #fff1;
+}
+
+.toggle-btn {
+  background-color: #00bcd4;
+  color: #121212;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 9px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 1.2rem;
+  transition: background-color 0.3s, color 0.2s, box-shadow 0.2s;
+  flex-shrink: 0;
+  box-shadow: 0 1px 7px #00bcd466;
+}
+.toggle-btn:hover,
+.toggle-btn:focus {
+  background: linear-gradient(120deg, #1de9b6 80%, #1565c0 100%);
+  color: #fff;
+  text-shadow: 0 0 10px #fff9, 0 2px 6px #fff8;
+  box-shadow: 0 10px 34px #00eaffd7, 0 2.5px 14px #1976d277;
+  border: 2px solid #fff5;
+}
+
+#container {
+  background-color: #161e27ef;
+  border-radius: 20px;
+  padding: 2rem 2rem;
+  width: 100%;
+  max-width: 1100px;
+  box-shadow: 0 0 32px 5px #00bcd444;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.3rem;
+  position: relative;
+  z-index: 2;
+}
+
+/* --- DAILY RECAP --- */
+#daily-recap-block {
+  background: linear-gradient(120deg, #233554f3 80%, #00bcd411 100%);
+  border-radius: 15px;
+  box-shadow: 0 2px 12px #00bcd430;
+  padding: 1.25rem 1.1rem 1.15rem 1.1rem;
+  margin-bottom: 0rem;
+  width: 100%;
+  max-width: 385px;
+  transition: background 0.25s;
+  z-index: 2;
+  position: relative;
+  border: 1.5px solid #00bcd455;
+  text-align: center;
+}
+
+#daily-recap-block h2 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 1.18rem;
+  font-weight: bold;
+  letter-spacing: 0.3px;
+  color: #00eaff;
+  text-align: center;
+  text-shadow:
+    0 0 7px #00eaff,
+    0 0 18px #00eaff99,
+    0 1px 4px #1de9b68e;
+}
+
+.daily-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  width: 100%;
+  justify-content: center;
+}
+
+.daily-title .emoji {
+  font-size: 1.18em;
+  filter: drop-shadow(0 0 3px #ffd600bb);
+}
+
+#daily-recap-block ul {
+  list-style: none;
+  margin: 0 0 0.7rem 0;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  display: flex;
+  flex-direction: column;
+}
+#daily-recap-block li {
+  margin: 0.27rem 0;
+  font-size: 1.07rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  padding: 2px 0 2px 0;
+  justify-content: center;
+}
+#recap-total {
+  margin-top: 0px;
+  padding-top: 0px;
+  font-size: 1.16rem;
+  font-weight: bold;
+  display: inline-block;
+  color: #fff;
+  text-shadow: 0 0 4px #00eaffb3;
+  vertical-align: middle;
+}
+
+/* --- MENU JEUX EN MODE "CARD" --- */
+.menu {
+  display: grid;
+  gap: 1rem;
+  justify-content: center;
+  width: 100%;
+  z-index: 2;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 1.5rem;
+  row-gap: 1.5rem;
+}
+
+.menu .game-card {
+  background: linear-gradient(120deg, #00bcd4 75%, #1e88e5 100%);
+  color: #fff;
+  padding: 0.8rem 1rem;
+  border-radius: 17px;
+  text-decoration: none;
+  font-weight: bold;
+  text-align: left;
+  width: 100%;
+  max-width: 200px;
+  margin: 0 auto;
+  height: 70px;
+  transition:
+    transform 0.16s cubic-bezier(.4,2,.5,1),
+    box-shadow 0.16s,
+    background 0.21s,
+    color 0.16s;
+  font-size: 1.14rem;
+  box-shadow: 0 2px 14px #00bcd455, 0 1.5px 10px #1e88e588;
+  display: flex;
+  align-items: center;
+  gap: 0.85em;
+  position: relative;
+  overflow: hidden;
+  outline: none;
+}
+
+.menu .game-card > span:first-child {
+  font-size: 1.52em;
+  filter: drop-shadow(0 1px 2px #2229);
+}
+
+.menu .game-card:hover,
+.menu .game-card:focus {
+  transform: translateY(-8px) scale(1.045) rotate(-1deg);
+  box-shadow: 0 10px 34px #00eaffd7, 0 2.5px 14px #1976d277;
+  background: linear-gradient(120deg, #1de9b6 80%, #1565c0 100%);
+  color: #fff;
+  text-shadow: 0 0 10px #fff9, 0 2px 6px #fff8;
+  border: 2px solid #fff5;
+}
+
+.menu .game-card:active {
+  transform: scale(0.97);
+  filter: brightness(0.92);
+  border: 2px solid #00eaff;
+}
+
+/* ===== TOOLTIP STYLE "ANIME GLOW" ===== */
+.game-card.has-tip {
+  position: relative;
+  padding-right: 2.3rem; /* place pour le ? */
+}
+
+/* FIX IMPORTANT : sinon le tooltip est coupé par overflow:hidden */
+.menu .game-card.has-tip {
+  overflow: visible;
+}
+
+/* BONUS : au survol, on passe au-dessus des autres cartes */
+.menu .game-card.has-tip:hover,
+.menu .game-card.has-tip:focus {
+  z-index: 50;
+}
+
+.info-wrap {
+  position: absolute;
+  right: 0.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+/* ===== BOUTON ? (STYLE COHÉRENT AVEC TON UI) ===== */
+.info-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(18, 30, 39, 0.55);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+
+  box-shadow:
+    0 0 10px rgba(0, 234, 255, 0.55),
+    0 0 24px rgba(0, 188, 212, 0.35),
+    inset 0 0 0 1px rgba(0, 234, 255, 0.18);
+
+  color: #eaffff;
+  font-weight: 900;
+  font-size: 0.95rem;
+  line-height: 1;
+
+  cursor: help;
+  user-select: none;
+
+  transition: transform 0.16s, box-shadow 0.16s, background 0.16s, border-color 0.16s;
+  pointer-events: auto;
+}
+
+.info-wrap:hover .info-icon,
+.info-icon:focus {
+  transform: scale(1.1) rotate(-6deg);
+  background: rgba(10, 18, 26, 0.72);
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow:
+    0 0 12px rgba(0, 234, 255, 0.9),
+    0 0 32px rgba(0, 234, 255, 0.55),
+    inset 0 0 0 1px rgba(0, 234, 255, 0.25);
+  outline: none;
+}
+
+/* ===== TOOLTIP AU-DESSUS + TEXTE COMME LA CARTE ===== */
+.info-tip {
+  position: absolute;
+  bottom: calc(100% + 12px); /* AU-DESSUS */
+
+  left: 50%;
+  transform: translateX(-50%) translateY(6px) scale(0.98);
+
+  width: 240px;
+  padding: 10px 12px;
+  border-radius: 14px;
+
+  background: linear-gradient(120deg, #233554f3 80%, #00bcd422 100%);
+  border: 1.5px solid #00bcd455;
+  box-shadow: 0 10px 34px rgba(0, 234, 255, 0.32), 0 2.5px 14px rgba(25, 118, 210, 0.25);
+  color: #fff;
+
+  /* IMPORTANT: forcer une typo "comme la carte" mais lisible */
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 1rem;     /* proche de la carte, mais pas énorme */
+  font-weight: 400;       /* comme la carte (bold) */
+  line-height: 1.20;
+  letter-spacing: 0.15px;
+
+  text-shadow: 0 0 10px rgba(255,255,255,0.10);
+
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
+  z-index: 999;
+  pointer-events: none;
+}
+
+.info-tip::after {
+  content: "";
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 7px 7px 0 7px;
+  border-style: solid;
+  border-color: #233554f3 transparent transparent transparent;
+  filter: drop-shadow(0 2px 2px rgba(0, 234, 255, 0.18));
+}
+
+/* Affichage au survol du ? (pas sur toute la carte) */
+.info-wrap:hover .info-tip,
+.info-wrap:focus-within .info-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+
+/* Align auto selon colonne (grille 3 colonnes)
+   - col 1: gauche
+   - col 2: centre
+   - col 3: droite
+*/
+.menu .game-card:nth-child(3n-2) .info-tip {
+  left: 0;
+  transform: translateX(0) translateY(6px) scale(0.98);
+}
+.menu .game-card:nth-child(3n-2) .info-tip::after {
+  left: 18px;
+  transform: none;
+}
+
+.menu .game-card:nth-child(3n) .info-tip {
+  left: auto;
+  right: 0;
+  transform: translateX(0) translateY(6px) scale(0.98);
+}
+.menu .game-card:nth-child(3n) .info-tip::after {
+  left: auto;
+  right: 18px;
+  transform: none;
+}
+
+/* --- Animation d'apparition douce --- */
+#daily-recap-block, .menu .game-card {
+  opacity: 0;
+  transform: translateY(22px);
+  animation: fadeUp 0.55s cubic-bezier(.47,1.64,.41,.8) 0.12s forwards;
+}
+.menu .game-card { animation-delay: 0.15s; }
+@keyframes fadeUp {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+footer {
+  padding: 1.2rem 0 0.4rem 0;
+  color: #555;
+  font-size: 0.98rem;
+  text-align: center;
+  user-select: none;
+  width: 100%;
+  max-width: 375px;
+  margin-left: auto;
+  margin-right: auto;
+  transition: color 0.3s;
+  z-index: 2;
+  position: relative;
+  letter-spacing: 0.5px;
+}
+body.light footer { color: #888; }
+
+/* ===== LIGHT MODE ===== */
+body.light {
+  background: radial-gradient(circle at 45% 10%, #e3f6fc 0%, #f5f5f5 100%);
+  color: #222;
+}
+body.light #container {
+  background-color: #fff;
+  box-shadow: 0 0 22px #42a5f5;
+}
+body.light #daily-recap-block {
+  background: linear-gradient(120deg, #e0f7fa 90%, #1565c01a 100%);
+  box-shadow: 0 2px 14px #42a5f54b;
+  border: 1.5px solid #42a5f577;
+}
+body.light #daily-recap-block h2 {
+  color: #1565c0;
+  text-shadow: 0 1px 4px #42a5f588;
+}
+body.light #recap-total {
+  color: #1976d2;
+  text-shadow: 0 0 4px #1976d233;
+}
+
+body.light .menu .game-card {
+  background: linear-gradient(120deg, #42a5f5 70%, #00bcd4 100%);
+  color: #f5f5f5;
+  box-shadow: 0 1px 8px #42a5f5bb;
+}
+body.light .menu .game-card:hover,
+body.light .menu .game-card:focus {
+  background: linear-gradient(120deg, #81d4fa 70%, #1976d2 100%);
+  color: #fff;
+  text-shadow: 0 0 8px #fff9;
+  border: 2px solid #1976d277;
+}
+
+body.light .toggle-btn {
+  background-color: #1565c0;
+  color: #fff;
+}
+body.light .toggle-btn:hover,
+body.light .toggle-btn:focus {
+  background: linear-gradient(120deg, #81d4fa 70%, #1976d2 100%);
+  color: #fff;
+  text-shadow: 0 0 8px #fff9;
+  border: 2px solid #1976d277;
+}
+
+/* Tooltip en light mode */
+body.light .info-tip {
+  background: linear-gradient(120deg, #e0f7fa 90%, #1565c01a 100%);
+  border: 1.5px solid rgba(66, 165, 245, 0.45);
+  box-shadow: 0 10px 34px rgba(66, 165, 245, 0.35), 0 2.5px 14px rgba(25, 118, 210, 0.18);
+  color: #0b1a2a;
+  text-shadow: none;
+}
+body.light .info-tip::after {
+  border-color: #e0f7fa transparent transparent transparent;
+}
+
+/* Bouton ? en light mode (cohérent) */
+body.light .info-icon {
+  background: rgba(255, 255, 255, 0.75);
+  color: #1565c0;
+  border: 1.5px solid rgba(25, 118, 210, 0.35);
+  box-shadow:
+    0 0 10px rgba(66, 165, 245, 0.55),
+    0 0 22px rgba(66, 165, 245, 0.30),
+    inset 0 0 0 1px rgba(66, 165, 245, 0.18);
+}
+body.light .info-wrap:hover .info-icon,
+body.light .info-icon:focus {
+  box-shadow:
+    0 0 12px rgba(66, 165, 245, 0.75),
+    0 0 30px rgba(66, 165, 245, 0.45),
+    inset 0 0 0 1px rgba(66, 165, 245, 0.22);
+}
+
+/* --- Responsive mobile --- */
+@media (max-width: 500px) {
+  #container {
+    width: 98vw;
+    padding: 1.1rem 0.4rem 1.4rem 0.4rem;
+    box-shadow: 0 0 13px 2px #00bcd4;
+  }
+
+  /* menu en grid -> 1 colonne */
+  .menu {
+    grid-template-columns: 1fr;
+    row-gap: 0.8rem;
+  }
+
+  #daily-recap-block {
+    max-width: 98vw;
+    padding: 1rem 5vw 1rem 5vw;
+  }
+
+  .menu .game-card {
+    font-size: 1.02rem;
+    min-width: 110px;
+    max-width: unset;
+    padding: 0.92rem 1rem;
+  }
+
+  header, footer { max-width: 99vw; }
+
+  /* Sur mobile: tooltip centré + largeur adaptée */
+  .info-tip {
+    width: min(240px, 86vw);
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) translateY(0) scale(1) !important;
+  }
+  .info-tip::after {
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+  }
+}
+
+.info-svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+/* Lien Mode Classic (optionnel) */
+.classic-link {
+  color: #8ac6d1;
+  font-size: 0.98em;
+  margin-left: 8px;
+  text-decoration: underline dotted;
+  transition: color 0.2s;
+  font-weight: 500;
+}
+.classic-link:hover {
+  color: #00bcd4;
+  text-decoration: underline;
+}
+body.light .classic-link { color: #1976d2; }
+body.light .classic-link:hover { color: #1565c0; }

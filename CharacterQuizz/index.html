@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>👤 Character Quizz</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
+</head>
+<body>
+  <header>
+    <div class="header-group">
+      <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
+      <h1>👤 Character Quizz 👤</h1>
+      <div class="header-right">
+        <button id="themeToggle" class="toggle-btn">🌓</button>
+    
+        <span class="info-wrap header-help">
+          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-blind">
+            <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor"
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+            </svg>
+          </span>
+    
+          <span class="info-tip" id="help-blind" role="tooltip">
+            Six personnages à découvrir progressivement pour deviner l’anime. Un nouveau apparaît toutes les 8 secondes ou après un essai.
+          </span>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Bandeau daily -->
+  <div id="daily-banner">
+    <span id="daily-status"></span>
+    <span id="daily-score"></span>
+    <button id="switch-mode-btn" class="toggle-btn" style="margin-left:14px;">Passer en mode Classique</button>
+  </div>
+
+  <!-- Container principal, inclut la score bar -->
+  <div id="container">
+    <div id="score-bar-container">
+      <div id="score-bar">
+        <span id="score-bar-label">3000 / 3000</span>
+      </div>
+    </div>
+    <div id="character-container"></div>
+    <div id="controls">
+      <div class="input-container">
+        <input type="text" id="characterInput" placeholder="Entrez le nom de l'anime..." autocomplete="off" />
+        <div id="suggestions" class="suggestions"></div>
+      </div>
+      <button id="submit-btn" disabled>Valider</button>
+      <button id="restart-btn" style="display:none;">Rejouer</button>
+    </div>
+    <p id="timer">Chargement...</p>
+    <p id="feedback"></p>
+  </div>
+
+  <footer>
+    © 2025 mastermanga
+  </footer>
+  <canvas id="fireworks"></canvas>
+  <script src="script.js"></script>
+</body>
+</html>

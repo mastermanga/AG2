@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>🧩 Mode Parcours</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
+</head>
+<body>
+  <header>
+    <div class="header-group">
+      <button id="back-to-menu" class="toggle-btn">⬅️ Menu</button>
+      <h1>🧩 Mode Parcours 🧩</h1>
+      <div class="header-right">
+        <button id="themeToggle" class="toggle-btn">🌓</button>
+    
+        <span class="info-wrap header-help">
+          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-blind">
+            <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor"
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+            </svg>
+          </span>
+    
+          <span class="info-tip" id="help-blind" role="tooltip">
+            Composer ton parcours en combinant les mini-jeux.
+          </span>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- === Builder Section === -->
+  <div id="container">
+    <section id="parcours-builder" class="daily-recap-block">
+      <h2>Construisez votre parcours personnalisé</h2>
+      <div class="builder-row">
+        <label for="gameType">Jeu</label>
+        <select id="gameType">
+          <option value="anidle">Anidle</option>
+          <option value="openingquizz">Opening Quizz</option>
+          <option value="characterquizz">Character Quizz</option>
+          <option value="animetournament">AnimeTournament</option>
+          <option value="blindranking">BlindRanking</option>
+        </select>
+        <select id="modeOption" style="display:none"></select>
+        <label for="stepCount">Nombre</label>
+        <input type="number" id="stepCount" min="1" value="1" style="width:70px;">
+        <button id="addStepBtn" class="toggle-btn">Ajouter</button>
+      </div>
+      <div id="steps-list"></div>
+      <button id="startParcoursBtn" class="toggle-btn" style="display:none;margin:0 auto;">Lancer le Parcours</button>
+    </section>
+    <!-- === Recap Section === -->
+    <section id="recap" class="daily-recap-block" style="display:none;">
+      <h2>Récapitulatif du Parcours</h2>
+      <ul id="parcoursRecapList"></ul>
+      <div style="text-align:center;">
+        <button id="editParcoursBtn" class="toggle-btn">Modifier</button>
+        <button id="launchConfirmedBtn" class="toggle-btn" style="margin-left:12px;">Confirmer & Lancer</button>
+      </div>
+    </section>
+  </div>
+  <!-- === Parcours Container (Jeu en cours) === -->
+  <div id="parcours-container" style="display:none;flex-direction:column;align-items:center;">
+    <iframe id="parcours-iframe"
+      width="100%" height="610" frameborder="0"
+      style="margin-top:18px;max-width:1000px;border-radius:14px;box-shadow:0 4px 18px #00bcd455;display:none;background:#181818;">
+    </iframe>
+    <div id="parcours-score" style="margin-top: 60px; display: none;"></div>
+    <div id="parcours-finish" style="margin: 24px 0 10px 0; text-align:center; display: none;"></div>
+  </div>
+  <footer>
+    © 2025 mastermanga
+  </footer>
+  <!-- Script du parcours -->
+  <script src="script.js"></script>
+</body>
+</html>

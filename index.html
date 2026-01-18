@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Anime Games</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/png" href="images/favicon-32x32.png">
+</head>
+<body>
+
+  <header>
+    <h1>🎮 Anime Games</h1>
+    <button id="themeToggle" class="toggle-btn">🌓</button>
+  </header>
+
+  <!-- Récap daily -->
+  <div id="daily-recap-block">
+    <h2>
+      <span class="daily-title">
+        <span class="emoji">🌞</span> Daily du jour
+      </span>
+    </h2>
+    <ul>
+      <li><strong>Anidle :</strong> <span id="recap-anidle">—</span></li>
+      <li><strong>OpeningQuizz :</strong> <span id="recap-openingquizz">—</span></li>
+      <li><strong>CharacterQuizz :</strong> <span id="recap-characterquizz">—</span></li>
+      <li style="margin-top:1.08em;font-size:1.13em;">
+        <strong>Total :</strong>
+        <span id="recap-total" style="font-weight:bold;">—</span>
+      </li>
+    </ul>
+  </div>
+
+  <!-- MENU -->
+  <div id="container">
+    <div class="menu">
+
+      <!-- ANIDLE -->
+      <a href="Anidle/index.html" class="game-card has-tip">
+        <span>🕵️‍♂️</span> Anidle
+        <span class="info-wrap">
+          <span class="info-icon" tabindex="0" aria-label="Aide">
+            <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor"
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+            </svg>
+          </span>
+          <span class="info-tip" role="tooltip">
+            Deviner l’anime mystère grâce aux indices (studio, année, genre…) et obtenir le meilleur score en un minimum d’essais.
+          </span>
+        </span>
+      </a>
+
+      <!-- OPENING QUIZZ -->
+      <a href="OpeningQuizz/index.html" class="game-card has-tip">
+        <span>🎤</span> Opening Quizz
+        <span class="info-wrap">
+          <span class="info-icon" tabindex="0" aria-label="Aide">
+            <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor"
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+            </svg>
+          </span>
+          <span class="info-tip" role="tooltip">
+            Écouter l’opening en trois extraits (début, refrain, puis complet) et deviner l’anime en trois tentatives maximum.
+          </span>
+        </span>
+      </a>
+
+      <!-- CHARACTER QUIZZ -->
+      <a href="CharacterQuizz/index.html" class="game-card has-tip">
+        <span>👤</span> Character Quizz
+        <span class="info-wrap">
+          <span class="info-icon" tabindex="0" aria-label="Aide">
+            <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor"
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+            </svg>
+          </span>
+          <span class="info-tip" role="tooltip">
+            Deviner l’anime à partir de six personnages, de plus en plus faciles à reconnaître.
+          </span>
+        </span>
+      </a>
+
+      <!-- ANIME TOURNAMENT -->
+      <a href="AnimeTournament/index.html" class="game-card has-tip">
+        <span>🏆</span> Anime Tournament
+        <span class="info-wrap">
+          <span class="info-icon" tabindex="0" aria-label="Aide">
+            <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor"
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+            </svg>
+          </span>
+          <span class="info-tip" role="tooltip">
+            Enchaîner des duels 1v1 entre 16 animes ou openings pour établir un classement.
+          </span>
+        </span>
+      </a>
+
+      <!-- BLIND RANKING -->
+      <a href="BlindRanking/index.html" class="game-card has-tip">
+        <span>🤔</span> Blind Ranking
+        <span class="info-wrap">
+          <span class="info-icon" tabindex="0" aria-label="Aide">
+            <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor"
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+            </svg>
+          </span>
+          <span class="info-tip" role="tooltip">
+            Classer 10 animes ou openings à l’aveugle, sans connaître les suivants.
+          </span>
+        </span>
+      </a>
+
+
+      <!-- PARCOURS -->
+      <a href="Parcours/index.html" class="game-card has-tip">
+        <span>🧩</span> Parcours
+        <span class="info-wrap">
+          <span class="info-icon" tabindex="0" aria-label="Aide">
+            <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor"
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+            </svg>
+          </span>
+          <span class="info-tip" role="tooltip">
+            Composer ton parcours en combinant les mini-jeux.
+          </span>
+        </span>
+      </a>
+
+    </div>
+  </div>
+
+  <footer>
+    © 2025 Mastermanga – Tous droits réservés
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
