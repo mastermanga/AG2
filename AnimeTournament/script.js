@@ -126,7 +126,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   async function loadDataAndStart() {
     // ✅ Avec ta nouvelle base, un seul fichier suffit
-    const url = "../data/animes.json";
+    const url = "../data/licenses_only.json";
 
     try {
       const res = await fetch(url);
