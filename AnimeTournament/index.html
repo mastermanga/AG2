@@ -7,11 +7,9 @@
   <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
   <link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
   <header>
     <button id="back-to-menu" class="toggle-btn back-btn">⬅️ Menu</button>
-
     <h1><span class="tournament-title">🏆 Anime Tournament 🏆</span></h1>
 
     <!-- Zone droite : thème + aide -->
@@ -27,7 +25,9 @@
         </span>
 
         <span class="info-tip" role="tooltip">
-          Enchaîner des duels 1v1 entre 16 animes ou openings pour établir un classement.
+          Enchaîner des duels 1v1 entre 16 animes ou openings/endings/inserts pour établir un classement.
+          <br><br>
+          ✅ Vote uniquement en cliquant sur le titre (pas sur la vidéo).
         </span>
       </span>
     </div>
@@ -41,6 +41,69 @@
     <button id="mode-opening" class="game-card" aria-pressed="false">Openings</button>
   </div>
 
+  <!-- ✅ Personnalisation (sans champs texte) -->
+  <div id="custom-panel" class="main-block">
+    <h2 class="section-title">Personnalisation</h2>
+
+    <!-- Tri -->
+    <div class="opt-row">
+      <span class="opt-label">Tri</span>
+      <select id="sortBy" class="opt-select" aria-label="Tri">
+        <option value="members">Popularité</option>
+        <option value="score">Note</option>
+      </select>
+    </div>
+
+    <!-- Popularité -->
+    <div class="opt-row">
+      <span class="opt-label">Popularité</span>
+      <div class="opt-col">
+        <input id="popPercent" type="range" min="5" max="100" step="5" value="25" aria-label="Top pourcentage" />
+        <div class="opt-value">Top <span id="popPercentVal">25</span>%</div>
+      </div>
+    </div>
+
+    <!-- Types -->
+    <div class="opt-row">
+      <span class="opt-label">Type</span>
+      <div class="opt-pill-group" id="typePills" aria-label="Types">
+        <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
+        <button type="button" class="pill" data-type="Movie" aria-pressed="false">Movie</button>
+        <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
+        <button type="button" class="pill" data-type="ONA" aria-pressed="false">ONA</button>
+      </div>
+    </div>
+
+    <!-- Songs (utile en mode Openings) -->
+    <div class="opt-row">
+      <span class="opt-label">Songs</span>
+      <div class="opt-checks" aria-label="Catégories">
+        <label><input id="incOpenings" type="checkbox" checked /> Openings</label>
+        <label><input id="incEndings" type="checkbox" checked /> Endings</label>
+        <label><input id="incInserts" type="checkbox" checked /> Inserts</label>
+      </div>
+    </div>
+
+    <!-- Années -->
+    <div class="opt-row">
+      <span class="opt-label">Années</span>
+      <div class="opt-col">
+        <div class="year-row" aria-label="Fourchette d'années">
+          <input id="yearMin" type="range" min="1980" max="2026" step="1" value="2010" aria-label="Année min" />
+          <input id="yearMax" type="range" min="1980" max="2026" step="1" value="2012" aria-label="Année max" />
+        </div>
+        <div class="opt-value"><span id="yearMinVal">2010</span> → <span id="yearMaxVal">2012</span></div>
+      </div>
+    </div>
+
+    <!-- Compteur live -->
+    <div id="previewCount" class="preview-count" aria-live="polite"></div>
+
+    <!-- Lancer -->
+    <button id="applyFiltersBtn" class="game-card">Lancer avec ces réglages</button>
+  </div>
+
+  <!-- Duel -->
   <div id="duel-container" class="main-block"></div>
 
   <button id="next-match-btn" class="game-card" style="display:none;">Rejouer</button>
