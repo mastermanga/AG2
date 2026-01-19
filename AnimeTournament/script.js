@@ -24,7 +24,7 @@ window.addEventListener("DOMContentLoaded", () => {
   let mode = urlParams.get("mode") || "anime";
 
   // ====== CONFIG TOURNOI ======
-  const TOTAL_ITEMS = 32;      // 16 participants
+  const TOTAL_ITEMS = 32;      // 32 participants
   const ELIM_LOSSES = 2;       // 2 défaites = OUT
 
   let data = [];
@@ -36,7 +36,6 @@ window.addEventListener("DOMContentLoaded", () => {
   let aliveWB = [];           // 0 défaite
   let aliveLB = [];           // 1 défaite
 
-  // IMPORTANT: ordre d'élimination pour un classement final correct
   // eliminationOrder = [1er éliminé, ..., dernier éliminé]
   let eliminationOrder = [];
 
@@ -53,8 +52,6 @@ window.addEventListener("DOMContentLoaded", () => {
   const modeOpeningBtn = document.getElementById("mode-opening");
   const nextMatchBtn = document.getElementById("next-match-btn");
   const modeSelectDiv = document.getElementById("mode-select");
-
-  // (ajouté au HTML)
   const roundIndicator = document.getElementById("round-indicator");
 
   // ===== GESTION MODES =====
@@ -120,26 +117,50 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // ✅ Supporte soit: [ ... ] soit: { animes: [ ... ] }
+  function normalizeAnimeList(json) {
+    if (Array.isArray(json)) return json;
+    if (json && Array.isArray(json.animes)) return json.animes;
+    return [];
+  }
+
   async function loadDataAndStart() {
-    const url = mode === "anime" ? "../data/animes.json" : "../data/openings.json";
+    // ✅ Avec ta nouvelle base, un seul fichier suffit
+    const url = "../data/animes.json";
+
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error("Erreur chargement " + url);
-      data = await res.json();
+
+      const json = await res.json();
+      data = normalizeAnimeList(json);
+
+      if (!Array.isArray(data) || data.length === 0) {
+        throw new Error("Base vide ou format JSON non reconnu (attendu: tableau ou {animes:[...]})");
+      }
 
       if (mode === "opening") {
         let openingsList = [];
+
         data.forEach((anime) => {
-          if (anime.openings && Array.isArray(anime.openings)) {
-            anime.openings.forEach((opening) => {
+          const ops = anime?.song?.openings;
+          if (Array.isArray(ops)) {
+            ops.forEach((opening) => {
               openingsList.push({
                 title: anime.title,
                 openingName: opening.name,
-                url: opening.url,
+                url: opening.video, // dans ta nouvelle base: "video" (webm)
+                artists: opening.artists || [],
+                season: opening.season || "",
               });
             });
           }
         });
+
+        if (openingsList.length === 0) {
+          throw new Error("Aucune opening trouvée (anime.song.openings est vide ?)");
+        }
+
         shuffle(openingsList);
         items = openingsList.slice(0, TOTAL_ITEMS);
       } else {
@@ -180,10 +201,11 @@ window.addEventListener("DOMContentLoaded", () => {
       div1.innerHTML = `<img src="" alt="" /><h3></h3>`;
       div2.innerHTML = `<img src="" alt="" /><h3></h3>`;
     } else {
+      // ✅ nouveau: video au lieu de iframe (car animethemes = .webm)
       div1.className = "opening";
       div2.className = "opening";
-      div1.innerHTML = `<iframe src="" frameborder="0" allowfullscreen></iframe><h3></h3>`;
-      div2.innerHTML = `<iframe src="" frameborder="0" allowfullscreen></iframe><h3></h3>`;
+      div1.innerHTML = `<video controls preload="metadata"></video><h3></h3>`;
+      div2.innerHTML = `<video controls preload="metadata"></video><h3></h3>`;
     }
 
     duelContainer.appendChild(div1);
@@ -193,39 +215,35 @@ window.addEventListener("DOMContentLoaded", () => {
     div2.onclick = () => recordWin(2);
   }
 
-  function getYouTubeEmbedUrl(youtubeUrl) {
-    let videoId = null;
-    try {
-      const urlObj = new URL(youtubeUrl);
-      if (urlObj.hostname.includes("youtube.com")) {
-        videoId = urlObj.searchParams.get("v");
-      } else if (urlObj.hostname.includes("youtu.be")) {
-        videoId = urlObj.pathname.slice(1);
-      }
-    } catch {}
-    if (videoId) return `https://www.youtube.com/embed/${videoId}?rel=0&autoplay=0`;
-    return null;
-  }
-
   function showMatch(match) {
     const i1 = match.i1;
     const i2 = match.i2;
     const divs = duelContainer.children;
 
     if (mode === "anime") {
-      divs[0].querySelector("img").src = items[i1].image;
-      divs[0].querySelector("img").alt = items[i1].title;
-      divs[0].querySelector("h3").textContent = items[i1].title;
+      const img1 = divs[0].querySelector("img");
+      const img2 = divs[1].querySelector("img");
 
-      divs[1].querySelector("img").src = items[i2].image;
-      divs[1].querySelector("img").alt = items[i2].title;
-      divs[1].querySelector("h3").textContent = items[i2].title;
+      img1.src = items[i1].image || "";
+      img1.alt = items[i1].title || "";
+      divs[0].querySelector("h3").textContent = items[i1].title || "";
+
+      img2.src = items[i2].image || "";
+      img2.alt = items[i2].title || "";
+      divs[1].querySelector("h3").textContent = items[i2].title || "";
     } else {
-      const url1 = getYouTubeEmbedUrl(items[i1].url || "") || "";
-      const url2 = getYouTubeEmbedUrl(items[i2].url || "") || "";
+      const v1 = divs[0].querySelector("video");
+      const v2 = divs[1].querySelector("video");
 
-      divs[0].querySelector("iframe").src = url1;
-      divs[1].querySelector("iframe").src = url2;
+      // Stop l'autre vidéo si elle jouait
+      v1.pause();
+      v2.pause();
+
+      v1.src = items[i1].url || "";
+      v2.src = items[i2].url || "";
+
+      v1.load();
+      v2.load();
 
       divs[0].querySelector("h3").textContent = items[i1].openingName || "";
       divs[1].querySelector("h3").textContent = items[i2].openingName || "";
@@ -271,7 +289,7 @@ window.addEventListener("DOMContentLoaded", () => {
   function buildNextRound() {
     const matches = [];
 
-    // Cas "finale": 1 WB vs 1 LB (c'est normal uniquement à la fin)
+    // Finale: 1 WB vs 1 LB
     if (aliveWB.length === 1 && aliveLB.length === 1) {
       matches.push({ i1: aliveWB[0], i2: aliveLB[0], bracket: "GF" });
       roundMatches = shuffle(matches);
@@ -305,7 +323,6 @@ window.addEventListener("DOMContentLoaded", () => {
   function showNextMatchInRound() {
     if (nextMatchBtn) nextMatchBtn.style.display = "none";
 
-    // Recalcule les pools au cas où (sécurité)
     recomputePools();
 
     const aliveAll = aliveWB.concat(aliveLB);
@@ -315,7 +332,6 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     if (roundMatchIndex >= roundMatches.length) {
-      // Round fini -> prochain round
       roundNumber++;
       buildNextRound();
       if (!roundMatches || roundMatches.length === 0) return;
@@ -341,14 +357,12 @@ window.addEventListener("DOMContentLoaded", () => {
     // défaite
     losses[loserIndex]++;
 
-    // si OUT maintenant, stocker l'ordre d'élimination (une seule fois)
+    // OUT => stocker l'ordre d'élimination
     if (losses[loserIndex] === ELIM_LOSSES) {
       eliminationOrder.push(loserIndex);
     }
 
-    // pools toujours corrects
     recomputePools();
-
     showNextMatchInRound();
   }
 
@@ -360,6 +374,7 @@ window.addEventListener("DOMContentLoaded", () => {
     // bouton fin / rejouer
     if (nextMatchBtn) {
       nextMatchBtn.style.display = "block";
+
       if (isParcours) {
         const step = parseInt(urlParams.get("step") || "1", 10);
         nextMatchBtn.textContent = step < parcoursCount ? "Suivant" : "Terminer";
@@ -424,31 +439,27 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const titleDiv = document.createElement("div");
     titleDiv.className = "title";
-    titleDiv.textContent = mode === "anime" ? item.title : (item.openingName || "");
+    titleDiv.textContent = mode === "anime" ? (item.title || "") : (item.openingName || "");
 
     div.appendChild(rankDiv);
 
     if (mode === "anime") {
       const img = document.createElement("img");
-      img.src = item.image;
-      img.alt = item.title;
+      img.src = item.image || "";
+      img.alt = item.title || "";
       div.appendChild(img);
     } else {
-      const iframe = document.createElement("iframe");
-      const embedUrl = getYouTubeEmbedUrl(item.url || "");
-      if (embedUrl) {
-        iframe.src = embedUrl;
-        iframe.width = "100%";
-        iframe.height = "210";
-        iframe.setAttribute("frameborder", "0");
-        iframe.setAttribute("allowfullscreen", "");
-        div.appendChild(iframe);
-      } else {
-        const thumb = document.createElement("img");
-        thumb.src = "default-opening.png";
-        thumb.alt = item.title;
-        div.appendChild(thumb);
-      }
+      // ✅ nouveau: video au lieu de iframe
+      const video = document.createElement("video");
+      video.controls = true;
+      video.preload = "metadata";
+      video.src = item.url || "";
+      video.style.width = "100%";
+      video.style.height = "210px";
+      video.style.objectFit = "cover";
+      video.style.borderRadius = "8px";
+      video.style.boxShadow = "0 0 18px #1116";
+      div.appendChild(video);
     }
 
     div.appendChild(titleDiv);
@@ -459,6 +470,7 @@ window.addEventListener("DOMContentLoaded", () => {
   loadDataAndStart();
 })();
 
+// Tooltip aide
 document.addEventListener("click", (e) => {
   const icon = e.target.closest(".info-icon");
   if (!icon) return;
