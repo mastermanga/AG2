@@ -652,3 +652,9 @@ body.light #round-indicator {
     box-shadow: 0 0 13px 2px #00bcd4;
   }
 }
+
+.videoStatus{
+  margin-top: -8px;
+  font-weight: 700;
+  opacity: 0.9;
+}
