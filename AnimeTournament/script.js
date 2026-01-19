@@ -43,6 +43,9 @@ window.addEventListener("DOMContentLoaded", () => {
 
   let currentMatch = null;
 
+  // Pour annuler des retries si on change de match entre-temps
+  let matchToken = 0;
+
   // UI Elements
   const duelContainer = document.querySelector("#duel-container");
   const classementDiv = document.getElementById("classement");
@@ -106,6 +109,9 @@ window.addEventListener("DOMContentLoaded", () => {
     duelContainer.style.display = "";
     classementDiv.innerHTML = "";
     if (nextMatchBtn) nextMatchBtn.style.display = "none";
+
+    // invalide tous les retries en cours
+    matchToken++;
   }
 
   function shuffle(array) {
@@ -245,51 +251,82 @@ window.addEventListener("DOMContentLoaded", () => {
     div2.onclick = () => recordWin(2);
   }
 
-  // ✅ bind robuste + retry 1 fois (cache-bust)
-  function bindVideoWithRetry(video, containerDiv, url) {
-    // reset listeners
-    video.onwaiting = null;
-    video.oncanplay = null;
-    video.onerror = null;
-
-    // reset src
-    video.pause();
-    video.removeAttribute("src");
-    video.load();
-
+  // ✅ Retry: 1ère tentative immédiate, 2e après 3s, 3e après 10s (avec cache-bust)
+  // + cancel auto si on change de match (token)
+  function bindVideoWithRetries(video, containerDiv, url, token, onReady) {
     if (!url) {
       setVideoStatus(containerDiv, "❌ Lien vidéo manquant.");
       return;
     }
 
-    video.dataset.retried = "";
+    // nettoyage
+    video.onwaiting = null;
+    video.oncanplay = null;
+    video.onerror = null;
 
-    video.onwaiting = () => setVideoStatus(containerDiv, "⏳ Chargement…");
-    video.oncanplay = () => setVideoStatus(containerDiv, "");
+    let attempt = 1;
 
-    video.onerror = () => {
-      // retry 1 fois
-      if (!video.dataset.retried) {
-        video.dataset.retried = "1";
-        setVideoStatus(containerDiv, "🔄 Retry…");
+    const loadAttempt = (delayMs) => {
+      setTimeout(() => {
+        // si on a changé de match entre-temps -> stop
+        if (token !== matchToken) return;
 
-        const busted = url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
-        video.src = busted;
+        // reset src propre
+        video.pause();
+        video.removeAttribute("src");
         video.load();
-        return;
-      }
-      setVideoStatus(containerDiv, "❌ Vidéo indisponible (serveur ou lien).");
+
+        // message
+        if (attempt === 1) setVideoStatus(containerDiv, "⏳ Chargement…");
+        else setVideoStatus(containerDiv, `🔄 Nouvelle tentative (${attempt}/3)…`);
+
+        // cache-bust seulement à partir de la 2e
+        const finalUrl =
+          attempt === 1
+            ? url
+            : url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+
+        video.src = finalUrl;
+        video.load();
+      }, delayMs);
     };
 
-    // start
-    video.src = url;
-    video.load();
+    video.onwaiting = () => {
+      if (token !== matchToken) return;
+      setVideoStatus(containerDiv, "⏳ Chargement…");
+    };
+
+    video.oncanplay = () => {
+      if (token !== matchToken) return;
+      setVideoStatus(containerDiv, "");
+      if (typeof onReady === "function") onReady();
+    };
+
+    video.onerror = () => {
+      if (token !== matchToken) return;
+
+      if (attempt === 1) {
+        attempt = 2;
+        loadAttempt(3000);
+      } else if (attempt === 2) {
+        attempt = 3;
+        loadAttempt(10000);
+      } else {
+        setVideoStatus(containerDiv, "❌ Vidéo indisponible (serveur ou lien).");
+      }
+    };
+
+    // tentative 1 immédiate
+    loadAttempt(0);
   }
 
   function showMatch(match) {
     const i1 = match.i1;
     const i2 = match.i2;
     const divs = duelContainer.children;
+
+    // invalide les retries précédents
+    matchToken++;
 
     if (mode === "anime") {
       const img1 = divs[0].querySelector("img");
@@ -312,15 +349,15 @@ window.addEventListener("DOMContentLoaded", () => {
       setVideoStatus(left, "");
       setVideoStatus(right, "");
 
+      // stop/reset
+      v1.pause(); v2.pause();
+      v1.removeAttribute("src"); v2.removeAttribute("src");
+      v1.load(); v2.load();
+
       // Non support WebM (Safari/iOS)
       if (!CAN_PLAY_WEBM) {
-        v1.removeAttribute("src");
-        v2.removeAttribute("src");
-        v1.load();
-        v2.load();
         setVideoStatus(left, "⚠️ WebM non supporté sur ce navigateur (Safari/iOS).");
         setVideoStatus(right, "⚠️ WebM non supporté sur ce navigateur (Safari/iOS).");
-
         divs[0].querySelector("h3").textContent = items[i1].label || "";
         divs[1].querySelector("h3").textContent = items[i2].label || "";
         currentMatch = match;
@@ -331,19 +368,14 @@ window.addEventListener("DOMContentLoaded", () => {
       divs[0].querySelector("h3").textContent = items[i1].label || "";
       divs[1].querySelector("h3").textContent = items[i2].label || "";
 
-      // ✅ Chargement séquentiel: on charge la gauche, puis la droite quand la gauche est prête
       const url1 = items[i1].url || "";
       const url2 = items[i2].url || "";
+      const token = matchToken;
 
-      // charge gauche
-      bindVideoWithRetry(v1, left, url1);
-
-      // quand gauche est prête -> charge droite
-      const prevOnCanPlay = v1.oncanplay;
-      v1.oncanplay = () => {
-        if (prevOnCanPlay) prevOnCanPlay();
-        bindVideoWithRetry(v2, right, url2);
-      };
+      // ✅ Chargement séquentiel : gauche -> quand prête -> droite
+      bindVideoWithRetries(v1, left, url1, token, () => {
+        bindVideoWithRetries(v2, right, url2, token, null);
+      });
     }
 
     currentMatch = match;
