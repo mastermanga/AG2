@@ -233,119 +233,135 @@ body.light #round-indicator {
   box-shadow: 0 2px 14px #42a5f54b;
 }
 
+/* =========================
+   DUEL CONTAINER (align fix + big gap + centered VS badge)
+   ========================= */
 #duel-container{
-  flex-wrap: nowrap;
-  display: flex;
-  flex-direction: row !important;
-  gap: 5.2rem;                 /* ✅ plus grand espace */
-  justify-content: center;
-  align-items: flex-start;
-  margin-bottom: 1.2rem;
+  display:flex;
+  justify-content:center;
+  align-items:stretch;
+  gap: 7rem;
+  position:relative;
   width: 100%;
   max-width: 1600px;
-  position: relative;
+  margin-bottom: 1.2rem;
 }
 
-/* VS centré + un peu plus gros + meilleur rendu */
-#duel-container::after{
-  content: "VS";
-  position: absolute;
-  left: 50%;
-  top: 45%;
-  transform: translate(-50%, -50%);
-
-  font-weight: 1000;
-  font-size: 2.8rem;
-  opacity: 0.22;
-
-  color: #00eaff;
-  text-shadow: 0 0 18px rgba(0,234,255,0.55);
-  pointer-events: none;
-  z-index: 3;
-}
-
-/* pour éviter que le VS chevauche sur mobile */
-@media (max-width: 900px) {
-  #duel-container::after {
-    display: none;
-  }
-}
-
-#duel-container .anime {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: 360px;
-  max-width: 48vw;
+#duel-container .anime,
+#duel-container .opening{
+  width: min(44vw, 560px);
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
   gap: 1rem;
 }
 
-#duel-container .opening {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: 100%;
-  max-width: 680px;
-  gap: 0.85rem;
+#duel-container .anime img,
+#duel-container .opening video{
+  width:100%;
+  border-radius:14px;
 }
 
-/* Anime images */
-#duel-container .anime img {
-  width: 100%;
-  height: 470px;
+#duel-container .anime img{
+  height: 520px;
   object-fit: cover;
-  border-radius: 14px;
   box-shadow: 0 0 18px #1116;
 }
 
-/* Openings videos */
-#duel-container .opening video {
-  width: 680px;
-  max-width: 98vw;
+#duel-container .opening video{
   height: 338px;
+  background:#000;
   object-fit: cover;
-  border-radius: 14px;
   box-shadow: 0 0 18px #1116;
-  background: #000;
 }
 
-/* Status */
-.videoStatus {
-  font-weight: 800;
-  opacity: 0.9;
-  font-size: 0.95rem;
-  padding: 2px 2px 0 2px;
-}
-
-/* Vote titles (cliquable) */
-#duel-container .vote-title {
+/* titles aligned with media */
+#duel-container .vote-title{
+  width:100%;
+  margin:0;
+  box-sizing:border-box;
   cursor: pointer;
   background: #00bcd4;
   color: #121212;
   border-radius: 14px;
-  margin-top: 1.2rem;
   padding: 0.9em 1.2em;
   font-size: 1.15rem;
   font-weight: 900;
   transition: background 0.14s, color 0.14s, box-shadow 0.17s, transform 0.12s;
-  box-shadow: 0 0 0px #00bcd400;
   user-select: none;
-  width: 100%;
   text-align: center;
   line-height: 1.2;
 }
 
 #duel-container .vote-title:hover,
-#duel-container .vote-title:focus {
+#duel-container .vote-title:focus{
   background: #0097a7;
   color: #fff;
   box-shadow: 0 10px 28px rgba(0, 234, 255, 0.35);
   transform: scale(1.02);
 }
 
-#duel-container .vote-title:active {
-  background: #007888;
-  transform: scale(0.98);
+#duel-container .vote-title:active{
+  background:#007888;
+  transform:scale(0.98);
+}
+
+/* status under video */
+.videoStatus{
+  font-weight: 800;
+  opacity: 0.9;
+  font-size: 0.95rem;
+  padding: 2px 2px 0 2px;
+}
+
+/* VS badge centered */
+#duel-container::after{
+  content:"VS";
+  position:absolute;
+  left:50%;
+  top:42%;
+  transform:translate(-50%,-50%);
+
+  font-size:2.6rem;
+  font-weight:1000;
+
+  width:84px;
+  height:84px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  border-radius:999px;
+  background: rgba(0, 188, 212, 0.12);
+  border: 1.5px solid rgba(0, 234, 255, 0.35);
+
+  color:#00eaff;
+  text-shadow: 0 0 18px rgba(0,234,255,0.65);
+  box-shadow: 0 0 28px rgba(0,234,255,0.25);
+
+  pointer-events:none;
+  z-index:4;
+}
+
+/* mobile adjustments */
+@media (max-width: 900px){
+  #duel-container{
+    gap: 2rem;
+  }
+  #duel-container::after{
+    display:none;
+  }
+  #duel-container .anime,
+  #duel-container .opening{
+    width: 100%;
+    max-width: 640px;
+  }
+  #duel-container .anime img{
+    height: 360px;
+  }
+  #duel-container .opening video{
+    height: 260px;
+  }
 }
 
 /* =========================
@@ -786,50 +802,7 @@ body.light footer {
   color: #888;
 }
 
-/* Responsive */
-@media (max-width: 900px) {
-  #classement {
-    max-width: 99vw;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1.2rem 0.8rem;
-    padding-top: 34px;
-  }
-  .classement-item img,
-  .classement-item video {
-    height: 135px;
-  }
-  .classement-item .rank {
-    font-size: 0.95rem;
-    min-width: 32px;
-    padding: 0.12em 0.65em;
-    left: 6px;
-    top: 6px;
-  }
-  .classement-item.top1::before {
-    font-size: 1.38rem;
-    top: -19px;
-  }
-  #duel-container .opening video {
-    width: 100%;
-    height: 260px;
-  }
-  #duel-container::after {
-    display: none;
-  }
-}
-
-@media (max-width: 600px) {
-  #round-indicator {
-    font-size: 1.05rem;
-    padding: 0.75rem 1rem;
-    margin: -0.6rem auto 0.9rem auto;
-  }
-  .info-tip {
-    width: min(340px, 86vw);
-    right: 0;
-  }
-}
-
+/* Responsive extra small */
 @media (max-width: 500px) {
   .main-block {
     width: 98vw;
@@ -837,3 +810,4 @@ body.light footer {
     box-shadow: 0 0 13px 2px #00bcd4;
   }
 }
+
