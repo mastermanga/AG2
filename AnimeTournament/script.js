@@ -31,7 +31,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const ELIM_LOSSES = 2;
 
   // règle demandée
-  const MIN_REQUIRED = 62; // min titres (anime) ou min songs (opening) pour lancer
+  const MIN_REQUIRED = 64; // min titres (anime) ou min songs (opening) pour lancer
 
   // =======================
   // DB CACHE
@@ -142,7 +142,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if (pop) pop.value = "25";
     if (score) score.value = "25";
 
-    if (yearMin) yearMin.value = "2013";
+    if (yearMin) yearMin.value = "2000";
     if (yearMax) yearMax.value = "2026";
 
     if (incOpenings) incOpenings.checked = true;
