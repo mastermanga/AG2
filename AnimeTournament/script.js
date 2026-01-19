@@ -138,6 +138,15 @@ window.addEventListener("DOMContentLoaded", () => {
     return [];
   }
 
+  // ✅ Formateur de label: Title English + kind + number + " : songName" + " by artists"
+  function makeLabel({ displayTitle, kind, number, songName, artists }) {
+    const numPart = number !== "" && number != null ? ` ${number}` : "";
+    const namePart = songName ? ` : ${songName}` : "";
+    const artistsPart =
+      Array.isArray(artists) && artists.length > 0 ? ` by ${artists.join(", ")}` : "";
+    return `${displayTitle} ${kind}${numPart}${namePart}${artistsPart}`.trim();
+  }
+
   async function loadDataAndStart() {
     const url = "../data/licenses_only.json";
 
@@ -164,28 +173,68 @@ window.addEventListener("DOMContentLoaded", () => {
             anime?.animethemes?.name ||
             "Unknown";
 
+          // Openings
           const ops = anime?.song?.openings;
           if (Array.isArray(ops)) {
             ops.forEach((t) => {
+              const label = makeLabel({
+                displayTitle,
+                kind: "Opening",
+                number: t.number ?? "",
+                songName: t.name || "",
+                artists: t.artists || [],
+              });
+
               tracks.push({
                 displayTitle,
                 kind: "Opening",
                 number: t.number ?? "",
                 url: t.video || "",
-                label: `${displayTitle} Opening ${t.number ?? ""}`.trim(),
+                label,
               });
             });
           }
 
+          // Endings
           const eds = anime?.song?.endings;
           if (Array.isArray(eds)) {
             eds.forEach((t) => {
+              const label = makeLabel({
+                displayTitle,
+                kind: "Ending",
+                number: t.number ?? "",
+                songName: t.name || "",
+                artists: t.artists || [],
+              });
+
               tracks.push({
                 displayTitle,
                 kind: "Ending",
                 number: t.number ?? "",
                 url: t.video || "",
-                label: `${displayTitle} Ending ${t.number ?? ""}`.trim(),
+                label,
+              });
+            });
+          }
+
+          // Inserts (si dispo)
+          const ins = anime?.song?.inserts;
+          if (Array.isArray(ins)) {
+            ins.forEach((t) => {
+              const label = makeLabel({
+                displayTitle,
+                kind: "Insert",
+                number: t.number ?? "",
+                songName: t.name || "",
+                artists: t.artists || [],
+              });
+
+              tracks.push({
+                displayTitle,
+                kind: "Insert",
+                number: t.number ?? "",
+                url: t.video || "",
+                label,
               });
             });
           }
@@ -194,7 +243,7 @@ window.addEventListener("DOMContentLoaded", () => {
         tracks = tracks.filter((t) => t.url);
 
         if (tracks.length === 0) {
-          throw new Error("Aucun opening/ending trouvé (song.openings / song.endings).");
+          throw new Error("Aucun opening/ending/insert trouvé (song.openings / song.endings / song.inserts).");
         }
 
         shuffle(tracks);
@@ -236,8 +285,7 @@ window.addEventListener("DOMContentLoaded", () => {
       div1.innerHTML = `<img src="" alt="" /><h3 class="vote-title"></h3>`;
       div2.innerHTML = `<img src="" alt="" /><h3 class="vote-title"></h3>`;
     } else {
-      // ✅ IMPORTANT: le vote ne se fait PLUS sur tout le bloc,
-      // mais uniquement sur le titre (h3.vote-title)
+      // ✅ vote UNIQUEMENT sur le titre, pas sur la vidéo
       div1.className = "opening";
       div2.className = "opening";
       div1.innerHTML = `
@@ -270,7 +318,7 @@ window.addEventListener("DOMContentLoaded", () => {
       recordWin(2);
     });
 
-    // ✅ évite qu'un clic sur la vidéo déclenche autre chose (par sécurité)
+    // ✅ clic vidéo ne vote pas (sécurité)
     const v1 = div1.querySelector("video");
     const v2 = div2.querySelector("video");
     if (v1) v1.addEventListener("click", (e) => e.stopPropagation());
@@ -353,12 +401,14 @@ window.addEventListener("DOMContentLoaded", () => {
       const img2 = divs[1].querySelector("img");
 
       img1.src = items[i1].image || "";
-      img1.alt = items[i1].title || "";
-      divs[0].querySelector(".vote-title").textContent = items[i1].title || "";
+      img1.alt = items[i1].title || items[i1].title_mal_default || "";
+      divs[0].querySelector(".vote-title").textContent =
+        items[i1].title_english || items[i1].title_mal_default || items[i1].title_original || items[i1].title || "";
 
       img2.src = items[i2].image || "";
-      img2.alt = items[i2].title || "";
-      divs[1].querySelector(".vote-title").textContent = items[i2].title || "";
+      img2.alt = items[i2].title || items[i2].title_mal_default || "";
+      divs[1].querySelector(".vote-title").textContent =
+        items[i2].title_english || items[i2].title_mal_default || items[i2].title_original || items[i2].title || "";
     } else {
       const left = divs[0];
       const right = divs[1];
@@ -382,7 +432,6 @@ window.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // ✅ label sur le titre, et vote seulement sur le titre
       divs[0].querySelector(".vote-title").textContent = items[i1].label || "";
       divs[1].querySelector(".vote-title").textContent = items[i2].label || "";
 
@@ -574,14 +623,17 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const titleDiv = document.createElement("div");
     titleDiv.className = "title";
-    titleDiv.textContent = mode === "anime" ? (item.title || "") : (item.label || "");
+    titleDiv.textContent =
+      mode === "anime"
+        ? (item.title_english || item.title_mal_default || item.title_original || item.title || "")
+        : (item.label || "");
 
     div.appendChild(rankDiv);
 
     if (mode === "anime") {
       const img = document.createElement("img");
       img.src = item.image || "";
-      img.alt = item.title || "";
+      img.alt = item.title_english || item.title_mal_default || item.title_original || item.title || "";
       div.appendChild(img);
     } else {
       const video = document.createElement("video");
