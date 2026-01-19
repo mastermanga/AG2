@@ -268,10 +268,12 @@ body.light #round-indicator {
   border-radius:14px;
 }
 
-/* anime image */
+
+
 #duel-container .anime img{
   height: 520px;
-  object-fit: cover;
+  object-fit: contain;       /* ✅ affiche l'image entière */
+  background: #000;          /* ✅ évite fond transparent */
   box-shadow: 0 0 18px #1116;
 }
 
@@ -593,7 +595,7 @@ body.light #next-match-btn:hover {
 .classement-item video {
   width: 100%;
   height: 210px;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 8px;
   margin-bottom: 0.8em;
   box-shadow: 0 0 18px #1116;
