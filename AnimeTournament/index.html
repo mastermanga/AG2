@@ -7,9 +7,11 @@
   <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
   <header>
     <button id="back-to-menu" class="toggle-btn back-btn">⬅️ Menu</button>
+
     <h1><span class="tournament-title">🏆 Anime Tournament 🏆</span></h1>
 
     <div class="header-right">
@@ -24,41 +26,40 @@
         </span>
 
         <span class="info-tip" role="tooltip">
-          Enchaîner des duels 1v1 entre 32 choix tirés de ta sélection.
+          Enchaîner des duels 1v1 entre 16 animes ou songs (openings/endings/inserts) pour établir un classement.
           <br><br>
-          ✅ Vote uniquement en cliquant sur le titre (pas sur la vidéo).
-          <br>
-          ✅ Lancement possible seulement si la sélection contient au moins <b>62</b> titres/songs.
+          ✅ Vote en cliquant sur le titre (pas sur la vidéo).
         </span>
       </span>
     </div>
   </header>
 
+  <!-- Indicateur de round -->
   <div id="round-indicator" class="main-block"></div>
 
+  <!-- Choix mode -->
   <div id="mode-select" class="menu mode-select">
     <button id="mode-anime" class="game-card active" aria-pressed="true">Animes</button>
     <button id="mode-opening" class="game-card" aria-pressed="false">Openings</button>
   </div>
 
-  <!-- ✅ Personnalisation -->
+  <!-- Personnalisation (sans champs texte) -->
   <div id="custom-panel" class="main-block">
     <h2 class="section-title">Personnalisation</h2>
 
-    <!-- Popularité -->
+    <!-- Tri / filtres séparés -->
     <div class="opt-row">
       <span class="opt-label">Popularité</span>
       <div class="opt-col">
-        <input id="popPercent" type="range" min="5" max="100" step="5" value="25" aria-label="Top popularité %" />
+        <input id="popPercent" type="range" min="5" max="100" step="5" value="25" aria-label="Top popularité (%)" />
         <div class="opt-value">Top <span id="popPercentVal">25</span>%</div>
       </div>
     </div>
 
-    <!-- Score -->
     <div class="opt-row">
       <span class="opt-label">Score</span>
       <div class="opt-col">
-        <input id="scorePercent" type="range" min="5" max="100" step="5" value="25" aria-label="Top score %" />
+        <input id="scorePercent" type="range" min="5" max="100" step="5" value="25" aria-label="Top score (%)" />
         <div class="opt-value">Top <span id="scorePercentVal">25</span>%</div>
       </div>
     </div>
@@ -96,18 +97,23 @@
       </div>
     </div>
 
+    <!-- Compteur live -->
     <div id="previewCount" class="preview-count" aria-live="polite"></div>
 
+    <!-- Lancer -->
     <button id="applyFiltersBtn" class="game-card">Lancer avec ces réglages</button>
   </div>
 
+  <!-- Duel -->
   <div id="duel-container" class="main-block"></div>
+
+  <!-- Bouton rejouer -->
   <button id="next-match-btn" class="game-card" style="display:none;">Rejouer</button>
+
+  <!-- Classement -->
   <div id="classement" class="main-block"></div>
 
-  <footer>
-    © 2025 mastermanga
-  </footer>
+  <footer>© 2025 mastermanga</footer>
 
   <script src="script.js"></script>
 </body>
