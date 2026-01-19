@@ -54,6 +54,18 @@ window.addEventListener("DOMContentLoaded", () => {
   const modeSelectDiv = document.getElementById("mode-select");
   const roundIndicator = document.getElementById("round-indicator");
 
+  // Détection support WebM (Safari/iOS = souvent NON)
+  const CAN_PLAY_WEBM = (() => {
+    const v = document.createElement("video");
+    return !!v.canPlayType && v.canPlayType("video/webm") !== "";
+  })();
+
+  function setVideoStatus(containerDiv, msg) {
+    const s = containerDiv.querySelector(".videoStatus");
+    if (!s) return;
+    s.textContent = msg || "";
+  }
+
   // ===== GESTION MODES =====
   if (isParcours) {
     if (modeSelectDiv) modeSelectDiv.style.display = "none";
@@ -117,7 +129,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ✅ Supporte soit: [ ... ] soit: { animes: [ ... ] }
+  // Supporte soit: [ ... ] soit: { animes: [ ... ] }
   function normalizeAnimeList(json) {
     if (Array.isArray(json)) return json;
     if (json && Array.isArray(json.animes)) return json.animes;
@@ -125,7 +137,6 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   async function loadDataAndStart() {
-    // ✅ Avec ta nouvelle base, un seul fichier suffit
     const url = "../data/licenses_only.json";
 
     try {
@@ -140,29 +151,47 @@ window.addEventListener("DOMContentLoaded", () => {
       }
 
       if (mode === "opening") {
-        let openingsList = [];
+        let tracks = [];
 
         data.forEach((anime) => {
+          // "license" => on prend animethemes.name sinon title
+          const licenseName = anime?.animethemes?.name || anime?.title || "Unknown";
+
           const ops = anime?.song?.openings;
           if (Array.isArray(ops)) {
-            ops.forEach((opening) => {
-              openingsList.push({
-                title: anime.title,
-                openingName: opening.name,
-                url: opening.video, // dans ta nouvelle base: "video" (webm)
-                artists: opening.artists || [],
-                season: opening.season || "",
+            ops.forEach((t) => {
+              tracks.push({
+                licenseName,
+                kind: "Opening",
+                number: t.number ?? "",
+                url: t.video || "",
+                label: `${licenseName} Opening ${t.number ?? ""}`.trim(),
+              });
+            });
+          }
+
+          const eds = anime?.song?.endings;
+          if (Array.isArray(eds)) {
+            eds.forEach((t) => {
+              tracks.push({
+                licenseName,
+                kind: "Ending",
+                number: t.number ?? "",
+                url: t.video || "",
+                label: `${licenseName} Ending ${t.number ?? ""}`.trim(),
               });
             });
           }
         });
 
-        if (openingsList.length === 0) {
-          throw new Error("Aucune opening trouvée (anime.song.openings est vide ?)");
+        tracks = tracks.filter((t) => t.url);
+
+        if (tracks.length === 0) {
+          throw new Error("Aucun opening/ending trouvé (song.openings / song.endings).");
         }
 
-        shuffle(openingsList);
-        items = openingsList.slice(0, TOTAL_ITEMS);
+        shuffle(tracks);
+        items = tracks.slice(0, TOTAL_ITEMS);
       } else {
         shuffle(data);
         items = data.slice(0, TOTAL_ITEMS);
@@ -201,11 +230,19 @@ window.addEventListener("DOMContentLoaded", () => {
       div1.innerHTML = `<img src="" alt="" /><h3></h3>`;
       div2.innerHTML = `<img src="" alt="" /><h3></h3>`;
     } else {
-      // ✅ nouveau: video au lieu de iframe (car animethemes = .webm)
+      // video + status
       div1.className = "opening";
       div2.className = "opening";
-      div1.innerHTML = `<video controls preload="metadata"></video><h3></h3>`;
-      div2.innerHTML = `<video controls preload="metadata"></video><h3></h3>`;
+      div1.innerHTML = `
+        <video class="trackVideo" controls preload="auto" playsinline muted></video>
+        <div class="videoStatus"></div>
+        <h3></h3>
+      `;
+      div2.innerHTML = `
+        <video class="trackVideo" controls preload="auto" playsinline muted></video>
+        <div class="videoStatus"></div>
+        <h3></h3>
+      `;
     }
 
     duelContainer.appendChild(div1);
@@ -232,21 +269,52 @@ window.addEventListener("DOMContentLoaded", () => {
       img2.alt = items[i2].title || "";
       divs[1].querySelector("h3").textContent = items[i2].title || "";
     } else {
-      const v1 = divs[0].querySelector("video");
-      const v2 = divs[1].querySelector("video");
+      const left = divs[0];
+      const right = divs[1];
 
-      // Stop l'autre vidéo si elle jouait
+      const v1 = left.querySelector("video");
+      const v2 = right.querySelector("video");
+
+      setVideoStatus(left, "");
+      setVideoStatus(right, "");
+
+      // stop
       v1.pause();
       v2.pause();
 
+      // Non support WebM (Safari/iOS)
+      if (!CAN_PLAY_WEBM) {
+        v1.removeAttribute("src");
+        v2.removeAttribute("src");
+        setVideoStatus(left, "⚠️ WebM non supporté sur ce navigateur (Safari/iOS).");
+        setVideoStatus(right, "⚠️ WebM non supporté sur ce navigateur (Safari/iOS).");
+
+        divs[0].querySelector("h3").textContent = items[i1].label || "";
+        divs[1].querySelector("h3").textContent = items[i2].label || "";
+
+        currentMatch = match;
+        return;
+      }
+
+      // set src + force load
       v1.src = items[i1].url || "";
       v2.src = items[i2].url || "";
 
       v1.load();
       v2.load();
 
-      divs[0].querySelector("h3").textContent = items[i1].openingName || "";
-      divs[1].querySelector("h3").textContent = items[i2].openingName || "";
+      v1.onerror = () => setVideoStatus(left, "❌ Vidéo indisponible (serveur ou lien).");
+      v2.onerror = () => setVideoStatus(right, "❌ Vidéo indisponible (serveur ou lien).");
+
+      v1.onwaiting = () => setVideoStatus(left, "⏳ Chargement…");
+      v2.onwaiting = () => setVideoStatus(right, "⏳ Chargement…");
+
+      v1.oncanplay = () => setVideoStatus(left, "");
+      v2.oncanplay = () => setVideoStatus(right, "");
+
+      // label: License + Opening/Ending + numéro
+      divs[0].querySelector("h3").textContent = items[i1].label || "";
+      divs[1].querySelector("h3").textContent = items[i2].label || "";
     }
 
     currentMatch = match;
@@ -439,7 +507,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const titleDiv = document.createElement("div");
     titleDiv.className = "title";
-    titleDiv.textContent = mode === "anime" ? (item.title || "") : (item.openingName || "");
+    titleDiv.textContent = mode === "anime" ? (item.title || "") : (item.label || "");
 
     div.appendChild(rankDiv);
 
@@ -449,10 +517,10 @@ window.addEventListener("DOMContentLoaded", () => {
       img.alt = item.title || "";
       div.appendChild(img);
     } else {
-      // ✅ nouveau: video au lieu de iframe
       const video = document.createElement("video");
       video.controls = true;
       video.preload = "metadata";
+      video.playsInline = true;
       video.src = item.url || "";
       video.style.width = "100%";
       video.style.height = "210px";
