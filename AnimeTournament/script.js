@@ -156,17 +156,23 @@ window.addEventListener("DOMContentLoaded", () => {
         let tracks = [];
 
         data.forEach((anime) => {
-          const licenseName = anime?.animethemes?.name || anime?.title || "Unknown";
+          // ✅ utilise title_english en priorité
+          const displayTitle =
+            anime?.title_english ||
+            anime?.title_mal_default ||
+            anime?.title_original ||
+            anime?.animethemes?.name ||
+            "Unknown";
 
           const ops = anime?.song?.openings;
           if (Array.isArray(ops)) {
             ops.forEach((t) => {
               tracks.push({
-                licenseName,
+                displayTitle,
                 kind: "Opening",
                 number: t.number ?? "",
                 url: t.video || "",
-                label: `${licenseName} Opening ${t.number ?? ""}`.trim(),
+                label: `${displayTitle} Opening ${t.number ?? ""}`.trim(),
               });
             });
           }
@@ -175,11 +181,11 @@ window.addEventListener("DOMContentLoaded", () => {
           if (Array.isArray(eds)) {
             eds.forEach((t) => {
               tracks.push({
-                licenseName,
+                displayTitle,
                 kind: "Ending",
                 number: t.number ?? "",
                 url: t.video || "",
-                label: `${licenseName} Ending ${t.number ?? ""}`.trim(),
+                label: `${displayTitle} Ending ${t.number ?? ""}`.trim(),
               });
             });
           }
@@ -227,28 +233,48 @@ window.addEventListener("DOMContentLoaded", () => {
     if (mode === "anime") {
       div1.className = "anime";
       div2.className = "anime";
-      div1.innerHTML = `<img src="" alt="" /><h3></h3>`;
-      div2.innerHTML = `<img src="" alt="" /><h3></h3>`;
+      div1.innerHTML = `<img src="" alt="" /><h3 class="vote-title"></h3>`;
+      div2.innerHTML = `<img src="" alt="" /><h3 class="vote-title"></h3>`;
     } else {
+      // ✅ IMPORTANT: le vote ne se fait PLUS sur tout le bloc,
+      // mais uniquement sur le titre (h3.vote-title)
       div1.className = "opening";
       div2.className = "opening";
       div1.innerHTML = `
         <video class="trackVideo" controls preload="auto" playsinline muted></video>
         <div class="videoStatus"></div>
-        <h3></h3>
+        <h3 class="vote-title"></h3>
       `;
       div2.innerHTML = `
         <video class="trackVideo" controls preload="auto" playsinline muted></video>
         <div class="videoStatus"></div>
-        <h3></h3>
+        <h3 class="vote-title"></h3>
       `;
     }
 
     duelContainer.appendChild(div1);
     duelContainer.appendChild(div2);
 
-    div1.onclick = () => recordWin(1);
-    div2.onclick = () => recordWin(2);
+    // ✅ vote UNIQUEMENT sur le titre
+    const title1 = div1.querySelector(".vote-title");
+    const title2 = div2.querySelector(".vote-title");
+
+    title1.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      recordWin(1);
+    });
+    title2.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      recordWin(2);
+    });
+
+    // ✅ évite qu'un clic sur la vidéo déclenche autre chose (par sécurité)
+    const v1 = div1.querySelector("video");
+    const v2 = div2.querySelector("video");
+    if (v1) v1.addEventListener("click", (e) => e.stopPropagation());
+    if (v2) v2.addEventListener("click", (e) => e.stopPropagation());
   }
 
   // ✅ Retry: 1ère tentative immédiate, 2e après 3s, 3e après 10s (avec cache-bust)
@@ -259,7 +285,6 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // nettoyage
     video.onwaiting = null;
     video.oncanplay = null;
     video.onerror = null;
@@ -268,19 +293,15 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const loadAttempt = (delayMs) => {
       setTimeout(() => {
-        // si on a changé de match entre-temps -> stop
         if (token !== matchToken) return;
 
-        // reset src propre
         video.pause();
         video.removeAttribute("src");
         video.load();
 
-        // message
         if (attempt === 1) setVideoStatus(containerDiv, "⏳ Chargement…");
         else setVideoStatus(containerDiv, `🔄 Nouvelle tentative (${attempt}/3)…`);
 
-        // cache-bust seulement à partir de la 2e
         const finalUrl =
           attempt === 1
             ? url
@@ -316,7 +337,6 @@ window.addEventListener("DOMContentLoaded", () => {
       }
     };
 
-    // tentative 1 immédiate
     loadAttempt(0);
   }
 
@@ -334,11 +354,11 @@ window.addEventListener("DOMContentLoaded", () => {
 
       img1.src = items[i1].image || "";
       img1.alt = items[i1].title || "";
-      divs[0].querySelector("h3").textContent = items[i1].title || "";
+      divs[0].querySelector(".vote-title").textContent = items[i1].title || "";
 
       img2.src = items[i2].image || "";
       img2.alt = items[i2].title || "";
-      divs[1].querySelector("h3").textContent = items[i2].title || "";
+      divs[1].querySelector(".vote-title").textContent = items[i2].title || "";
     } else {
       const left = divs[0];
       const right = divs[1];
@@ -349,30 +369,28 @@ window.addEventListener("DOMContentLoaded", () => {
       setVideoStatus(left, "");
       setVideoStatus(right, "");
 
-      // stop/reset
       v1.pause(); v2.pause();
       v1.removeAttribute("src"); v2.removeAttribute("src");
       v1.load(); v2.load();
 
-      // Non support WebM (Safari/iOS)
       if (!CAN_PLAY_WEBM) {
         setVideoStatus(left, "⚠️ WebM non supporté sur ce navigateur (Safari/iOS).");
         setVideoStatus(right, "⚠️ WebM non supporté sur ce navigateur (Safari/iOS).");
-        divs[0].querySelector("h3").textContent = items[i1].label || "";
-        divs[1].querySelector("h3").textContent = items[i2].label || "";
+        divs[0].querySelector(".vote-title").textContent = items[i1].label || "";
+        divs[1].querySelector(".vote-title").textContent = items[i2].label || "";
         currentMatch = match;
         return;
       }
 
-      // label
-      divs[0].querySelector("h3").textContent = items[i1].label || "";
-      divs[1].querySelector("h3").textContent = items[i2].label || "";
+      // ✅ label sur le titre, et vote seulement sur le titre
+      divs[0].querySelector(".vote-title").textContent = items[i1].label || "";
+      divs[1].querySelector(".vote-title").textContent = items[i2].label || "";
 
       const url1 = items[i1].url || "";
       const url2 = items[i2].url || "";
       const token = matchToken;
 
-      // ✅ Chargement séquentiel : gauche -> quand prête -> droite
+      // Séquentiel: gauche -> droite
       bindVideoWithRetries(v1, left, url1, token, () => {
         bindVideoWithRetries(v2, right, url2, token, null);
       });
