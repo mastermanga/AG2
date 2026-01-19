@@ -233,14 +233,11 @@ body.light #round-indicator {
   box-shadow: 0 2px 14px #42a5f54b;
 }
 
-/* =========================
-   DUEL CONTAINER (VS centré)
-   ========================= */
-#duel-container {
+#duel-container{
   flex-wrap: nowrap;
   display: flex;
   flex-direction: row !important;
-  gap: 2.8rem;
+  gap: 5.2rem;                 /* ✅ plus grand espace */
   justify-content: center;
   align-items: flex-start;
   margin-bottom: 1.2rem;
@@ -249,16 +246,16 @@ body.light #round-indicator {
   position: relative;
 }
 
-/* VS parfaitement au centre du container */
-#duel-container::after {
+/* VS centré + un peu plus gros + meilleur rendu */
+#duel-container::after{
   content: "VS";
   position: absolute;
   left: 50%;
   top: 45%;
   transform: translate(-50%, -50%);
 
-  font-weight: 900;
-  font-size: 2.4rem;
+  font-weight: 1000;
+  font-size: 2.8rem;
   opacity: 0.22;
 
   color: #00eaff;
