@@ -149,9 +149,9 @@ window.addEventListener("DOMContentLoaded", () => {
     if (incEndings) incEndings.checked = false;
     if (incInserts) incInserts.checked = false;
 
-    // Type: TV only
     document.querySelectorAll("#typePills .pill").forEach((btn) => {
-      const active = btn.dataset.type === "TV";
+      const t = btn.dataset.type;
+      const active = (t === "TV" || t === "Movie");
       btn.classList.toggle("active", active);
       btn.setAttribute("aria-pressed", active ? "true" : "false");
     });
