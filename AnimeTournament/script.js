@@ -24,23 +24,21 @@ window.addEventListener("DOMContentLoaded", () => {
   let mode = urlParams.get("mode") || "anime";
 
   // ====== CONFIG TOURNOI ======
-  const TOTAL_ITEMS = 32;      // 32 participants
-  const ELIM_LOSSES = 2;       // 2 défaites = OUT
+  const TOTAL_ITEMS = 32;
+  const ELIM_LOSSES = 2;
 
   let data = [];
   let items = [];
 
-  // ====== DOUBLE ELIM "CACHÉ" ROUND PAR ROUND ======
-  let losses = [];            // pertes par index (0/1/2)
-  let played = [];            // Set adversaires déjà rencontrés (anti-rematch)
-  let aliveWB = [];           // 0 défaite
-  let aliveLB = [];           // 1 défaite
-
-  // eliminationOrder = [1er éliminé, ..., dernier éliminé]
+  // ====== DOUBLE ELIM ======
+  let losses = [];
+  let played = [];
+  let aliveWB = [];
+  let aliveLB = [];
   let eliminationOrder = [];
 
-  let roundNumber = 1;        // Round global affiché
-  let roundMatches = [];      // matchs du round en cours (WB + LB mélangés)
+  let roundNumber = 1;
+  let roundMatches = [];
   let roundMatchIndex = 0;
 
   let currentMatch = null;
@@ -118,18 +116,16 @@ window.addEventListener("DOMContentLoaded", () => {
     return array;
   }
 
-  // RECOMPUTE des pools à partir des pertes (évite tout bug WB/LB)
   function recomputePools() {
     aliveWB = [];
     aliveLB = [];
     for (let i = 0; i < items.length; i++) {
-      if (losses[i] >= ELIM_LOSSES) continue; // OUT
+      if (losses[i] >= ELIM_LOSSES) continue;
       if (losses[i] === 0) aliveWB.push(i);
       else if (losses[i] === 1) aliveLB.push(i);
     }
   }
 
-  // Supporte soit: [ ... ] soit: { animes: [ ... ] }
   function normalizeAnimeList(json) {
     if (Array.isArray(json)) return json;
     if (json && Array.isArray(json.animes)) return json.animes;
@@ -154,7 +150,6 @@ window.addEventListener("DOMContentLoaded", () => {
         let tracks = [];
 
         data.forEach((anime) => {
-          // "license" => on prend animethemes.name sinon title
           const licenseName = anime?.animethemes?.name || anime?.title || "Unknown";
 
           const ops = anime?.song?.openings;
@@ -197,7 +192,6 @@ window.addEventListener("DOMContentLoaded", () => {
         items = data.slice(0, TOTAL_ITEMS);
       }
 
-      // init double elim
       losses = items.map(() => 0);
       played = items.map(() => new Set());
       eliminationOrder = [];
@@ -230,7 +224,6 @@ window.addEventListener("DOMContentLoaded", () => {
       div1.innerHTML = `<img src="" alt="" /><h3></h3>`;
       div2.innerHTML = `<img src="" alt="" /><h3></h3>`;
     } else {
-      // video + status
       div1.className = "opening";
       div2.className = "opening";
       div1.innerHTML = `
@@ -250,6 +243,47 @@ window.addEventListener("DOMContentLoaded", () => {
 
     div1.onclick = () => recordWin(1);
     div2.onclick = () => recordWin(2);
+  }
+
+  // ✅ bind robuste + retry 1 fois (cache-bust)
+  function bindVideoWithRetry(video, containerDiv, url) {
+    // reset listeners
+    video.onwaiting = null;
+    video.oncanplay = null;
+    video.onerror = null;
+
+    // reset src
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+
+    if (!url) {
+      setVideoStatus(containerDiv, "❌ Lien vidéo manquant.");
+      return;
+    }
+
+    video.dataset.retried = "";
+
+    video.onwaiting = () => setVideoStatus(containerDiv, "⏳ Chargement…");
+    video.oncanplay = () => setVideoStatus(containerDiv, "");
+
+    video.onerror = () => {
+      // retry 1 fois
+      if (!video.dataset.retried) {
+        video.dataset.retried = "1";
+        setVideoStatus(containerDiv, "🔄 Retry…");
+
+        const busted = url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+        video.src = busted;
+        video.load();
+        return;
+      }
+      setVideoStatus(containerDiv, "❌ Vidéo indisponible (serveur ou lien).");
+    };
+
+    // start
+    video.src = url;
+    video.load();
   }
 
   function showMatch(match) {
@@ -278,49 +312,43 @@ window.addEventListener("DOMContentLoaded", () => {
       setVideoStatus(left, "");
       setVideoStatus(right, "");
 
-      // stop
-      v1.pause();
-      v2.pause();
-
       // Non support WebM (Safari/iOS)
       if (!CAN_PLAY_WEBM) {
         v1.removeAttribute("src");
         v2.removeAttribute("src");
+        v1.load();
+        v2.load();
         setVideoStatus(left, "⚠️ WebM non supporté sur ce navigateur (Safari/iOS).");
         setVideoStatus(right, "⚠️ WebM non supporté sur ce navigateur (Safari/iOS).");
 
         divs[0].querySelector("h3").textContent = items[i1].label || "";
         divs[1].querySelector("h3").textContent = items[i2].label || "";
-
         currentMatch = match;
         return;
       }
 
-      // set src + force load
-      v1.src = items[i1].url || "";
-      v2.src = items[i2].url || "";
-
-      v1.load();
-      v2.load();
-
-      v1.onerror = () => setVideoStatus(left, "❌ Vidéo indisponible (serveur ou lien).");
-      v2.onerror = () => setVideoStatus(right, "❌ Vidéo indisponible (serveur ou lien).");
-
-      v1.onwaiting = () => setVideoStatus(left, "⏳ Chargement…");
-      v2.onwaiting = () => setVideoStatus(right, "⏳ Chargement…");
-
-      v1.oncanplay = () => setVideoStatus(left, "");
-      v2.oncanplay = () => setVideoStatus(right, "");
-
-      // label: License + Opening/Ending + numéro
+      // label
       divs[0].querySelector("h3").textContent = items[i1].label || "";
       divs[1].querySelector("h3").textContent = items[i2].label || "";
+
+      // ✅ Chargement séquentiel: on charge la gauche, puis la droite quand la gauche est prête
+      const url1 = items[i1].url || "";
+      const url2 = items[i2].url || "";
+
+      // charge gauche
+      bindVideoWithRetry(v1, left, url1);
+
+      // quand gauche est prête -> charge droite
+      const prevOnCanPlay = v1.oncanplay;
+      v1.oncanplay = () => {
+        if (prevOnCanPlay) prevOnCanPlay();
+        bindVideoWithRetry(v2, right, url2);
+      };
     }
 
     currentMatch = match;
   }
 
-  // ====== ROUND SYSTEM (WB + LB mélangés) ======
   function pairFromPool(pool) {
     const p = pool.slice();
     shuffle(p);
@@ -329,7 +357,6 @@ window.addEventListener("DOMContentLoaded", () => {
     while (p.length >= 2) {
       const a = p.pop();
 
-      // évite un rematch si possible
       let bIndex = -1;
       for (let k = p.length - 1; k >= 0; k--) {
         if (!played[a].has(p[k])) {
@@ -357,7 +384,6 @@ window.addEventListener("DOMContentLoaded", () => {
   function buildNextRound() {
     const matches = [];
 
-    // Finale: 1 WB vs 1 LB
     if (aliveWB.length === 1 && aliveLB.length === 1) {
       matches.push({ i1: aliveWB[0], i2: aliveLB[0], bracket: "GF" });
       roundMatches = shuffle(matches);
@@ -376,7 +402,6 @@ window.addEventListener("DOMContentLoaded", () => {
       lbPairs.forEach((m) => matches.push({ ...m, bracket: "LB" }));
     }
 
-    // Si aucun match possible -> terminé
     if (matches.length === 0) {
       const aliveAll = aliveWB.concat(aliveLB);
       showClassementDoubleElim(aliveAll[0] ?? null);
@@ -411,21 +436,17 @@ window.addEventListener("DOMContentLoaded", () => {
     showMatch(match);
   }
 
-  // ====== Enregistrer un gagnant ======
   function recordWin(winnerSide) {
     if (!currentMatch) return;
 
     const winnerIndex = winnerSide === 1 ? currentMatch.i1 : currentMatch.i2;
     const loserIndex = winnerSide === 1 ? currentMatch.i2 : currentMatch.i1;
 
-    // anti-rematch
     played[winnerIndex].add(loserIndex);
     played[loserIndex].add(winnerIndex);
 
-    // défaite
     losses[loserIndex]++;
 
-    // OUT => stocker l'ordre d'élimination
     if (losses[loserIndex] === ELIM_LOSSES) {
       eliminationOrder.push(loserIndex);
     }
@@ -434,12 +455,10 @@ window.addEventListener("DOMContentLoaded", () => {
     showNextMatchInRound();
   }
 
-  // ====== Classement final (basé sur l'ordre d'élimination) ======
   function showClassementDoubleElim(championIndex) {
     duelContainer.style.display = "none";
     classementDiv.innerHTML = "";
 
-    // bouton fin / rejouer
     if (nextMatchBtn) {
       nextMatchBtn.style.display = "block";
 
@@ -478,10 +497,8 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // ranking = [champion, runner-up, ...] via élimination inverse
     const ranking = [champ, ...eliminationOrder.slice().reverse()];
 
-    // sécurité si jamais il manque des indices
     if (ranking.length < items.length) {
       const seen = new Set(ranking);
       for (let i = 0; i < items.length; i++) {
@@ -534,7 +551,6 @@ window.addEventListener("DOMContentLoaded", () => {
     classementDiv.appendChild(div);
   }
 
-  // Init first load
   loadDataAndStart();
 })();
 
