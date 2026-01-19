@@ -234,7 +234,7 @@ body.light #round-indicator {
 }
 
 /* =========================
-   DUEL CONTAINER (separation + VS)
+   DUEL CONTAINER (VS centré)
    ========================= */
 #duel-container {
   flex-wrap: nowrap;
@@ -249,16 +249,29 @@ body.light #round-indicator {
   position: relative;
 }
 
-/* (optionnel mais joli) : petit "VS" au centre */
+/* VS parfaitement au centre du container */
 #duel-container::after {
   content: "VS";
-  align-self: center;
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  transform: translate(-50%, -50%);
+
   font-weight: 900;
   font-size: 2.4rem;
-  opacity: 0.25;
-  margin: 0 0.2rem;
+  opacity: 0.22;
+
   color: #00eaff;
-  text-shadow: 0 0 18px rgba(0,234,255,0.5);
+  text-shadow: 0 0 18px rgba(0,234,255,0.55);
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* pour éviter que le VS chevauche sur mobile */
+@media (max-width: 900px) {
+  #duel-container::after {
+    display: none;
+  }
 }
 
 #duel-container .anime {
