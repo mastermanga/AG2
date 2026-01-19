@@ -343,7 +343,6 @@ body.light #round-indicator {
   font-weight:1000;
 
   background: rgba(0, 188, 212, 0.12);
-  border: 1.5px solid rgba(0, 234, 255, 0.35);
   color:#00eaff;
   text-shadow: 0 0 18px rgba(0,234,255,0.65);
   box-shadow: 0 0 28px rgba(0,234,255,0.20);
