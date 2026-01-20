@@ -462,11 +462,31 @@ function guessAnime() {
   // Genres
   const cellGenres = document.createElement("div");
   cellGenres.classList.add("cell", "cell-genre");
-  const matchesG = allGuessed.filter((x) => allTarget.includes(x));
-  if (matchesG.length > 0) cellGenres.classList.add("orange");
-  else cellGenres.classList.add("red");
-  cellGenres.innerHTML = allGuessed.length ? allGuessed.join("<br>") : "—";
-  row.appendChild(cellGenres);
+  
+  // si c'est le bon anime => tout doit être vert
+  if (isTitleMatch) {
+    cellGenres.classList.add("green");
+    cellGenres.innerHTML = allGuessed.length ? allGuessed.join("<br>") : "—";
+    row.appendChild(cellGenres);
+  } else {
+    // normalisation pour éviter les bugs (espaces/casse/doublons)
+    const norm = (s) => String(s || "").trim().toLowerCase();
+  
+    const guessedSet = new Set(allGuessed.map(norm).filter(Boolean));
+    const targetSet = new Set(allTarget.map(norm).filter(Boolean));
+  
+    const common = [...guessedSet].filter((x) => targetSet.has(x));
+    const isExactSame =
+      guessedSet.size === targetSet.size &&
+      [...guessedSet].every((x) => targetSet.has(x));
+  
+    if (isExactSame) cellGenres.classList.add("green");
+    else if (common.length > 0) cellGenres.classList.add("orange");
+    else cellGenres.classList.add("red");
+  
+    cellGenres.innerHTML = allGuessed.length ? allGuessed.join("<br>") : "—";
+    row.appendChild(cellGenres);
+  }
 
   // Score
   const cellScore = document.createElement("div");
