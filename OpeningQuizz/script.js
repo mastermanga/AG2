@@ -4,6 +4,8 @@
  * - Personnalisation: popularité/score/années/types + songs(OP/ED/IN)
  * - Pas de daily
  * - Player caché pendant la partie, reveal à la fin
+ * - Default: seulement Opening activé (ED/IN off)
+ * - Extraction songs: utilise anime.song.openings/endings/inserts (structure que tu as donnée)
  **********************/
 
 const MAX_SCORE = 3000;
@@ -42,11 +44,15 @@ function getDisplayTitle(a) {
   );
 }
 
-function getYear(a) {
-  const s = (a.season || "").trim();          // ex: "spring 2013"
+function getYearFromSeasonStr(seasonStr) {
+  const s = (seasonStr || "").trim(); // ex: "spring 2013"
   const parts = s.split(/\s+/);
   const y = parseInt(parts[1] || parts[0] || "0", 10);
   return Number.isFinite(y) ? y : 0;
+}
+
+function getAnimeYear(a) {
+  return getYearFromSeasonStr(a.season);
 }
 
 function clampYearSliders() {
@@ -69,89 +75,52 @@ function shuffleInPlace(arr) {
   return arr;
 }
 
-function normalizeSongType(t) {
-  // on mappe vers OP/ED/IN
-  const s = String(t || "").toLowerCase();
-  if (s.includes("op") || s.includes("opening")) return "OP";
-  if (s.includes("ed") || s.includes("ending")) return "ED";
-  if (s.includes("insert") || s.includes("in")) return "IN";
-  return null;
-}
-
 function safeNum(x) {
   const n = +x;
   return Number.isFinite(n) ? n : 0;
 }
 
-// Essaie d’extraire les songs d’un anime, quelque soit la structure
+function safeStr(x) {
+  return typeof x === "string" ? x : "";
+}
+
+// ====== Extraction songs (structure EXACTE de ton JSON) ======
 function extractSongsFromAnime(anime) {
   const songs = [];
+  const songObj = anime.song || {};
+  const groups = [
+    { key: "openings", type: "OP" },
+    { key: "endings", type: "ED" },
+    { key: "inserts", type: "IN" },
+  ];
 
-  // 1) cas commun animethemes: anime.animethemes / anime.animethemes_entries / anime.themes ...
-  // On tente plusieurs chemins
-  const candidates = [];
-  if (Array.isArray(anime.animethemes)) candidates.push(...anime.animethemes);
-  if (anime.animethemes && Array.isArray(anime.animethemes.entries)) candidates.push(...anime.animethemes.entries);
-  if (Array.isArray(anime.themes)) candidates.push(...anime.themes);
-  if (Array.isArray(anime.songs)) candidates.push(...anime.songs);
-  if (Array.isArray(anime.animetheme_entries)) candidates.push(...anime.animetheme_entries);
+  for (const g of groups) {
+    const list = Array.isArray(songObj[g.key]) ? songObj[g.key] : [];
+    for (const s of list) {
+      const url = safeStr(s.video);
+      if (!url) continue;
 
-  // chaque candidat peut contenir: type/op/ed, number, name, song/title, artist, and video url(s)
-  for (const c of candidates) {
-    const type = normalizeSongType(c.type || c.kind || c.category || c.themeType || c.slug);
-    if (!type) continue;
+      const songSeason = safeStr(s.season) || safeStr(anime.season);
+      const songYear = getYearFromSeasonStr(songSeason);
 
-    // urls possibles
-    const urls = [];
-
-    // url direct
-    if (typeof c.url === "string") urls.push(c.url);
-
-    // videos array
-    if (Array.isArray(c.videos)) {
-      for (const v of c.videos) {
-        if (typeof v.url === "string") urls.push(v.url);
-        if (typeof v.link === "string") urls.push(v.link);
-        if (typeof v.video === "string") urls.push(v.video);
-      }
-    }
-
-    // themes->entries->videos
-    if (Array.isArray(c.entries)) {
-      for (const e of c.entries) {
-        if (typeof e.url === "string") urls.push(e.url);
-        if (Array.isArray(e.videos)) {
-          for (const v of e.videos) {
-            if (typeof v.url === "string") urls.push(v.url);
-            if (typeof v.link === "string") urls.push(v.link);
-          }
-        }
-      }
-    }
-
-    const cleanUrls = [...new Set(urls)].filter(u => typeof u === "string" && u.length > 6);
-
-    // metadata
-    const num = safeNum(c.number || c.seq || c.index || c.order || c.position);
-    const songName = c.name || c.title || c.song || c.song_name || c.theme || "";
-    const artist = c.artist || c.singer || c.performer || c.by || "";
-
-    for (const url of cleanUrls) {
       songs.push({
         animeMalId: anime.mal_id ?? anime.id ?? null,
         animeTitle: anime._title,
         animeTitleLower: anime._titleLower,
-        animeImage: anime.image || anime.images?.jpg?.image_url || anime.images?.webp?.image_url || "",
+        animeImage: anime.image || "",
         animeType: anime._type,
         animeYear: anime._year,
         animeMembers: anime._members,
         animeScore: anime._score,
 
-        songType: type,              // OP/ED/IN
-        songNumber: num || 1,
-        songName: songName || "",
-        songArtist: artist || "",
-        url
+        songType: g.type, // OP/ED/IN
+        songNumber: safeNum(s.number) || 1,
+        songName: safeStr(s.name),
+        songArtists: Array.isArray(s.artists) ? s.artists.filter(Boolean) : [],
+        songSeason: songSeason,
+        songYear: songYear,
+
+        url,
       });
     }
   }
@@ -164,7 +133,7 @@ function formatRevealLine(song) {
   const typeLabel = song.songType === "OP" ? "Opening" : song.songType === "ED" ? "Ending" : "Insert";
   const num = song.songNumber ? ` ${song.songNumber}` : "";
   const partName = song.songName ? ` : ${song.songName}` : "";
-  const by = song.songArtist ? ` by ${song.songArtist}` : "";
+  const by = song.songArtists && song.songArtists.length ? ` by ${song.songArtists.join(", ")}` : "";
   return `${song.animeTitle} ${typeLabel}${num}${partName}${by}`;
 }
 
@@ -203,11 +172,11 @@ const audioPlayer = document.getElementById("audioPlayer");
 
 // ====== Data ======
 let allAnimes = [];
-let allSongs = [];        // toutes les songs extraites du dataset
-let filteredSongs = [];   // pool après personnalisation
+let allSongs = []; // toutes les songs extraites du dataset
+let filteredSongs = []; // pool après personnalisation
 
 // ====== Round state ======
-let currentSong = null;     // song tirée au hasard (opening/ending/insert)
+let currentSong = null; // song tirée au hasard
 let tries = 0;
 let failedAnswers = [];
 
@@ -264,6 +233,15 @@ function updateScoreBar(forceScore = null) {
 
 // ====== Customisation UI init ======
 function initCustomUI() {
+  // Default demandé : seulement OP activé, ED/IN désactivés
+  // (au cas où le HTML aurait gardé active sur ED/IN)
+  document.querySelectorAll("#songPills .pill").forEach((btn) => {
+    const s = btn.dataset.song;
+    const shouldBeActive = s === "OP";
+    btn.classList.toggle("active", shouldBeActive);
+    btn.setAttribute("aria-pressed", shouldBeActive ? "true" : "false");
+  });
+
   function syncLabels() {
     clampYearSliders();
     popValEl.textContent = popEl.value;
@@ -318,21 +296,17 @@ function applyFilters() {
 
   if (allowedTypes.length === 0 || allowedSongs.length === 0) return [];
 
-  // 1) filtre par anime year/type + songType
+  // 1) filtre par année de SONG (pas l'année de l'anime) + type de l'anime + songType
   let pool = allSongs.filter((s) => {
-    return (
-      s.animeYear >= yearMin &&
-      s.animeYear <= yearMax &&
-      allowedTypes.includes(s.animeType) &&
-      allowedSongs.includes(s.songType)
-    );
+    const y = s.songYear || 0;
+    return y >= yearMin && y <= yearMax && allowedTypes.includes(s.animeType) && allowedSongs.includes(s.songType);
   });
 
-  // 2) top pop% par members (niveau anime)
+  // 2) top pop% (members anime)
   pool.sort((a, b) => b.animeMembers - a.animeMembers);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-  // 3) top score% par score (niveau anime)
+  // 3) top score% (score anime)
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
@@ -365,7 +339,6 @@ function stopPlayback() {
 function playSegment(tryNum) {
   if (!currentSong) return;
 
-  // interdiction si pas dans l'ordre
   if (tryNum !== tries + 1) {
     alert("Vous devez écouter les extraits dans l'ordre.");
     return;
@@ -374,7 +347,6 @@ function playSegment(tryNum) {
   tries = tryNum;
   updateScoreBar();
 
-  // input activé après la première écoute
   openingInput.disabled = false;
 
   // indice only à la 3e écoute
@@ -392,7 +364,7 @@ function playSegment(tryNum) {
     if (old) old.remove();
   }
 
-  // start times: même logique que ton jeu (refrain vers ~50s)
+  // start times: refrain vers ~50s
   currentStart = 0;
   if (tries === 2) currentStart = 50;
   if (tries === 3) currentStart = 0;
@@ -402,20 +374,35 @@ function playSegment(tryNum) {
 
   stopPlayback();
 
-  // lecture
   audioPlayer.src = currentSong.url;
-  audioPlayer.currentTime = currentStart;
 
-  audioPlayer.play().catch(() => {
-    resultDiv.textContent = "❌ Impossible de lire cette vidéo/audio.";
-    resultDiv.className = "incorrect";
-  });
+  // IMPORTANT: mettre currentTime après metadata
+  const seekAndPlay = () => {
+    try {
+      audioPlayer.currentTime = currentStart;
+    } catch {}
+    audioPlayer.play().catch(() => {
+      resultDiv.textContent = "❌ Impossible de lire cette vidéo/audio.";
+      resultDiv.className = "incorrect";
+    });
 
-  const duration = tryDurations[tries - 1];
-  if (duration != null) {
-    stopTimer = setTimeout(() => {
-      audioPlayer.pause();
-    }, duration * 1000);
+    const duration = tryDurations[tries - 1];
+    if (duration != null) {
+      stopTimer = setTimeout(() => {
+        audioPlayer.pause();
+      }, duration * 1000);
+    }
+  };
+
+  if (audioPlayer.readyState >= 1) {
+    seekAndPlay();
+  } else {
+    const onMeta = () => {
+      audioPlayer.removeEventListener("loadedmetadata", onMeta);
+      seekAndPlay();
+    };
+    audioPlayer.addEventListener("loadedmetadata", onMeta);
+    audioPlayer.load();
   }
 
   // boutons d'écoute
@@ -449,7 +436,6 @@ function showIndiceOptions(nb) {
   const old = document.getElementById("indice-options-list");
   if (old) old.remove();
 
-  // on propose des titres d'anime (le but: deviner l'anime)
   let titles = [...new Set(filteredSongs.map((s) => s.animeTitle))];
   titles = titles.filter((t) => t !== currentSong.animeTitle);
   shuffleInPlace(titles);
@@ -513,8 +499,9 @@ function resetControls() {
   resetIndice();
   stopPlayback();
 
-  // on cache le player (révèle à la fin uniquement)
+  // cache le player (révèle à la fin uniquement)
   playerWrapper.style.display = "none";
+  audioPlayer.controls = false;
 
   updateScoreBar(3000);
 }
@@ -524,19 +511,22 @@ function startNewRound() {
 
   currentSong = filteredSongs[Math.floor(Math.random() * filteredSongs.length)];
 
-  // on prépare le player
   audioPlayer.src = currentSong.url;
   audioPlayer.preload = "metadata";
 
-  // active le premier bouton quand metadata est OK (sinon lecture peut échouer)
-  audioPlayer.onloadedmetadata = () => {
+  // active le premier bouton quand metadata est OK
+  const onMeta = () => {
+    audioPlayer.removeEventListener("loadedmetadata", onMeta);
     playTry1Btn.disabled = false;
   };
+  audioPlayer.addEventListener("loadedmetadata", onMeta);
 
-  // si erreur de chargement, on relance une autre song
   audioPlayer.onerror = () => {
+    // si erreur de chargement, on relance une autre song
     startNewRound();
   };
+
+  audioPlayer.load();
 }
 
 // ====== Guess logic ======
@@ -556,11 +546,12 @@ function finalScore() {
 function revealSongAndPlayer() {
   // reveal player + infos seulement à la fin
   playerWrapper.style.display = "block";
-
-  // on montre la vidéo, avec controls pour que l'utilisateur puisse la revoir
   audioPlayer.controls = true;
-  audioPlayer.style.width = "100%";
-  audioPlayer.style.maxWidth = "520px";
+
+  // on repart au début si possible (plus agréable)
+  try {
+    audioPlayer.currentTime = 0;
+  } catch {}
 }
 
 function checkAnswer(selectedTitle) {
@@ -571,7 +562,11 @@ function checkAnswer(selectedTitle) {
 
   if (good) {
     const score = finalScore();
-    resultDiv.innerHTML = `🎉 Bravo !<br><b>${currentSong.animeTitle}</b><br><em>${formatRevealLine(currentSong)}</em><br><span style="font-size:1.05em;">Score : <b>${score}</b> / 3000</span>`;
+
+    // ⚠️ ne pas révéler image / titre song avant la fin: on ne met que maintenant
+    resultDiv.innerHTML = `🎉 Bravo !<br><b>${currentSong.animeTitle}</b><br><em>${formatRevealLine(
+      currentSong
+    )}</em><br><span style="font-size:1.05em;">Score : <b>${score}</b> / 3000</span>`;
     resultDiv.className = "correct";
 
     stopPlayback();
@@ -593,7 +588,9 @@ function checkAnswer(selectedTitle) {
 
   if (tries >= 3) {
     // perdu
-    resultDiv.innerHTML = `🔔 Réponse : <b>${currentSong.animeTitle}</b><br><em>${formatRevealLine(currentSong)}</em>`;
+    resultDiv.innerHTML = `🔔 Réponse : <b>${currentSong.animeTitle}</b><br><em>${formatRevealLine(
+      currentSong
+    )}</em>`;
     resultDiv.className = "incorrect";
 
     stopPlayback();
@@ -606,7 +603,7 @@ function checkAnswer(selectedTitle) {
 
     updateScoreBar(0);
   } else {
-    // on force l’utilisateur à écouter l’extrait suivant avant de retenter
+    // écouter l’extrait suivant avant de retenter
     openingInput.disabled = true;
   }
 }
@@ -629,11 +626,10 @@ openingInput.addEventListener("input", function () {
   suggestionsDiv.innerHTML = "";
   if (!val) return;
 
-  // liste unique des titres d’anime dispo dans le pool filtré
   const uniqueTitles = [...new Set(filteredSongs.map((s) => s.animeTitle))];
-
   const matches = uniqueTitles.filter((t) => t.toLowerCase().includes(val));
   shuffleInPlace(matches);
+
   matches.slice(0, 6).forEach((title) => {
     const div = document.createElement("div");
     div.textContent = title;
@@ -733,20 +729,19 @@ fetch("../data/licenses_only.json")
         ...a,
         _title: title,
         _titleLower: title.toLowerCase(),
-        _year: getYear(a),
+        _year: getAnimeYear(a),
         _members: Number.isFinite(+a.members) ? +a.members : 0,
         _score: Number.isFinite(+a.score) ? +a.score : 0,
         _type: a.type || "Unknown",
       };
     });
 
-    // extraction des songs
+    // extraction des songs (structure donnée)
     allSongs = [];
     for (const a of allAnimes) {
       allSongs.push(...extractSongsFromAnime(a));
     }
 
-    // init UI perso
     initCustomUI();
     updatePreview();
     showCustomization();
