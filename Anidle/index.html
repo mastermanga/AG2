@@ -16,7 +16,6 @@
 
     <h1>🕵️‍♂️ Guess the Anime 🕵️‍♂️</h1>
 
-    <!-- Zone droite : thème + aide -->
     <div class="header-right">
       <button id="themeToggle" class="toggle-btn">🌓</button>
 
@@ -29,100 +28,91 @@
         </span>
 
         <span class="info-tip" role="tooltip">
-          Devine l’anime mystère grâce aux indices. Tu commences avec 3000 points : chaque tentative enlève 150 points et chaque indice coûte 300 points. Les indices utilisent un code couleur (vert = correct, orange = proche, rouge = faux). L’indice d’année est orange si l’année est correcte mais pas la saison, et l’indice de score est orange s’il est à ±0,5. En utilisant un indice, les suggestions se filtrent pour t’aider à trouver la bonne réponse.
+          Devine l’anime mystère grâce aux indices. Tu commences avec 3000 points : chaque tentative enlève 150 points et chaque indice coûte 300 points.
+          Les indices utilisent un code couleur (vert = correct, orange = proche, rouge = faux).
+          L’indice d’année est orange si l’année est correcte mais pas la saison, et l’indice de score est orange s’il est à ±0,3.
+          En utilisant un indice, les suggestions se filtrent pour t’aider à trouver la bonne réponse.
         </span>
       </span>
     </div>
   </header>
 
-  <!-- BANDEAU DAILY -->
-  <div id="daily-banner">
-    <span id="daily-status"></span>
-    <span id="daily-score"></span>
-    <button
-      id="switch-mode-btn"
-      class="toggle-btn"
-      style="margin-left: 1.4rem; font-size: 1rem; padding: 0.35rem 1rem;">
-    </button>
-  </div>
+  <!-- ✅ PERSONNALISATION -->
+  <section id="custom-panel" class="main-container custom-panel">
+    <h2 class="custom-title">⚙️ Personnalisation</h2>
 
-  <!-- ✅ PERSONNALISATION (sans songs) -->
-  <div id="custom-panel" class="main-container" style="max-width: 1400px; width: 98vw; padding: 1.4rem 1.6rem; margin: 0 auto 1.2rem auto;">
-    <h2 style="margin:0 0 0.8rem 0; text-align:center;">⚙️ Personnalisation</h2>
-
-    <!-- Popularité -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Popularité</div>
-      <div class="opt-col" style="flex:1; min-width:260px;">
+    <div class="custom-grid">
+      <!-- Popularité -->
+      <div class="custom-card">
+        <div class="custom-row">
+          <div class="custom-label">Popularité (Top %)</div>
+          <div class="custom-value"><span id="popPercentVal">25</span>%</div>
+        </div>
         <input id="popPercent" type="range" min="5" max="100" step="5" value="25" />
-        <div class="opt-value" style="margin-top:6px; font-weight:900; opacity:0.92; text-align:right;">
-          Top <span id="popPercentVal">25</span>%
-        </div>
+        <div class="custom-hint">Basé sur <b>members</b> (top X%).</div>
       </div>
-    </div>
 
-    <!-- Score -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:10px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Score</div>
-      <div class="opt-col" style="flex:1; min-width:260px;">
+      <!-- Score -->
+      <div class="custom-card">
+        <div class="custom-row">
+          <div class="custom-label">Score (Top %)</div>
+          <div class="custom-value"><span id="scorePercentVal">25</span>%</div>
+        </div>
         <input id="scorePercent" type="range" min="5" max="100" step="5" value="25" />
-        <div class="opt-value" style="margin-top:6px; font-weight:900; opacity:0.92; text-align:right;">
-          Top <span id="scorePercentVal">25</span>%
-        </div>
+        <div class="custom-hint">Basé sur la note MAL (top X%).</div>
       </div>
-    </div>
 
-    <!-- Années (titre/anime) -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:10px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Années</div>
-      <div class="opt-col" style="flex:1; min-width:260px;">
-        <div class="year-row" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-          <div>
-            <input id="yearMin" type="number" min="1950" max="2026" step="1" value="2000" style="width:100%; padding:10px; border-radius:8px; border:none; outline:none; background:#222; color:#eee; box-shadow:0 0 8px #00bcd466;" />
-            <div class="opt-value" style="margin-top:6px; font-weight:900; opacity:0.92; text-align:right;">Min: <span id="yearMinVal">2000</span></div>
-          </div>
-          <div>
-            <input id="yearMax" type="number" min="1950" max="2026" step="1" value="2026" style="width:100%; padding:10px; border-radius:8px; border:none; outline:none; background:#222; color:#eee; box-shadow:0 0 8px #00bcd466;" />
-            <div class="opt-value" style="margin-top:6px; font-weight:900; opacity:0.92; text-align:right;">Max: <span id="yearMaxVal">2026</span></div>
+      <!-- Années (double slider comme tournament) -->
+      <div class="custom-card custom-card-wide">
+        <div class="custom-row">
+          <div class="custom-label">Années</div>
+          <div class="custom-value">
+            <span id="yearRangeLabel">2000 → 2026</span>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Types -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:10px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Types</div>
-      <div class="opt-col" style="flex:1; min-width:260px;">
-        <div id="typePills" class="opt-pill-group" style="display:flex; gap:10px; flex-wrap:wrap;">
-          <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
-          <button type="button" class="pill active" data-type="Movie" aria-pressed="true">Movie</button>
-          <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
-          <button type="button" class="pill" data-type="ONA" aria-pressed="false">ONA</button>
-          <button type="button" class="pill" data-type="Special" aria-pressed="false">Special</button>
+        <div class="range-dual">
+          <div class="range-track"></div>
+          <div id="range-fill" class="range-fill"></div>
+
+          <input id="yearMin" type="range" min="1950" max="2026" step="1" value="2000" />
+          <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026" />
+        </div>
+
+        <div class="range-minmax">
+          <span>Min: <b id="yearMinVal">2000</b></span>
+          <span>Max: <b id="yearMaxVal">2026</b></span>
+        </div>
+      </div>
+
+      <!-- Types -->
+      <div class="custom-card custom-card-wide">
+        <div class="custom-row">
+          <div class="custom-label">Types</div>
+          <div class="custom-hint">Choisis au moins 1 type.</div>
+        </div>
+
+        <div id="typePills" class="pill-wrap">
+          <button class="pill active" data-type="TV" aria-pressed="true">TV</button>
+          <button class="pill active" data-type="Movie" aria-pressed="true">Movie</button>
+          <button class="pill" data-type="OVA" aria-pressed="false">OVA</button>
+          <button class="pill" data-type="ONA" aria-pressed="false">ONA</button>
+          <button class="pill" data-type="Special" aria-pressed="false">Special</button>
         </div>
       </div>
     </div>
 
-    <!-- Preview + Start -->
-    <div id="previewCount" class="preview-count bad" style="margin-top:14px; width:100%; font-weight:900; text-align:center; padding:10px 12px; border-radius:14px; border:1px solid #00bcd455; background: rgba(0,0,0,0.15);">
-      ⏳ Chargement de la base…
+    <div class="custom-footer">
+      <div id="previewCount" class="preview-count">Chargement…</div>
+      <button id="applyFiltersBtn" class="menu-btn">Lancer avec ces réglages</button>
     </div>
-
-    <div style="display:flex; justify-content:center; margin-top:10px;">
-      <button id="applyFiltersBtn" class="menu-btn" style="font-size:1.05rem; padding:0.85rem 1.6rem;">
-        ✅ Lancer avec ces filtres
-      </button>
-    </div>
-  </div>
+  </section>
 
   <!-- CONTENU PRINCIPAL -->
   <div id="container" class="main-container">
     <div style="display:flex; gap:20px; justify-content:center; width:100%;">
-
-      <!-- Suggestions / aide latérale -->
       <div id="aideContainer" style="width:300px;"></div>
 
-      <!-- Jeu -->
       <div style="flex:1;">
         <div id="successContainer" style="display:none;"></div>
 
@@ -149,18 +139,10 @@
             id="indices-bar"
             style="display:flex; gap:10px; margin:16px 0; flex-wrap:wrap; justify-content:center;"
           >
-            <button id="btnIndiceStudio" class="indice-btn" disabled>
-              Indice Studio (-300)
-            </button>
-            <button id="btnIndiceSaison" class="indice-btn" disabled>
-              Indice Année (-300)
-            </button>
-            <button id="btnIndiceGenres" class="indice-btn" disabled>
-              Indice Genres/Thèmes (-300)
-            </button>
-            <button id="btnIndiceScore" class="indice-btn" disabled>
-              Indice Score (-300)
-            </button>
+            <button id="btnIndiceStudio" class="indice-btn" disabled>Indice Studio (-300)</button>
+            <button id="btnIndiceSaison" class="indice-btn" disabled>Indice Année (-300)</button>
+            <button id="btnIndiceGenres" class="indice-btn" disabled>Indice Genres/Thèmes (-300)</button>
+            <button id="btnIndiceScore" class="indice-btn" disabled>Indice Score (-300)</button>
           </div>
         </div>
 
@@ -172,9 +154,7 @@
   </div>
 
   <!-- FOOTER -->
-  <footer>
-    © 2025 mastermanga
-  </footer>
+  <footer>© 2025 mastermanga</footer>
 
   <script src="script.js"></script>
 </body>
