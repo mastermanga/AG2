@@ -6,45 +6,27 @@ const DB_URL = "../data/licenses_only.json";
 const GAME_ID = "anidle";
 const MIN_REQUIRED = 64;
 
-// ========== DARK/LIGHT MODE + MENU ==========
-document.getElementById("back-to-menu").addEventListener("click", function () {
+// ========== MENU + THEME ==========
+document.getElementById("back-to-menu").addEventListener("click", () => {
   window.location.href = "../index.html";
 });
 
 document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
-  const isLight = document.body.classList.contains("light");
-  localStorage.setItem("theme", isLight ? "light" : "dark");
+  localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
 
 window.addEventListener("DOMContentLoaded", () => {
-  const savedTheme = localStorage.getItem("theme");
-  if (savedTheme === "light") document.body.classList.add("light");
+  if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
 });
 
-// ========= DAILY DATE FUNCTION ==========
-function getTodayString() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+// ========== PARCOURS ==========
+const urlParams = new URLSearchParams(window.location.search);
+const isParcours = urlParams.get("parcours") === "1";
+const parcoursCount = parseInt(urlParams.get("count") || "1", 10);
+let parcoursIndex = 0;
+let parcoursTotalScore = 0;
 
-// ========= DAILY SEEDING LOGIC ==========
-function simpleHash(str) {
-  let hash = 5381;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash * 33) + str.charCodeAt(i);
-    hash = hash & 0xFFFFFFFF;
-  }
-  return Math.abs(hash);
-}
-function getDailyIndex(len, poolSig) {
-  const dateStr = getTodayString();
-  const hash = simpleHash(dateStr + "|" + GAME_ID + "|" + poolSig);
-  return hash % len;
-}
 function seededRandom(seed) {
   return function () {
     seed = (seed * 1664525 + 1013904223) % 4294967296;
@@ -53,8 +35,9 @@ function seededRandom(seed) {
 }
 
 // ========== DATA ==========
-let ALL_TITLES = null;     // toute la DB normalisée
-let animeData = [];        // pool filtré utilisé pour la partie
+let ALL_TITLES = null;  // DB normalisée
+let animeData = [];     // pool filtré
+let targetAnime = null;
 
 function normalizeAnimeList(json) {
   if (Array.isArray(json)) return json;
@@ -90,7 +73,26 @@ function getSearchKey(anime) {
   return parts.join(" | ").toLowerCase();
 }
 
-// ========== PERSONNALISATION (UI) ==========
+// ========== PERSONNALISATION ==========
+function setRangeFill() {
+  const minEl = document.getElementById("yearMin");
+  const maxEl = document.getElementById("yearMax");
+  const fill = document.getElementById("range-fill");
+  if (!minEl || !maxEl || !fill) return;
+
+  const min = parseInt(minEl.value, 10);
+  const max = parseInt(maxEl.value, 10);
+  const minAttr = parseInt(minEl.min, 10);
+  const maxAttr = parseInt(minEl.max, 10);
+  const range = maxAttr - minAttr;
+
+  const left = ((min - minAttr) / range) * 100;
+  const right = ((max - minAttr) / range) * 100;
+
+  fill.style.left = `${left}%`;
+  fill.style.width = `${Math.max(0, right - left)}%`;
+}
+
 function syncUIValues() {
   const pop = document.getElementById("popPercent");
   const score = document.getElementById("scorePercent");
@@ -101,6 +103,7 @@ function syncUIValues() {
   const scoreVal = document.getElementById("scorePercentVal");
   const yMinVal = document.getElementById("yearMinVal");
   const yMaxVal = document.getElementById("yearMaxVal");
+  const yLabel = document.getElementById("yearRangeLabel");
 
   if (pop && popVal) popVal.textContent = pop.value;
   if (score && scoreVal) scoreVal.textContent = score.value;
@@ -108,12 +111,17 @@ function syncUIValues() {
   if (yMin && yMax) {
     let a = parseInt(yMin.value || "2000", 10);
     let b = parseInt(yMax.value || "2026", 10);
+
     if (a > b) [a, b] = [b, a];
-    yMin.value = a;
-    yMax.value = b;
+    yMin.value = String(a);
+    yMax.value = String(b);
+
     if (yMinVal) yMinVal.textContent = String(a);
     if (yMaxVal) yMaxVal.textContent = String(b);
+    if (yLabel) yLabel.textContent = `${a} → ${b}`;
   }
+
+  setRangeFill();
 }
 
 function getSelectedTypes() {
@@ -129,7 +137,6 @@ function readOptions() {
   const yearMin = parseInt(document.getElementById("yearMin")?.value || "2000", 10);
   const yearMax = parseInt(document.getElementById("yearMax")?.value || "2026", 10);
   const types = getSelectedTypes();
-
   return { popPercent, scorePercent, yearMin, yearMax, types };
 }
 
@@ -164,10 +171,11 @@ function updatePreview() {
 
   const preview = document.getElementById("previewCount");
   const applyBtn = document.getElementById("applyFiltersBtn");
-  const opts = readOptions();
 
+  const opts = readOptions();
   const filtered = filterTitles(ALL_TITLES, opts);
-  animeData = filtered; // pool courant
+
+  animeData = filtered;
 
   const ok = filtered.length >= MIN_REQUIRED;
 
@@ -179,8 +187,6 @@ function updatePreview() {
     preview.classList.toggle("bad", !ok);
   }
   if (applyBtn) applyBtn.disabled = !ok;
-
-  // si partie déjà affichée, on ne touche pas ici
 }
 
 function wireCustomizationUI() {
@@ -208,10 +214,17 @@ function wireCustomizationUI() {
     });
   }
 
-  // inputs
-  panel.querySelectorAll("input").forEach((el) => {
-    el.addEventListener("input", updatePreview);
-    el.addEventListener("change", updatePreview);
+  // sliders
+  panel.querySelectorAll("input[type='range']").forEach((el) => {
+    el.addEventListener("input", () => {
+      // si l'utilisateur croise les sliders, on corrige dans syncUIValues()
+      syncUIValues();
+      updatePreview();
+    });
+    el.addEventListener("change", () => {
+      syncUIValues();
+      updatePreview();
+    });
   });
 
   // apply
@@ -219,17 +232,20 @@ function wireCustomizationUI() {
   if (applyBtn) {
     applyBtn.addEventListener("click", () => {
       if (applyBtn.disabled) return;
-      startNewGameFromFilters();
+
+      // cacher la personnalisation et afficher le jeu
+      panel.style.display = "none";
+      document.getElementById("container").style.display = "";
+
+      setupGame();
     });
   }
 }
 
-// ========= GAME (DAILY/CLASSIC/PARCOURS) ==========
-let targetAnime = null;
+// ========== GAME STATE ==========
 let attemptCount = 0;
 let gameOver = false;
 
-// -- Indices State --
 let indicesActivated = { studio: false, saison: false, genres: false, score: false };
 let indicesAvailable = { studio: false, saison: false, genres: false, score: false };
 let indicesGenresFound = [];
@@ -239,48 +255,11 @@ let indicesScoreRange = null;
 let indicesGenresFoundSet = new Set();
 let indicesScoreRangeActivation = [0, 0];
 
-// -- Mode switch --
-let isDaily = true;
-const DAILY_BANNER = document.getElementById("daily-banner");
-const DAILY_STATUS = document.getElementById("daily-status");
-const DAILY_SCORE = document.getElementById("daily-score");
-const SWITCH_MODE_BTN = document.getElementById("switch-mode-btn");
-
-const todayString = getTodayString();
-const SCORE_KEY = `dailyScore_${GAME_ID}_${todayString}`;
-const STARTED_KEY = `dailyStarted_${GAME_ID}_${todayString}`;
-
-let dailyPlayed = false;
-let dailyScore = null;
-
-// ======== MODE PARCOURS ========
-const urlParams = new URLSearchParams(window.location.search);
-const isParcours = urlParams.get("parcours") === "1";
-const parcoursCount = parseInt(urlParams.get("count") || "1", 10);
-let parcoursIndex = 0;
-let parcoursTotalScore = 0;
-
-// ========== LOAD DB ==========
-async function loadDatabaseOnce() {
-  if (ALL_TITLES) return ALL_TITLES;
-  const res = await fetch(DB_URL);
-  if (!res.ok) throw new Error("Erreur chargement " + DB_URL);
-
-  const json = await res.json();
-  const data = normalizeAnimeList(json);
-
-  if (!Array.isArray(data) || data.length === 0) {
-    throw new Error("Base vide ou format JSON non reconnu.");
-  }
-  ALL_TITLES = data;
-  return ALL_TITLES;
-}
-
 function resetScoreBar() {
   const scoreBar = document.getElementById("score-bar");
   const scoreBarLabel = document.getElementById("score-bar-label");
   if (scoreBar) scoreBar.style.width = "100%";
-  if (scoreBarLabel) scoreBarLabel.textContent = "3000 / 3000";
+  if (scoreBarLabel) scoreBarLabel.textContent = `${MAX_SCORE} / ${MAX_SCORE}`;
 }
 
 function clearUIForNewGame() {
@@ -304,13 +283,6 @@ function clearUIForNewGame() {
   document.getElementById("successContainer").style.display = "none";
   document.getElementById("animeInput").disabled = false;
 
-  if (!document.getElementById("tentative-cost")) {
-    const div = document.createElement("div");
-    div.id = "tentative-cost";
-    div.style = "font-size:0.98rem; color:#ffc107; margin-top:2px; margin-bottom:8px;";
-    document.getElementById("counter").after(div);
-  }
-
   ["btnIndiceStudio", "btnIndiceSaison", "btnIndiceGenres", "btnIndiceScore"].forEach((id) => {
     const btn = document.getElementById(id);
     if (btn) {
@@ -323,118 +295,21 @@ function clearUIForNewGame() {
   updateScoreBar();
 }
 
-// === daily locks ===
-function lockDailyInputs() {
-  document.getElementById("animeInput").disabled = true;
-  ["btnIndiceStudio", "btnIndiceSaison", "btnIndiceGenres", "btnIndiceScore"].forEach((id) => {
-    const b = document.getElementById(id);
-    if (b) b.disabled = true;
-  });
-}
-function unlockClassicInputs() {
-  document.getElementById("animeInput").disabled = false;
-  ["btnIndiceStudio", "btnIndiceSaison", "btnIndiceGenres", "btnIndiceScore"].forEach((id) => {
-    const b = document.getElementById(id);
-    if (b) b.disabled = false;
-  });
-}
-
-// --- BANDEAU DAILY ---
-function showDailyBanner() {
-  if (!DAILY_BANNER) return;
-  DAILY_BANNER.style.display = "flex";
-  updateSwitchModeBtn();
-
-  if (dailyPlayed) {
-    const saved = localStorage.getItem(SCORE_KEY);
-    DAILY_STATUS.textContent = "✅ Daily du jour déjà jouée !";
-    DAILY_SCORE.textContent = saved ? `Score : ${saved} pts` : "Score : 0 pts";
-  } else {
-    DAILY_STATUS.textContent = "🎲 Daily du jour :";
-    DAILY_SCORE.textContent = "";
-  }
-}
-
-function updateSwitchModeBtn() {
-  if (!SWITCH_MODE_BTN) return;
-  if (isDaily) {
-    SWITCH_MODE_BTN.textContent = "Passer en mode Classique";
-    SWITCH_MODE_BTN.style.backgroundColor = "#42a5f5";
-  } else {
-    SWITCH_MODE_BTN.textContent = "Revenir au Daily";
-    SWITCH_MODE_BTN.style.backgroundColor = "#00bcd4";
-  }
-}
-
-if (SWITCH_MODE_BTN) {
-  SWITCH_MODE_BTN.onclick = () => {
-    isDaily = !isDaily;
-    setupGame();
-  };
-}
-
-// =======================
-// START GAME FROM FILTERS
-// =======================
-function poolSignature(filtered) {
-  // stable signature for daily seeding when filters change
-  // use mal_id + length
-  const ids = filtered.map((a) => a.mal_id).filter(Boolean).slice(0, 200).join(",");
-  return String(filtered.length) + "|" + ids;
-}
-
-function startNewGameFromFilters() {
-  // cacher perso et lancer une partie avec le pool courant (animeData)
-  const panel = document.getElementById("custom-panel");
-  if (panel && !isParcours) panel.style.display = "none";
-
-  // reset daily markers when switching filters in classic
-  setupGame();
-}
-
-// ========== SETUP GAME ==========
 function setupGame() {
-  // sécurité: si filtre pas prêt
-  if (!animeData || animeData.length === 0) {
+  if (!animeData || animeData.length < MIN_REQUIRED) {
     updatePreview();
   }
-
-  dailyScore = localStorage.getItem(SCORE_KEY);
-  dailyPlayed = !!dailyScore;
-
-  if (isDaily && localStorage.getItem(STARTED_KEY) && !localStorage.getItem(SCORE_KEY)) {
-    dailyPlayed = true;
-    dailyScore = 0;
-    showDailyBanner();
-    lockDailyInputs();
-    gameOver = true;
+  if (!animeData || animeData.length < MIN_REQUIRED) {
+    alert(`Pas assez de titres (${animeData?.length || 0}). Il en faut au moins ${MIN_REQUIRED}.`);
     return;
   }
 
-  if (isDaily) {
-    const sig = poolSignature(animeData);
-    const idx = getDailyIndex(animeData.length, sig);
-    targetAnime = animeData[idx];
-    showDailyBanner();
-
-    if (dailyPlayed) {
-      lockDailyInputs();
-      gameOver = true;
-      return;
-    }
-    localStorage.setItem(STARTED_KEY, "1");
-  } else {
-    targetAnime = animeData[Math.floor(Math.random() * animeData.length)];
-    if (DAILY_BANNER) DAILY_BANNER.style.display = "none";
-    unlockClassicInputs();
-  }
-
+  targetAnime = animeData[Math.floor(Math.random() * animeData.length)];
   clearUIForNewGame();
 }
 
 // ========== SUGGESTIONS AUTO-COMPLETE ==========
 document.getElementById("animeInput").addEventListener("input", function () {
-  if (isDaily && dailyPlayed) return;
   if (gameOver) return;
 
   const input = this.value.toLowerCase();
@@ -529,15 +404,12 @@ function findByDisplayTitle(input) {
   const low = input.trim().toLowerCase();
   if (!low) return null;
 
-  // try exact match on display title first
   let found = animeData.find((a) => getDisplayTitle(a).toLowerCase() === low);
   if (found) return found;
 
-  // fallback: any of keys
   found = animeData.find((a) => getSearchKey(a).split("|").some((p) => p.trim() === low));
   if (found) return found;
 
-  // fallback: includes unique
   const candidates = animeData.filter((a) => getSearchKey(a).includes(low));
   if (candidates.length === 1) return candidates[0];
 
@@ -545,7 +417,7 @@ function findByDisplayTitle(input) {
 }
 
 function guessAnime() {
-  if (gameOver || (isDaily && dailyPlayed)) return;
+  if (gameOver) return;
 
   const input = document.getElementById("animeInput").value.trim();
   const guessedAnime = findByDisplayTitle(input);
@@ -558,23 +430,21 @@ function guessAnime() {
   attemptCount++;
   document.getElementById("counter").textContent = `Tentatives : ${attemptCount} (-150)`;
 
-  // --- Indices: recalcul disponibilité
-  // 1. Studio
+  // Indice Studio
   if (!indicesActivated.studio && guessedAnime.studio === targetAnime.studio) {
     indicesAvailable.studio = true;
     document.getElementById("btnIndiceStudio").disabled = false;
   }
 
-  // 2. Année (orange si année ok)
+  // Indice Année (orange si année ok)
   const gYear = getYearFromSeason(guessedAnime.season);
   const tYear = getYearFromSeason(targetAnime.season);
-
   if (!indicesActivated.saison && gYear != null && tYear != null && gYear === tYear) {
     indicesAvailable.saison = true;
     document.getElementById("btnIndiceSaison").disabled = false;
   }
 
-  // 3. Genres/Thèmes
+  // Genres/Thèmes
   const allGuessed = [...(guessedAnime.genres || []), ...(guessedAnime.themes || [])];
   const allTarget = [...(targetAnime.genres || []), ...(targetAnime.themes || [])];
   allGuessed.forEach((g) => {
@@ -585,7 +455,7 @@ function guessAnime() {
     document.getElementById("btnIndiceGenres").disabled = false;
   }
 
-  // 4. Score (±0.30)
+  // Score (±0.30)
   const gScore = parseFloat(guessedAnime.score);
   const tScore = parseFloat(targetAnime.score);
   let isScoreMatchOrClose = false;
@@ -605,7 +475,7 @@ function guessAnime() {
     document.getElementById("btnIndiceScore").disabled = false;
   }
 
-  // --- Affichage résultat
+  // Affichage résultat
   const results = document.getElementById("results");
   const keyToClass = {
     image: "cell-image",
@@ -654,7 +524,7 @@ function guessAnime() {
   cellTitle.textContent = getDisplayTitle(guessedAnime);
   row.appendChild(cellTitle);
 
-  // Saison (season)
+  // Saison
   const cellSeason = document.createElement("div");
   cellSeason.classList.add("cell", keyToClass.season);
 
@@ -690,8 +560,8 @@ function guessAnime() {
   // Genres/Thèmes
   const cellGenresThemes = document.createElement("div");
   cellGenresThemes.classList.add("cell", keyToClass.genresThemes);
-
   const matches = allGuessed.filter((x) => allTarget.includes(x));
+
   if (matches.length === allGuessed.length && matches.length === allTarget.length && matches.length > 0) {
     cellGenresThemes.classList.add("green");
   } else if (matches.length > 0) {
@@ -738,20 +608,6 @@ function guessAnime() {
       if (b) b.disabled = true;
     });
     showSuccessMessage();
-
-    if (isDaily && !dailyPlayed) {
-      let score = MAX_SCORE;
-      score -= (attemptCount - 1) * TENTATIVE_COST;
-      const indiceCount = Object.values(indicesActivated).filter(Boolean).length;
-      score -= indiceCount * INDICE_COST;
-      if (score < 0) score = 0;
-
-      localStorage.setItem(SCORE_KEY, score);
-      dailyPlayed = true;
-      dailyScore = score;
-      showDailyBanner();
-    }
-
     launchFireworks();
   }
 }
@@ -761,22 +617,18 @@ function updateAideList() {
   const aideDiv = document.getElementById("aideContainer");
   let filtered = animeData;
 
-  // FILTRAGE selon indices activés
   if (indicesActivated.studio && indicesStudioAtActivation) {
     filtered = filtered.filter((a) => a.studio === indicesStudioAtActivation);
   }
-
   if (indicesActivated.saison && indicesYearAtActivation) {
     filtered = filtered.filter((a) => String(getYearFromSeason(a.season)) === String(indicesYearAtActivation));
   }
-
   if (indicesActivated.genres && indicesGenresFound.length > 0) {
     filtered = filtered.filter((a) => {
       const allG = [...(a.genres || []), ...(a.themes || [])];
       return indicesGenresFound.every((x) => allG.includes(x));
     });
   }
-
   if (indicesActivated.score && indicesScoreRange) {
     filtered = filtered.filter((a) => {
       const val = parseFloat(a.score);
@@ -786,13 +638,10 @@ function updateAideList() {
 
   aideDiv.innerHTML =
     `<h3>🔍 Suggestions</h3><ul>` +
-    filtered
-      .slice(0, 200)
-      .map((a) => {
-        const t = getDisplayTitle(a).replace(/'/g, "\\'");
-        return `<li onclick="selectFromAide('${t}')">${getDisplayTitle(a)}</li>`;
-      })
-      .join("") +
+    filtered.slice(0, 200).map((a) => {
+      const t = getDisplayTitle(a).replace(/'/g, "\\'");
+      return `<li onclick="selectFromAide('${t}')">${getDisplayTitle(a)}</li>`;
+    }).join("") +
     `</ul>`;
 }
 
@@ -807,21 +656,19 @@ function launchFireworks() {
   const ctx = canvas.getContext("2d");
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
-  const particles = [];
 
+  const particles = [];
   function createParticle(x, y) {
     const angle = Math.random() * 2 * Math.PI;
     const speed = Math.random() * 5 + 2;
     return { x, y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 60 };
   }
-
-  for (let i = 0; i < 100; i++) {
-    particles.push(createParticle(canvas.width / 2, canvas.height / 2));
-  }
+  for (let i = 0; i < 100; i++) particles.push(createParticle(canvas.width / 2, canvas.height / 2));
 
   function animate() {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+    ctx.fillStyle = "rgba(0,0,0,0.1)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
     particles.forEach((p) => {
       ctx.beginPath();
       ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
@@ -832,9 +679,11 @@ function launchFireworks() {
       p.dy += 0.05;
       p.life--;
     });
+
     for (let i = particles.length - 1; i >= 0; i--) {
       if (particles[i].life <= 0) particles.splice(i, 1);
     }
+
     if (particles.length > 0) requestAnimationFrame(animate);
     else ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
@@ -842,11 +691,14 @@ function launchFireworks() {
   animate();
 }
 
-// ========== Message de victoire ==========
+// ========== Victoire ==========
 function showSuccessMessageClassic() {
   const container = document.getElementById("successContainer");
   let roundScore =
-    MAX_SCORE - (attemptCount - 1) * TENTATIVE_COST - Object.values(indicesActivated).filter(Boolean).length * INDICE_COST;
+    MAX_SCORE -
+    (attemptCount - 1) * TENTATIVE_COST -
+    Object.values(indicesActivated).filter(Boolean).length * INDICE_COST;
+
   if (roundScore < 0) roundScore = 0;
 
   container.innerHTML = `
@@ -857,7 +709,7 @@ function showSuccessMessageClassic() {
     </div>
     <div style="text-align:center;">
       <button id="nextBtn" class="menu-btn" style="font-size:1.1rem; margin: 0 auto 1rem auto;">
-        ${isDaily ? "Retour menu" : "Rejouer"}
+        Rejouer
       </button>
     </div>
   `;
@@ -865,28 +717,12 @@ function showSuccessMessageClassic() {
   container.scrollIntoView({ behavior: "smooth", block: "start" });
 
   document.getElementById("nextBtn").onclick = () => {
-    if (isDaily) {
-      window.location.href = "../index.html";
-    } else {
-      // en classique, on ré-affiche le panneau perso
-      const panel = document.getElementById("custom-panel");
-      if (panel) panel.style.display = "";
-      updatePreview();
-      setupGame();
-    }
+    // réaffiche perso
+    const panel = document.getElementById("custom-panel");
+    if (panel) panel.style.display = "";
+    document.getElementById("container").style.display = "none";
+    updatePreview();
   };
-}
-
-// --- Mode Parcours ---
-function launchParcoursRound() {
-  clearUIForNewGame();
-
-  // random stable
-  const rand = seededRandom(Date.now() + parcoursIndex * 37)();
-  targetAnime = animeData[Math.floor(rand * animeData.length)];
-
-  updateAideList();
-  updateScoreBar();
 }
 
 function showSuccessMessageParcours(roundScore) {
@@ -933,20 +769,29 @@ function showSuccessMessageParcours(roundScore) {
 
 function showSuccessMessage() {
   let roundScore =
-    MAX_SCORE - (attemptCount - 1) * TENTATIVE_COST - Object.values(indicesActivated).filter(Boolean).length * INDICE_COST;
+    MAX_SCORE -
+    (attemptCount - 1) * TENTATIVE_COST -
+    Object.values(indicesActivated).filter(Boolean).length * INDICE_COST;
+
   if (roundScore < 0) roundScore = 0;
 
   if (isParcours) {
     parcoursTotalScore += roundScore;
     showSuccessMessageParcours(roundScore);
-    launchFireworks();
   } else {
     showSuccessMessageClassic();
-    launchFireworks();
   }
 }
 
-// ========== TOOLTIP AIDE ==========
+function launchParcoursRound() {
+  clearUIForNewGame();
+  const rand = seededRandom(Date.now() + parcoursIndex * 37)();
+  targetAnime = animeData[Math.floor(rand * animeData.length)];
+  updateAideList();
+  updateScoreBar();
+}
+
+// ========== TOOLTIP ==========
 document.addEventListener("pointerdown", (e) => {
   const wrap = e.target.closest(".info-wrap");
   if (wrap && e.target.closest(".info-icon")) {
@@ -959,6 +804,17 @@ document.addEventListener("pointerdown", (e) => {
 });
 
 // ========== INIT ==========
+async function loadDatabaseOnce() {
+  if (ALL_TITLES) return ALL_TITLES;
+  const res = await fetch(DB_URL);
+  if (!res.ok) throw new Error("Erreur chargement " + DB_URL);
+  const json = await res.json();
+  const data = normalizeAnimeList(json);
+  if (!Array.isArray(data) || data.length === 0) throw new Error("Base vide ou format JSON non reconnu.");
+  ALL_TITLES = data;
+  return ALL_TITLES;
+}
+
 async function init() {
   try {
     await loadDatabaseOnce();
@@ -967,44 +823,25 @@ async function init() {
     return;
   }
 
-  // Defaults UI
   syncUIValues();
-
-  // Parcours
-  if (isParcours) {
-    document.getElementById("back-to-menu").style.display = "none";
-    isDaily = false;
-    parcoursIndex = 0;
-    parcoursTotalScore = 0;
-    if (DAILY_BANNER) DAILY_BANNER.style.display = "none";
-    const panel = document.getElementById("custom-panel");
-    if (panel) panel.style.display = "none";
-
-    // default filters for parcours (TV+Movie, 2000-2026, top 25% pop+score)
-    const opts = { popPercent: 0.25, scorePercent: 0.25, yearMin: 2000, yearMax: 2026, types: new Set(["TV", "Movie"]) };
-    animeData = filterTitles(ALL_TITLES, opts);
-
-    launchParcoursRound();
-    return;
-  }
-
   wireCustomizationUI();
   updatePreview();
 
-  // au chargement, on montre le panel et on masque le jeu jusqu'à "Lancer"
-  const panel = document.getElementById("custom-panel");
-  if (panel) panel.style.display = "";
+  // Au chargement : on affiche la personnalisation, pas le jeu
   document.getElementById("container").style.display = "none";
 
-  const applyBtn = document.getElementById("applyFiltersBtn");
-  if (applyBtn) {
-    applyBtn.addEventListener("click", () => {
-      if (applyBtn.disabled) return;
-      // afficher le jeu
-      document.getElementById("container").style.display = "";
-      // lancer
-      setupGame();
-    }, { once: false });
+  if (isParcours) {
+    document.getElementById("back-to-menu").style.display = "none";
+    document.getElementById("custom-panel").style.display = "none";
+    document.getElementById("container").style.display = "";
+
+    // Defaults parcours (TV+Movie, 2000-2026, top 25% pop + score)
+    const opts = { popPercent: 0.25, scorePercent: 0.25, yearMin: 2000, yearMax: 2026, types: new Set(["TV", "Movie"]) };
+    animeData = filterTitles(ALL_TITLES, opts);
+
+    parcoursIndex = 0;
+    parcoursTotalScore = 0;
+    launchParcoursRound();
   }
 }
 
