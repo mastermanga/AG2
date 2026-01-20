@@ -9,11 +9,11 @@
 </head>
 <body>
 
+  <!-- HEADER -->
   <header id="main-header">
     <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
       <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
-
-      <h1>🎤 Guess The Song 🎤</h1>
+      <h1>🎤 Guess The Opening 🎤</h1>
 
       <div class="header-right">
         <button id="themeToggle" class="toggle-btn">🌓</button>
@@ -27,9 +27,9 @@
           </span>
 
           <span class="info-tip" id="help-blind" role="tooltip">
-            Écoute la chanson en trois écoutes (Début, Refrain, puis Complet) et devine l’anime en trois tentatives maximum.
+            Écoute l’opening en trois extraits (15 premières secondes, refrain, puis version complète) et devine l’anime en trois tentatives maximum.
             Tu peux gagner jusqu’à 3000 points : chaque écoute supplémentaire coûte 1000 points.
-            Lors de la dernière écoute, tu peux demander un indice : 3 choix (500 points) ou 6 choix (1000 points).
+            Lors de la dernière écoute, choisis entre 3 ou 6 propositions : 3 choix rapportent 500 points, 6 choix rapportent 1000 points.
           </span>
         </span>
       </div>
@@ -37,111 +37,112 @@
   </header>
 
   <!-- ✅ PERSONNALISATION (affichée au chargement) -->
-  <div id="custom-panel" class="main-container custom-panel">
-    <h2 class="custom-title">⚙️ Personnalisation</h2>
+  <div id="custom-panel" class="main-container"
+       style="max-width: 900px; width: 98vw; padding: 1.7rem 1.8rem; margin: 0 auto 1.2rem auto;">
+    <h2 style="margin:0 0 1.0rem 0; text-align:center;">⚙️ Personnalisation</h2>
 
     <!-- Popularité -->
-    <div class="opt-row">
-      <div class="opt-label">Popularité</div>
-      <div class="opt-col">
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Popularité</div>
+      <div class="opt-col" style="flex:1; min-width:280px;">
         <input id="popPercent" type="range" min="5" max="100" step="5" value="25" />
-        <div class="opt-value">Top <span id="popPercentVal">25</span>%</div>
+        <div class="opt-value" style="margin-top:6px; font-weight:900; opacity:0.92; text-align:right;">
+          Top <span id="popPercentVal">25</span>%
+        </div>
       </div>
     </div>
 
     <!-- Score -->
-    <div class="opt-row">
-      <div class="opt-label">Score</div>
-      <div class="opt-col">
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Score</div>
+      <div class="opt-col" style="flex:1; min-width:280px;">
         <input id="scorePercent" type="range" min="5" max="100" step="5" value="25" />
-        <div class="opt-value">Top <span id="scorePercentVal">25</span>%</div>
+        <div class="opt-value" style="margin-top:6px; font-weight:900; opacity:0.92; text-align:right;">
+          Top <span id="scorePercentVal">25</span>%
+        </div>
       </div>
     </div>
 
     <!-- Années -->
-    <div class="opt-row">
-      <div class="opt-label">Années</div>
-      <div class="opt-col">
-        <div class="range-2">
-          <input id="yearMin" type="range" min="1950" max="2026" step="1" value="2000" />
-          <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026" />
-        </div>
-        <div class="opt-value">
-          <span id="yearMinVal">2000</span> → <span id="yearMaxVal">2026</span>
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Années</div>
+      <div class="opt-col" style="flex:1; min-width:280px;">
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; gap:12px; align-items:center;">
+            <input id="yearMin" type="range" min="1950" max="2026" step="1" value="2000" style="flex:1;">
+            <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026" style="flex:1;">
+          </div>
+          <div class="opt-value" style="font-weight:900; opacity:0.92; text-align:right;">
+            <span id="yearMinVal">2000</span> → <span id="yearMaxVal">2026</span>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- Types -->
-    <div class="opt-row">
-      <div class="opt-label">Types</div>
-      <div class="opt-col">
-        <div id="typePills" class="opt-pill-group">
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Types</div>
+      <div class="opt-col" style="flex:1; min-width:280px;">
+        <div id="typePills" class="opt-pill-group" style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
           <button type="button" class="pill active" data-type="Movie" aria-pressed="true">Movie</button>
           <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
           <button type="button" class="pill" data-type="ONA" aria-pressed="false">ONA</button>
           <button type="button" class="pill" data-type="Special" aria-pressed="false">Special</button>
         </div>
-        <div class="opt-hint">Choisis au moins 1 type.</div>
+        <div style="margin-top:8px; opacity:0.85; font-weight:700; font-size:0.95rem;">
+          Choisis au moins 1 type.
+        </div>
       </div>
     </div>
 
     <!-- Songs -->
-    <div class="opt-row">
-      <div class="opt-label">Songs</div>
-      <div class="opt-col">
-        <div id="songPills" class="opt-pill-group">
-          <button type="button" class="pill active" data-song="OP" aria-pressed="true">Openings</button>
-          <button type="button" class="pill active" data-song="ED" aria-pressed="true">Endings</button>
-          <button type="button" class="pill active" data-song="IN" aria-pressed="true">Insert Songs</button>
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Songs</div>
+      <div class="opt-col" style="flex:1; min-width:280px;">
+        <div id="songPills" class="opt-pill-group" style="display:flex; gap:10px; flex-wrap:wrap;">
+          <!-- ✅ Par défaut : OP seulement -->
+          <button type="button" class="pill active" data-song="OP" aria-pressed="true">Opening</button>
+          <button type="button" class="pill" data-song="ED" aria-pressed="false">Ending</button>
+          <button type="button" class="pill" data-song="IN" aria-pressed="false">Insert</button>
         </div>
-        <div class="opt-hint">Choisis au moins 1 type de chanson.</div>
+        <div style="margin-top:8px; opacity:0.85; font-weight:700; font-size:0.95rem;">
+          Choisis au moins 1 type de song.
+        </div>
       </div>
     </div>
 
     <!-- Preview + Start -->
-    <div id="previewCount" class="preview-count bad">
+    <div id="previewCount" class="preview-count bad"
+         style="margin-top:14px; width:100%; font-weight:900; text-align:center; padding:10px 12px; border-radius:14px; border:1px solid #00bcd455; background: rgba(0,0,0,0.15);">
       ⏳ Chargement de la base…
     </div>
 
-    <div class="start-wrap">
-      <button id="applyFiltersBtn" class="menu-btn start-btn" disabled>
+    <div style="display:flex; justify-content:center; margin-top:12px;">
+      <button id="applyFiltersBtn" class="menu-btn" style="font-size:1.05rem; padding:0.85rem 1.6rem;">
         ✅ Lancer avec ces réglages
       </button>
     </div>
   </div>
 
-  <!-- ✅ JEU (caché au départ, affiché après lancement) -->
+  <!-- ✅ JEU (caché au départ) -->
   <div id="game-panel">
     <div id="container">
       <!-- BARRE DE SCORE -->
       <div id="score-bar-container" style="margin-bottom:12px;">
         <div id="score-bar" style="width:100%;position:relative;">
-          <span id="score-bar-label"
-                style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-weight:bold;">
-            3000 / 3000
-          </span>
+          <span id="score-bar-label" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-weight:bold;">3000 / 3000</span>
         </div>
       </div>
 
       <div id="successContainer" style="display:none;"></div>
-
-      <!-- ✅ PLAYER WEBM -->
-      <div id="playerArea" class="player-area" style="display:none;">
-        <video id="audioPlayer" preload="metadata" playsinline></video>
-        <div class="player-meta">
-          <div id="songLabel" class="song-label"></div>
-          <div id="songStatus" class="song-status"></div>
-        </div>
-      </div>
 
       <div class="input-container">
         <input type="text" id="openingInput" placeholder="Entrez le nom d'un anime..." autocomplete="off" />
         <div id="suggestions" class="suggestions"></div>
       </div>
 
-      <div id="listen-buttons">
+      <div id="listen-buttons" style="display:flex; justify-content:center; gap:12px; margin-bottom:16px;">
         <button id="playTry1">Début</button>
         <button id="playTry2" disabled>Refrain</button>
         <button id="playTry3" disabled>Complet</button>
@@ -158,8 +159,12 @@
       <div id="timer"></div>
 
       <button id="nextBtn" style="display:none; margin-top:1.1rem;"></button>
-
       <canvas id="fireworks"></canvas>
+
+      <!-- ✅ PLAYER WEBM CACHÉ (révélé seulement à la fin) -->
+      <div id="playerWrapper" style="display:none;">
+        <video id="audioPlayer" preload="metadata" playsinline></video>
+      </div>
     </div>
   </div>
 
