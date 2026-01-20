@@ -52,7 +52,6 @@ function clampYearSliders() {
   let a = parseInt(minEl.value, 10);
   let b = parseInt(maxEl.value, 10);
   if (a > b) {
-    // swap
     [a, b] = [b, a];
     minEl.value = a;
     maxEl.value = b;
@@ -82,20 +81,22 @@ let indicesScoreRangeActivation = [0, 0];
 fetch("../data/licenses_only.json")
   .then((r) => r.json())
   .then((data) => {
-    // on prépare des champs utilitaires (évite bug + plus rapide)
-    allAnimes = (Array.isArray(data) ? data : []).map((a) => ({
-      ...a,
-      _title: getDisplayTitle(a),
-      _titleLower: getDisplayTitle(a).toLowerCase(),
-      _year: getYear(a),
-      _members: Number.isFinite(+a.members) ? +a.members : 0,
-      _score: Number.isFinite(+a.score) ? +a.score : 0,
-      _type: a.type || "Unknown",
-    }));
+    allAnimes = (Array.isArray(data) ? data : []).map((a) => {
+      const title = getDisplayTitle(a);
+      return {
+        ...a,
+        _title: title,
+        _titleLower: title.toLowerCase(),
+        _year: getYear(a),
+        _members: Number.isFinite(+a.members) ? +a.members : 0,
+        _score: Number.isFinite(+a.score) ? +a.score : 0,
+        _type: a.type || "Unknown",
+      };
+    });
 
     initPersonalisationUI();
-    updatePreview();          // calc le compteur
-    showCustomization();      // écran perso au chargement
+    updatePreview();
+    showCustomization();
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
 
@@ -148,7 +149,6 @@ function initPersonalisationUI() {
       return;
     }
 
-    // on lance
     showGame();
     startNewGame();
   });
@@ -203,7 +203,6 @@ function resetScoreBar() {
 }
 
 function startNewGame() {
-  // choisit un anime mystère DANS filteredBase
   targetAnime = filteredBase[Math.floor(Math.random() * filteredBase.length)];
 
   attemptCount = 0;
@@ -234,7 +233,7 @@ function startNewGame() {
   });
 
   resetScoreBar();
-  updateAideList();  // ✅ la liste ne sera plus vide
+  updateAideList();
   updateScoreBar();
 }
 
@@ -284,7 +283,6 @@ function updateScoreBar() {
   const scoreBar = document.getElementById("score-bar");
   const scoreBarLabel = document.getElementById("score-bar-label");
 
-  // même logique que ton ancien code : 1ère tentative ne retire pas 150 (tu retirais attemptCount-1)
   const indiceCount = Object.values(indicesActivated).filter(Boolean).length;
   const tentative = Math.max(0, attemptCount - 1);
 
@@ -316,11 +314,7 @@ document.getElementById("animeInput").addEventListener("input", function () {
 
   if (!input) return;
 
-  // matches dans le pool filtré
-  const matches = filteredBase
-    .filter((a) => a._titleLower.includes(input));
-
-  // randomize l’ordre (pour pas être "facile")
+  const matches = filteredBase.filter((a) => a._titleLower.includes(input));
   shuffleInPlace(matches);
 
   matches.slice(0, 5).forEach((anime) => {
@@ -350,15 +344,13 @@ function guessAnime() {
   attemptCount++;
   document.getElementById("counter").textContent = `Tentatives : ${attemptCount} (-150)`;
 
-  // --- Indices: recalcul disponibilité (même logique que ton script d’origine) ---
-
   // 1) Studio
   if (!indicesActivated.studio && guessedAnime.studio && guessedAnime.studio === targetAnime.studio) {
     indicesAvailable.studio = true;
     document.getElementById("btnIndiceStudio").disabled = false;
   }
 
-  // 2) Année (orange si année ok mais pas saison -> on n'a pas saison dans dataset, donc année seule)
+  // 2) Année
   if (!indicesActivated.saison && String(guessedAnime._year) === String(targetAnime._year)) {
     indicesAvailable.saison = true;
     document.getElementById("btnIndiceSaison").disabled = false;
@@ -377,7 +369,7 @@ function guessAnime() {
     document.getElementById("btnIndiceGenres").disabled = false;
   }
 
-  // 4) Score (orange si +/- 0.30)
+  // 4) Score (+/-0.30)
   const gScore = guessedAnime._score;
   const tScore = targetAnime._score;
 
@@ -398,19 +390,30 @@ function guessAnime() {
     document.getElementById("btnIndiceScore").disabled = false;
   }
 
-  // --- Affichage résultat (tableau) ---
+  // --- Affichage résultat ---
   const results = document.getElementById("results");
 
   if (attemptCount === 1) {
+    // ✅ header aligné : mêmes largeurs que les colonnes
     const header = document.createElement("div");
-    header.classList.add("row");
-    ["Image", "Titre", "Année", "Studio", "Genres / Thèmes", "Score"].forEach((label) => {
+    header.className = "header-row";
+
+    const defs = [
+      { label: "Image", cls: "header-cell header-image" },
+      { label: "Titre", cls: "header-cell header-title" },
+      { label: "Année", cls: "header-cell header-season" },
+      { label: "Studio", cls: "header-cell header-studio" },
+      { label: "Genres / Thèmes", cls: "header-cell header-genre" },
+      { label: "Score", cls: "header-cell header-score" },
+    ];
+
+    defs.forEach((d) => {
       const cell = document.createElement("div");
-      cell.classList.add("cell");
-      cell.style.fontWeight = "bold";
-      cell.textContent = label;
+      cell.className = d.cls;
+      cell.textContent = d.label;
       header.appendChild(cell);
     });
+
     results.insertBefore(header, results.firstChild);
   }
 
@@ -459,8 +462,8 @@ function guessAnime() {
   // Genres
   const cellGenres = document.createElement("div");
   cellGenres.classList.add("cell", "cell-genre");
-  const matches = allGuessed.filter((x) => allTarget.includes(x));
-  if (matches.length > 0) cellGenres.classList.add("orange");
+  const matchesG = allGuessed.filter((x) => allTarget.includes(x));
+  if (matchesG.length > 0) cellGenres.classList.add("orange");
   else cellGenres.classList.add("red");
   cellGenres.innerHTML = allGuessed.length ? allGuessed.join("<br>") : "—";
   row.appendChild(cellGenres);
@@ -481,8 +484,9 @@ function guessAnime() {
   row.appendChild(cellScore);
 
   // Insert under header
-  const header = results.querySelector(".row");
-  results.insertBefore(row, header.nextSibling);
+  const header = results.querySelector(".header-row") || results.querySelector(".row");
+  if (header) results.insertBefore(row, header.nextSibling);
+  else results.appendChild(row);
 
   // cleanup
   document.getElementById("animeInput").value = "";
@@ -509,7 +513,6 @@ function updateAideList() {
 
   let filtered = filteredBase;
 
-  // FILTRAGE selon indices activés
   if (indicesActivated.studio && indicesStudioAtActivation) {
     filtered = filtered.filter((a) => (a.studio || "") === indicesStudioAtActivation);
   }
@@ -529,17 +532,13 @@ function updateAideList() {
     filtered = filtered.filter((a) => a._score >= indicesScoreRange[0] && a._score <= indicesScoreRange[1]);
   }
 
-  // ✅ randomize l'affichage (sans limitation)
   const list = filtered.slice();
   shuffleInPlace(list);
 
   aideDiv.innerHTML =
     `<h3>🔍 Suggestions</h3><ul>` +
     list
-      .map(
-        (a) =>
-          `<li onclick="selectFromAide('${a._title.replace(/'/g, "\\'")}')">${a._title}</li>`
-      )
+      .map((a) => `<li onclick="selectFromAide('${a._title.replace(/'/g, "\\'")}')">${a._title}</li>`)
       .join("") +
     `</ul>`;
 }
@@ -598,7 +597,9 @@ function showSuccessMessage() {
   const container = document.getElementById("successContainer");
 
   let roundScore =
-    MAX_SCORE - Math.max(0, attemptCount - 1) * TENTATIVE_COST - Object.values(indicesActivated).filter(Boolean).length * INDICE_COST;
+    MAX_SCORE -
+    Math.max(0, attemptCount - 1) * TENTATIVE_COST -
+    Object.values(indicesActivated).filter(Boolean).length * INDICE_COST;
   if (roundScore < 0) roundScore = 0;
 
   container.innerHTML = `
