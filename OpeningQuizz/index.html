@@ -8,7 +8,6 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
   <!-- HEADER -->
   <header id="main-header">
     <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
@@ -36,9 +35,10 @@
     </div>
   </header>
 
-  <!-- ✅ PERSONNALISATION (affichée au chargement) -->
-  <div id="custom-panel" class="main-container"
-       style="max-width: 900px; width: 98vw; padding: 1.7rem 1.8rem; margin: 0 auto 1.2rem auto;">
+  <!-- =========================
+       ✅ PERSONNALISATION (AU DÉPART)
+  ========================== -->
+  <div id="custom-panel" class="main-container" style="max-width: 1400px; width: 98vw; padding: 1.7rem 1.8rem; margin: 0 auto 1.2rem auto;">
     <h2 style="margin:0 0 1.0rem 0; text-align:center;">⚙️ Personnalisation</h2>
 
     <!-- Popularité -->
@@ -63,7 +63,7 @@
       </div>
     </div>
 
-    <!-- Années -->
+    <!-- Années (double slider) -->
     <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
       <div class="opt-label" style="font-weight:900; min-width:160px;">Années</div>
       <div class="opt-col" style="flex:1; min-width:280px;">
@@ -96,12 +96,11 @@
       </div>
     </div>
 
-    <!-- Songs -->
+    <!-- Songs (Opening par défaut uniquement) -->
     <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
       <div class="opt-label" style="font-weight:900; min-width:160px;">Songs</div>
       <div class="opt-col" style="flex:1; min-width:280px;">
         <div id="songPills" class="opt-pill-group" style="display:flex; gap:10px; flex-wrap:wrap;">
-          <!-- ✅ Par défaut : OP seulement -->
           <button type="button" class="pill active" data-song="OP" aria-pressed="true">Opening</button>
           <button type="button" class="pill" data-song="ED" aria-pressed="false">Ending</button>
           <button type="button" class="pill" data-song="IN" aria-pressed="false">Insert</button>
@@ -112,9 +111,27 @@
       </div>
     </div>
 
+    <!-- ✅ Nombre de rounds -->
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Rounds</div>
+      <div class="opt-col" style="flex:1; min-width:280px; display:flex; gap:12px; align-items:center; justify-content:flex-end; flex-wrap:wrap;">
+        <input
+          id="roundCount"
+          type="number"
+          min="1"
+          max="50"
+          step="1"
+          value="5"
+          style="width:120px; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,188,212,0.35); background:rgba(0,0,0,0.18); color:inherit; font-weight:900; outline:none;"
+        />
+        <div style="opacity:0.85; font-weight:700; font-size:0.95rem;">
+          (1 à 50)
+        </div>
+      </div>
+    </div>
+
     <!-- Preview + Start -->
-    <div id="previewCount" class="preview-count bad"
-         style="margin-top:14px; width:100%; font-weight:900; text-align:center; padding:10px 12px; border-radius:14px; border:1px solid #00bcd455; background: rgba(0,0,0,0.15);">
+    <div id="previewCount" class="preview-count bad" style="margin-top:14px; width:100%; font-weight:900; text-align:center; padding:10px 12px; border-radius:14px; border:1px solid #00bcd455; background: rgba(0,0,0,0.15);">
       ⏳ Chargement de la base…
     </div>
 
@@ -125,8 +142,10 @@
     </div>
   </div>
 
-  <!-- ✅ JEU (caché au départ) -->
-  <div id="game-panel">
+  <!-- =========================
+       ✅ JEU (CACHÉ AU DÉPART)
+  ========================== -->
+  <div id="game-panel" style="display:none;">
     <div id="container">
       <!-- BARRE DE SCORE -->
       <div id="score-bar-container" style="margin-bottom:12px;">
@@ -137,9 +156,19 @@
 
       <div id="successContainer" style="display:none;"></div>
 
+      <!-- Round label -->
+      <div id="roundLabel" style="margin:0 0 8px 0; font-weight:900; opacity:0.9; text-align:center;"></div>
+
       <div class="input-container">
         <input type="text" id="openingInput" placeholder="Entrez le nom d'un anime..." autocomplete="off" />
         <div id="suggestions" class="suggestions"></div>
+      </div>
+
+      <!-- Volume (visible pendant la partie) -->
+      <div id="volumeRow" style="width:100%; max-width:520px; margin:10px auto 12px auto; display:flex; align-items:center; gap:12px; justify-content:center;">
+        <div style="font-weight:900; opacity:0.9;">🔊 Volume</div>
+        <input id="volumeSlider" type="range" min="0" max="100" value="50" style="flex:1; max-width:320px;">
+        <div id="volumeVal" style="min-width:44px; text-align:right; font-weight:900; opacity:0.9;">50%</div>
       </div>
 
       <div id="listen-buttons" style="display:flex; justify-content:center; gap:12px; margin-bottom:16px;">
@@ -157,13 +186,13 @@
       <div id="failedAttempts"></div>
       <div id="result"></div>
       <div id="timer"></div>
-
       <button id="nextBtn" style="display:none; margin-top:1.1rem;"></button>
+
       <canvas id="fireworks"></canvas>
 
-      <!-- ✅ PLAYER WEBM CACHÉ (révélé seulement à la fin) -->
-      <div id="playerWrapper" style="display:none;">
-        <video id="audioPlayer" preload="metadata" playsinline></video>
+      <!-- Player/audio (CACHÉ, REVEAL À LA FIN) -->
+      <div id="playerWrapper" style="display:none; width:100%; max-width:520px; margin:14px auto 0 auto;">
+        <audio id="audioPlayer" controls style="width:100%;"></audio>
       </div>
     </div>
   </div>
