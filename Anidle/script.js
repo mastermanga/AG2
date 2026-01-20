@@ -186,7 +186,7 @@ function updatePreview() {
   const btn = document.getElementById("applyFiltersBtn");
 
   const pool = applyFilters();
-  preview.textContent = `📚 Titres disponibles : ${pool.length} ${pool.length >= MIN_REQUIRED ? "(OK)" : "(trop peu)"}`;
+  preview.textContent = `📚 Titres disponibles : ${pool.length} ${pool.length >= MIN_REQUIRED ? "(OK)" : "(Min 64)"}`;
 
   preview.classList.toggle("good", pool.length >= MIN_REQUIRED);
   preview.classList.toggle("bad", pool.length < MIN_REQUIRED);
