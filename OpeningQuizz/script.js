@@ -1,5 +1,5 @@
 /* =========================================================
-   Guess The Opening (WebM) — licenses_only.json
+   Guess The Song (WebM) — licenses_only.json
    - Sans DAILY
    - Personnalisation (popularité, score, années, types, songs OP/ED/IN)
    - Player HTML5 <video> (WebM)
@@ -100,6 +100,10 @@ function getScoreBarColor(score) {
   return "linear-gradient(90deg,#444,#333 90%)";
 }
 
+let tries = 0;
+let indice6Used = false;
+let indice3Used = false;
+
 function updateScoreBar(finalScore = null) {
   let percent = 100;
   let label = "3000 / 3000";
@@ -135,23 +139,12 @@ function updateScoreBar(finalScore = null) {
 }
 
 // ========== INDICES STATE ==========
-let indice6Used = false;
-let indice3Used = false;
 let indiceActive = false;
 
 // ========== DATA / POOLS ==========
 let allLicenses = [];
 let allSongs = [];       // toutes les songs extraites
 let filteredSongs = [];  // pool après personnalisation
-
-// une entrée "song" standard
-// {
-//   animeId, animeTitle, animeTitleLower, year, type,
-//   members, score,
-//   kind: "opening" | "ending" | "insert",
-//   number, songName, artistsText,
-//   videoUrl
-// }
 
 function extractSongsFromLicense(lic) {
   const animeTitle = getDisplayTitle(lic);
@@ -174,7 +167,7 @@ function extractSongsFromLicense(lic) {
       type,
       members,
       score,
-      kind,
+      kind, // opening|ending|insert
       number: s.number ?? null,
       songName: s.name || "",
       artistsText: Array.isArray(s.artists) && s.artists.length ? s.artists.join(", ") : "—",
@@ -204,7 +197,6 @@ function buildAllSongs(data) {
   const songs = [];
   allLicenses.forEach((lic) => songs.push(...extractSongsFromLicense(lic)));
 
-  // enlever doublons évidents (même animeId + kind + number + videoUrl)
   const seen = new Set();
   const dedup = [];
   for (const s of songs) {
@@ -213,7 +205,6 @@ function buildAllSongs(data) {
     seen.add(key);
     dedup.push(s);
   }
-
   return dedup;
 }
 
@@ -249,7 +240,7 @@ function initPersonalisationUI() {
     });
   });
 
-  // pills songs
+  // pills songs (data-song = OP|ED|IN)
   document.querySelectorAll("#songPills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -268,6 +259,7 @@ function initPersonalisationUI() {
 
     // démarre jeu
     document.body.classList.add("game-started");
+
     if (isParcours) {
       parcoursIndex = 0;
       parcoursTotalScore = 0;
@@ -289,8 +281,11 @@ function applyFilters() {
   const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
-  const allowedKinds = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.kind);
-  if (allowedKinds.length === 0) return [];
+  const allowedSongCodes = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
+  if (allowedSongCodes.length === 0) return [];
+
+  // map OP/ED/IN -> kind dataset
+  const allowedKinds = allowedSongCodes.map((c) => (c === "OP" ? "opening" : c === "ED" ? "ending" : "insert"));
 
   // 1) année + type + kind
   let pool = allSongs.filter((s) =>
@@ -300,11 +295,11 @@ function applyFilters() {
     allowedKinds.includes(s.kind)
   );
 
-  // 2) popularité top % (par anime members)
+  // 2) popularité top %
   pool.sort((a, b) => b.members - a.members);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-  // 3) score top % (par anime score)
+  // 3) score top %
   pool.sort((a, b) => b.score - a.score);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
@@ -326,32 +321,15 @@ function updatePreview() {
 
 // ========== GAME STATE ==========
 let currentSong = null;
-let tries = 0;
-const maxTries = 3;
 let failedAnswers = [];
 let ended = false;
 
 // ========== PLAYER (HTML5 VIDEO) ==========
-const playerWrapper = document.getElementById("playerWrapper");
+let stopTimer = null;
 
 function ensurePlayer() {
-  // on veut un player unique
-  let area = document.getElementById("playerArea");
-  if (!area) {
-    area = document.createElement("div");
-    area.id = "playerArea";
-    area.className = "player-area";
-    area.innerHTML = `
-      <video id="webmPlayer" preload="metadata" controls playsinline></video>
-      <div class="player-meta">
-        <div class="song-label" id="songLabel"></div>
-        <div class="song-status" id="songStatus"></div>
-      </div>
-    `;
-    playerWrapper.innerHTML = "";
-    playerWrapper.appendChild(area);
-  }
-  return document.getElementById("webmPlayer");
+  // ton HTML possède <video id="audioPlayer">
+  return document.getElementById("audioPlayer");
 }
 
 function setPlayerMeta(text, status) {
@@ -362,18 +340,22 @@ function setPlayerMeta(text, status) {
 }
 
 function stopPlayer() {
-  const v = document.getElementById("webmPlayer");
+  const v = ensurePlayer();
   if (!v) return;
+  clearInterval(stopTimer);
   v.pause();
   try { v.currentTime = 0; } catch {}
 }
 
 function loadSongIntoPlayer(song) {
   const v = ensurePlayer();
-  playerWrapper.style.display = "block";
+  const area = document.getElementById("playerArea");
+  if (area) area.style.display = "block";
+
   setPlayerMeta("", "Préparation…");
 
-  // reset source
+  // reset
+  clearInterval(stopTimer);
   v.pause();
   v.removeAttribute("src");
   v.load();
@@ -388,19 +370,14 @@ function loadSongIntoPlayer(song) {
   v.onerror = () => {
     setPlayerMeta(formatSongLabel(song), "❌ Vidéo indisponible (serveur ou lien).");
   };
-
-  return v;
 }
-
-let stopTimer = null;
 
 function playSegment(startSec, durationSec) {
   const v = ensurePlayer();
-  if (!v.src) return;
+  if (!v || !v.src) return;
 
   clearInterval(stopTimer);
 
-  // sécurise start
   const start = Math.max(0, startSec || 0);
 
   const trySetTime = () => {
@@ -412,17 +389,16 @@ function playSegment(startSec, durationSec) {
     }
   };
 
-  // tente plusieurs fois si metadata pas encore ready
+  // essaie plusieurs fois (metadata parfois lente)
   let triesSet = 0;
-  const setIntervalId = setInterval(() => {
+  const setId = setInterval(() => {
     triesSet++;
     const ok = trySetTime();
     if (ok || triesSet >= 15) {
-      clearInterval(setIntervalId);
+      clearInterval(setId);
       v.play().catch(() => {});
       if (durationSec == null) return;
 
-      // pause à la fin
       stopTimer = setInterval(() => {
         if (v.currentTime >= start + durationSec) {
           v.pause();
@@ -595,17 +571,15 @@ function playTry(n) {
     if (opt) opt.remove();
   }
 
-  // segments : try2 = "refrain" -> on prend 50s si possible
+  // segments : try2 "refrain" = 50s
   let start = 0;
   if (tries === 2) start = 50;
   if (tries === 3) start = 0;
 
   const duration = TRY_DURATIONS[tries - 1];
 
-  // lecture segment
   playSegment(start, duration);
 
-  // enable/disable buttons
   document.getElementById("playTry1").disabled = true;
   document.getElementById("playTry2").disabled = (tries !== 1);
   document.getElementById("playTry3").disabled = (tries !== 2);
@@ -683,8 +657,6 @@ input.addEventListener("input", function () {
 
   const uniqueTitles = [...new Set(filteredSongs.map((s) => s.animeTitle))];
   let matches = uniqueTitles.filter((t) => t.toLowerCase().includes(val));
-
-  // random pour éviter ordre fixe
   shuffleInPlace(matches);
 
   matches.slice(0, 6).forEach((title) => {
@@ -718,7 +690,6 @@ document.addEventListener("click", (e) => {
 function computeScore() {
   if (tries === 1) return SCORE_TRY_1;
   if (tries === 2) return SCORE_TRY_2;
-  // tries === 3
   if (indice3Used) return SCORE_TRY_3_HINT_3;
   if (indice6Used) return SCORE_TRY_3_HINT_6;
   return SCORE_TRY_3_NO_HINT;
@@ -731,7 +702,7 @@ function checkAnswer(selectedTitle) {
   const answer = normalizeTitle(currentSong.animeTitle);
 
   if (guess === answer) {
-    let score = computeScore();
+    const score = computeScore();
 
     if (isParcours) {
       parcoursTotalScore += score;
@@ -747,11 +718,10 @@ function checkAnswer(selectedTitle) {
     return;
   }
 
-  // mauvaise réponse
   failedAnswers.push(selectedTitle);
   updateFailedAttempts();
 
-  if (tries >= maxTries) {
+  if (tries >= 3) {
     if (isParcours) {
       showVictoryParcours(0);
       blockInputsAll();
@@ -818,8 +788,6 @@ function showVictoryParcours(roundScore) {
     `<br>Score : <b>${roundScore}</b> / ${MAX_SCORE}` +
     `<br><span style="font-size:1.05em;">en ${tries} tentative${tries > 1 ? "s" : ""}.</span>`;
   resultDiv.className = roundScore > 0 ? "correct" : "incorrect";
-  if
-
   if (roundScore > 0) launchFireworks();
 
   const btn = document.getElementById("nextBtn");
@@ -920,12 +888,7 @@ fetch("../data/licenses_only.json")
   .then((r) => r.json())
   .then((data) => {
     allSongs = buildAllSongs(data);
-
-    // init UI perso
     initPersonalisationUI();
     updatePreview();
-
-    // si parcours: on laisse la personnalisation obligatoire (comme demandé)
-    // (pas de daily)
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
