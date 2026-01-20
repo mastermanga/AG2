@@ -611,3 +611,31 @@ body.light .preview-count.bad {
 @media (max-width: 600px) {
   .info-tip { width: min(320px, 86vw); }
 }
+
+/* ===== Header tableau aligné ===== */
+.header-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 6px;
+}
+
+.header-cell {
+  padding: 9px;
+  margin: 2px;
+  border-radius: 8px;
+  background: #0f2230;
+  border: 1.5px solid #00bcd4cc;
+  color: #00eaff;
+  font-weight: 900;
+  font-size: 1.02rem;
+  text-align: center;
+  box-shadow: 0 0 8px #00bcd433;
+}
+
+/* mêmes largeurs que les colonnes */
+.header-image  { min-width: 100px; max-width: 100px; }
+.header-title  { min-width: 180px; max-width: 180px; }
+.header-season { min-width: 120px; max-width: 120px; }
+.header-studio { min-width: 140px; max-width: 140px; }
+.header-genre  { min-width: 170px; max-width: 170px; }
+.header-score  { min-width: 110px; max-width: 110px; }
