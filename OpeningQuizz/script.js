@@ -4,20 +4,20 @@
  * - Personnalisation: popularité/score/années/types + songs(OP/ED/IN)
  * - Pas de daily
  * - Player caché pendant la partie, reveal à la fin
- * - Default: seulement Opening activé (ED/IN off)
- * - Extraction songs: utilise anime.song.openings/endings/inserts (structure que tu as donnée)
+ * - Rounds (enchaînés) + score total affiché à la fin
+ * - Volume slider pendant la partie
  **********************/
 
 const MAX_SCORE = 3000;
 
-// scoring (comme ton jeu)
+// scoring
 const SCORE_TRY1 = 3000;
 const SCORE_TRY2 = 2000;
 const SCORE_TRY3 = 1500;
 const SCORE_TRY3_WITH_6 = 1000;
 const SCORE_TRY3_WITH_3 = 500;
 
-const MIN_REQUIRED_SONGS = 62; // règle: il faut au moins 62 songs possibles
+const MIN_REQUIRED_SONGS = 64; // ✅ Min 64 (comme demandé)
 
 // ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
@@ -44,15 +44,11 @@ function getDisplayTitle(a) {
   );
 }
 
-function getYearFromSeasonStr(seasonStr) {
-  const s = (seasonStr || "").trim(); // ex: "spring 2013"
+function getYear(a) {
+  const s = (a.season || "").trim(); // ex: "spring 2013"
   const parts = s.split(/\s+/);
   const y = parseInt(parts[1] || parts[0] || "0", 10);
   return Number.isFinite(y) ? y : 0;
-}
-
-function getAnimeYear(a) {
-  return getYearFromSeasonStr(a.season);
 }
 
 function clampYearSliders() {
@@ -80,31 +76,27 @@ function safeNum(x) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function safeStr(x) {
-  return typeof x === "string" ? x : "";
-}
-
-// ====== Extraction songs (structure EXACTE de ton JSON) ======
+// ====== Songs extraction (structure: anime.song.openings/endings/inserts) ======
 function extractSongsFromAnime(anime) {
   const songs = [];
-  const songObj = anime.song || {};
-  const groups = [
+  const song = anime.song || {};
+  const buckets = [
     { key: "openings", type: "OP" },
     { key: "endings", type: "ED" },
     { key: "inserts", type: "IN" },
   ];
 
-  for (const g of groups) {
-    const list = Array.isArray(songObj[g.key]) ? songObj[g.key] : [];
-    for (const s of list) {
-      const url = safeStr(s.video);
-      if (!url) continue;
+  for (const b of buckets) {
+    const arr = Array.isArray(song[b.key]) ? song[b.key] : [];
+    for (const it of arr) {
+      const url = it.video || it.url || "";
+      if (!url || typeof url !== "string" || url.length < 6) continue;
 
-      const songSeason = safeStr(s.season) || safeStr(anime.season);
-      const songYear = getYearFromSeasonStr(songSeason);
+      const artistsArr = Array.isArray(it.artists) ? it.artists : [];
+      const artist = artistsArr.join(", ");
 
       songs.push({
-        animeMalId: anime.mal_id ?? anime.id ?? null,
+        animeMalId: anime.mal_id ?? null,
         animeTitle: anime._title,
         animeTitleLower: anime._titleLower,
         animeImage: anime.image || "",
@@ -113,12 +105,11 @@ function extractSongsFromAnime(anime) {
         animeMembers: anime._members,
         animeScore: anime._score,
 
-        songType: g.type, // OP/ED/IN
-        songNumber: safeNum(s.number) || 1,
-        songName: safeStr(s.name),
-        songArtists: Array.isArray(s.artists) ? s.artists.filter(Boolean) : [],
-        songSeason: songSeason,
-        songYear: songYear,
+        songType: b.type, // OP/ED/IN
+        songNumber: safeNum(it.number) || 1,
+        songName: it.name || "",
+        songArtist: artist || "",
+        songSeason: it.season || anime.season || "",
 
         url,
       });
@@ -128,13 +119,12 @@ function extractSongsFromAnime(anime) {
   return songs;
 }
 
-// Pour afficher le titre du song au reveal
-function formatRevealLine(song) {
-  const typeLabel = song.songType === "OP" ? "Opening" : song.songType === "ED" ? "Ending" : "Insert";
-  const num = song.songNumber ? ` ${song.songNumber}` : "";
-  const partName = song.songName ? ` : ${song.songName}` : "";
-  const by = song.songArtists && song.songArtists.length ? ` by ${song.songArtists.join(", ")}` : "";
-  return `${song.animeTitle} ${typeLabel}${num}${partName}${by}`;
+function formatRevealLine(s) {
+  const typeLabel = s.songType === "OP" ? "Opening" : s.songType === "ED" ? "Ending" : "Insert";
+  const num = s.songNumber ? ` ${s.songNumber}` : "";
+  const partName = s.songName ? ` : ${s.songName}` : "";
+  const by = s.songArtist ? ` - ${s.songArtist}` : "";
+  return `${s.animeTitle} ${typeLabel}${num}${partName}${by}`;
 }
 
 // ====== DOM refs ======
@@ -145,12 +135,15 @@ const popEl = document.getElementById("popPercent");
 const scoreEl = document.getElementById("scorePercent");
 const yearMinEl = document.getElementById("yearMin");
 const yearMaxEl = document.getElementById("yearMax");
+
 const popValEl = document.getElementById("popPercentVal");
 const scoreValEl = document.getElementById("scorePercentVal");
 const yearMinValEl = document.getElementById("yearMinVal");
 const yearMaxValEl = document.getElementById("yearMaxVal");
+
 const previewCountEl = document.getElementById("previewCount");
 const applyBtn = document.getElementById("applyFiltersBtn");
+const roundCountEl = document.getElementById("roundCount");
 
 const openingInput = document.getElementById("openingInput");
 const suggestionsDiv = document.getElementById("suggestions");
@@ -166,17 +159,26 @@ const btnIndice3 = document.getElementById("btnIndice3");
 const failedAttemptsDiv = document.getElementById("failedAttempts");
 const resultDiv = document.getElementById("result");
 const nextBtn = document.getElementById("nextBtn");
+const roundLabel = document.getElementById("roundLabel");
 
 const playerWrapper = document.getElementById("playerWrapper");
 const audioPlayer = document.getElementById("audioPlayer");
 
+const volumeSlider = document.getElementById("volumeSlider");
+const volumeVal = document.getElementById("volumeVal");
+
 // ====== Data ======
 let allAnimes = [];
-let allSongs = []; // toutes les songs extraites du dataset
-let filteredSongs = []; // pool après personnalisation
+let allSongs = [];
+let filteredSongs = [];
+
+// ====== Session (Rounds) ======
+let totalRounds = 5;
+let currentRound = 1;
+let totalScore = 0;
 
 // ====== Round state ======
-let currentSong = null; // song tirée au hasard
+let currentSong = null;
 let tries = 0;
 let failedAnswers = [];
 
@@ -184,12 +186,11 @@ let indice6Used = false;
 let indice3Used = false;
 let indiceActive = false;
 
-// lecture
 let stopTimer = null;
 const tryDurations = [15, 15, null]; // 3e écoute complète
 let currentStart = 0;
 
-// ====== UI: show/hide ======
+// ====== UI show/hide ======
 function showCustomization() {
   customPanel.style.display = "block";
   gamePanel.style.display = "none";
@@ -213,7 +214,6 @@ function updateScoreBar(forceScore = null) {
   const label = document.getElementById("score-bar-label");
 
   let score = 3000;
-
   if (forceScore !== null) {
     score = forceScore;
   } else {
@@ -231,17 +231,17 @@ function updateScoreBar(forceScore = null) {
   bar.style.background = getScoreBarColor(score);
 }
 
-// ====== Customisation UI init ======
-function initCustomUI() {
-  // Default demandé : seulement OP activé, ED/IN désactivés
-  // (au cas où le HTML aurait gardé active sur ED/IN)
-  document.querySelectorAll("#songPills .pill").forEach((btn) => {
-    const s = btn.dataset.song;
-    const shouldBeActive = s === "OP";
-    btn.classList.toggle("active", shouldBeActive);
-    btn.setAttribute("aria-pressed", shouldBeActive ? "true" : "false");
-  });
+// ====== Volume ======
+function applyVolume() {
+  if (!audioPlayer || !volumeSlider) return;
+  const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "50", 10)));
+  audioPlayer.volume = v / 100;
+  if (volumeVal) volumeVal.textContent = `${v}%`;
+}
+if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
 
+// ====== Custom UI init ======
+function initCustomUI() {
   function syncLabels() {
     clampYearSliders();
     popValEl.textContent = popEl.value;
@@ -273,15 +273,24 @@ function initCustomUI() {
 
   applyBtn.addEventListener("click", () => {
     filteredSongs = applyFilters();
-    if (filteredSongs.length < MIN_REQUIRED_SONGS) {
-      alert(`Pas assez de songs pour lancer (${filteredSongs.length}/${MIN_REQUIRED_SONGS}).`);
-      return;
-    }
+
+    // ✅ Min 64 + bouton grisé + label "Min 64"
+    if (filteredSongs.length < MIN_REQUIRED_SONGS) return;
+
+    totalRounds = clampInt(parseInt(roundCountEl.value || "5", 10), 1, 50);
+    currentRound = 1;
+    totalScore = 0;
+
     showGame();
     startNewRound();
   });
 
   syncLabels();
+}
+
+function clampInt(n, a, b) {
+  n = Number.isFinite(n) ? n : a;
+  return Math.max(a, Math.min(b, n));
 }
 
 // ====== Filters ======
@@ -296,17 +305,21 @@ function applyFilters() {
 
   if (allowedTypes.length === 0 || allowedSongs.length === 0) return [];
 
-  // 1) filtre par année de SONG (pas l'année de l'anime) + type de l'anime + songType
+  // 1) filtre par anime year/type + songType
   let pool = allSongs.filter((s) => {
-    const y = s.songYear || 0;
-    return y >= yearMin && y <= yearMax && allowedTypes.includes(s.animeType) && allowedSongs.includes(s.songType);
+    return (
+      s.animeYear >= yearMin &&
+      s.animeYear <= yearMax &&
+      allowedTypes.includes(s.animeType) &&
+      allowedSongs.includes(s.songType)
+    );
   });
 
-  // 2) top pop% (members anime)
+  // 2) top pop% par members (niveau anime)
   pool.sort((a, b) => b.animeMembers - a.animeMembers);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-  // 3) top score% (score anime)
+  // 3) top score% par score (niveau anime)
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
@@ -318,14 +331,18 @@ function updatePreview() {
   const pool = applyFilters();
   const ok = pool.length >= MIN_REQUIRED_SONGS;
 
-  previewCountEl.textContent = `🎵 Songs disponibles : ${pool.length} ${ok ? "(OK)" : "(trop peu)"}`;
+  previewCountEl.textContent = ok
+    ? `🎵 Songs disponibles : ${pool.length} (OK)`
+    : `🎵 Songs disponibles : ${pool.length} (Min ${MIN_REQUIRED_SONGS})`;
+
   previewCountEl.classList.toggle("good", ok);
   previewCountEl.classList.toggle("bad", !ok);
 
   applyBtn.disabled = !ok;
+  applyBtn.classList.toggle("disabled", !ok);
 }
 
-// ====== Audio playback ======
+// ====== Playback ======
 function stopPlayback() {
   if (stopTimer) {
     clearTimeout(stopTimer);
@@ -346,10 +363,9 @@ function playSegment(tryNum) {
 
   tries = tryNum;
   updateScoreBar();
-
   openingInput.disabled = false;
 
-  // indice only à la 3e écoute
+  // indices uniquement à la 3e écoute
   if (tries === 3) {
     indiceButtonsWrap.style.display = "flex";
     indiceActive = true;
@@ -364,48 +380,35 @@ function playSegment(tryNum) {
     if (old) old.remove();
   }
 
-  // start times: refrain vers ~50s
+  // start times: refrain ~50s
   currentStart = 0;
   if (tries === 2) currentStart = 50;
   if (tries === 3) currentStart = 0;
 
   // player caché pendant la partie
   playerWrapper.style.display = "none";
+  audioPlayer.controls = false; // ✅ pas de contrôles pendant la partie
+  audioPlayer.removeAttribute("controls");
 
   stopPlayback();
 
   audioPlayer.src = currentSong.url;
+  audioPlayer.currentTime = currentStart;
 
-  // IMPORTANT: mettre currentTime après metadata
-  const seekAndPlay = () => {
-    try {
-      audioPlayer.currentTime = currentStart;
-    } catch {}
-    audioPlayer.play().catch(() => {
-      resultDiv.textContent = "❌ Impossible de lire cette vidéo/audio.";
-      resultDiv.className = "incorrect";
-    });
+  applyVolume();
 
-    const duration = tryDurations[tries - 1];
-    if (duration != null) {
-      stopTimer = setTimeout(() => {
-        audioPlayer.pause();
-      }, duration * 1000);
-    }
-  };
+  audioPlayer.play().catch(() => {
+    resultDiv.textContent = "❌ Impossible de lire cette vidéo/audio.";
+    resultDiv.className = "incorrect";
+  });
 
-  if (audioPlayer.readyState >= 1) {
-    seekAndPlay();
-  } else {
-    const onMeta = () => {
-      audioPlayer.removeEventListener("loadedmetadata", onMeta);
-      seekAndPlay();
-    };
-    audioPlayer.addEventListener("loadedmetadata", onMeta);
-    audioPlayer.load();
+  const duration = tryDurations[tries - 1];
+  if (duration != null) {
+    stopTimer = setTimeout(() => {
+      audioPlayer.pause();
+    }, duration * 1000);
   }
 
-  // boutons d'écoute
   playTry1Btn.disabled = true;
   playTry2Btn.disabled = tries !== 1;
   playTry3Btn.disabled = tries !== 2;
@@ -499,11 +502,17 @@ function resetControls() {
   resetIndice();
   stopPlayback();
 
-  // cache le player (révèle à la fin uniquement)
+  // cache player + pas de controls pendant la partie
   playerWrapper.style.display = "none";
   audioPlayer.controls = false;
+  audioPlayer.removeAttribute("controls");
 
   updateScoreBar(3000);
+
+  // label round
+  if (roundLabel) {
+    roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
+  }
 }
 
 function startNewRound() {
@@ -511,22 +520,18 @@ function startNewRound() {
 
   currentSong = filteredSongs[Math.floor(Math.random() * filteredSongs.length)];
 
+  // prepare
   audioPlayer.src = currentSong.url;
   audioPlayer.preload = "metadata";
+  applyVolume();
 
-  // active le premier bouton quand metadata est OK
-  const onMeta = () => {
-    audioPlayer.removeEventListener("loadedmetadata", onMeta);
+  audioPlayer.onloadedmetadata = () => {
     playTry1Btn.disabled = false;
   };
-  audioPlayer.addEventListener("loadedmetadata", onMeta);
 
   audioPlayer.onerror = () => {
-    // si erreur de chargement, on relance une autre song
-    startNewRound();
+    startNewRound(); // retry another
   };
-
-  audioPlayer.load();
 }
 
 // ====== Guess logic ======
@@ -544,14 +549,43 @@ function finalScore() {
 }
 
 function revealSongAndPlayer() {
-  // reveal player + infos seulement à la fin
+  // reveal uniquement à la fin
   playerWrapper.style.display = "block";
   audioPlayer.controls = true;
+  audioPlayer.setAttribute("controls", "controls");
+  // taille OK via wrapper (max-width 520px)
+}
 
-  // on repart au début si possible (plus agréable)
-  try {
-    audioPlayer.currentTime = 0;
-  } catch {}
+function endRoundAndMaybeNext(roundScore, won) {
+  totalScore += roundScore;
+
+  // si dernier round -> affiche score total, bouton retour perso
+  if (currentRound >= totalRounds) {
+    const msg = won ? "✅ Série terminée !" : "✅ Série terminée !";
+    resultDiv.innerHTML += `<div style="margin-top:10px; font-weight:900; opacity:0.95;">${msg}<br>Score total : <b>${totalScore}</b> / <b>${totalRounds * 3000}</b></div>`;
+
+    nextBtn.style.display = "block";
+    nextBtn.textContent = "Retour réglages";
+    nextBtn.onclick = () => {
+      showCustomization();
+      // on remet le jeu “propre”
+      stopPlayback();
+      playerWrapper.style.display = "none";
+      openingInput.value = "";
+      suggestionsDiv.innerHTML = "";
+      resultDiv.textContent = "";
+      failedAttemptsDiv.textContent = "";
+    };
+    return;
+  }
+
+  // sinon, round suivant
+  nextBtn.style.display = "block";
+  nextBtn.textContent = "Round suivant";
+  nextBtn.onclick = () => {
+    currentRound += 1;
+    startNewRound();
+  };
 }
 
 function checkAnswer(selectedTitle) {
@@ -562,11 +596,7 @@ function checkAnswer(selectedTitle) {
 
   if (good) {
     const score = finalScore();
-
-    // ⚠️ ne pas révéler image / titre song avant la fin: on ne met que maintenant
-    resultDiv.innerHTML = `🎉 Bravo !<br><b>${currentSong.animeTitle}</b><br><em>${formatRevealLine(
-      currentSong
-    )}</em><br><span style="font-size:1.05em;">Score : <b>${score}</b> / 3000</span>`;
+    resultDiv.innerHTML = `🎉 Bravo !<br><b>${currentSong.animeTitle}</b><br><em>${formatRevealLine(currentSong)}</em><br><span style="font-size:1.05em;">Score : <b>${score}</b> / 3000</span>`;
     resultDiv.className = "correct";
 
     stopPlayback();
@@ -574,36 +604,30 @@ function checkAnswer(selectedTitle) {
     launchFireworks();
 
     blockInputsAll();
-    nextBtn.style.display = "block";
-    nextBtn.textContent = "Rejouer";
-    nextBtn.onclick = () => startNewRound();
-
     updateScoreBar(score);
+
+    endRoundAndMaybeNext(score, true);
     return;
   }
 
-  // mauvaise réponse
+  // wrong
   failedAnswers.push(selectedTitle);
   updateFailedAttempts();
 
   if (tries >= 3) {
-    // perdu
-    resultDiv.innerHTML = `🔔 Réponse : <b>${currentSong.animeTitle}</b><br><em>${formatRevealLine(
-      currentSong
-    )}</em>`;
+    // lost
+    resultDiv.innerHTML = `🔔 Réponse : <b>${currentSong.animeTitle}</b><br><em>${formatRevealLine(currentSong)}</em>`;
     resultDiv.className = "incorrect";
 
     stopPlayback();
     revealSongAndPlayer();
 
     blockInputsAll();
-    nextBtn.style.display = "block";
-    nextBtn.textContent = "Rejouer";
-    nextBtn.onclick = () => startNewRound();
-
     updateScoreBar(0);
+
+    endRoundAndMaybeNext(0, false);
   } else {
-    // écouter l’extrait suivant avant de retenter
+    // must listen next segment before guessing again
     openingInput.disabled = true;
   }
 }
@@ -662,7 +686,7 @@ playTry1Btn.addEventListener("click", () => playSegment(1));
 playTry2Btn.addEventListener("click", () => playSegment(2));
 playTry3Btn.addEventListener("click", () => playSegment(3));
 
-// ====== Tooltip (info) ======
+// ====== Tooltip ======
 document.addEventListener("click", (e) => {
   const icon = e.target.closest(".info-icon");
   if (!icon) return;
@@ -729,23 +753,24 @@ fetch("../data/licenses_only.json")
         ...a,
         _title: title,
         _titleLower: title.toLowerCase(),
-        _year: getAnimeYear(a),
+        _year: getYear(a),
         _members: Number.isFinite(+a.members) ? +a.members : 0,
         _score: Number.isFinite(+a.score) ? +a.score : 0,
         _type: a.type || "Unknown",
       };
     });
 
-    // extraction des songs (structure donnée)
     allSongs = [];
     for (const a of allAnimes) {
       allSongs.push(...extractSongsFromAnime(a));
     }
 
+    // init UI
     initCustomUI();
     updatePreview();
     showCustomization();
+
+    // volume init
+    applyVolume();
   })
-  .catch((e) => {
-    alert("Erreur chargement dataset: " + e.message);
-  });
+  .catch((e) => alert("Erreur chargement dataset: " + e.message));
