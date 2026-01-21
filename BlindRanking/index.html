@@ -90,9 +90,9 @@
       <div class="opt-label">Types</div>
       <div class="opt-col">
         <div id="typePills" class="opt-pill-group">
-          <!-- ✅ TV seul actif par défaut -->
+          <!-- ✅ TV + Movie actifs par défaut -->
           <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
-          <button type="button" class="pill active" data-type="Movie" aria-pressed="false">Movie</button>
+          <button type="button" class="pill active" data-type="Movie" aria-pressed="true">Movie</button>
           <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
           <button type="button" class="pill" data-type="ONA" aria-pressed="false">ONA</button>
           <button type="button" class="pill" data-type="Special" aria-pressed="false">Special</button>
@@ -156,12 +156,11 @@
 
           <!-- Player (Songs) -->
           <div id="player-zone" style="display:none;">
-            <video id="songPlayer" controls preload="metadata"></video>
+            <video id="songPlayer" controls preload="metadata" playsinline></video>
           </div>
 
           <div id="rank-section">
             <div class="rank-button" id="rankButtons">
-              <!-- JS injecte / attache les events -->
               <button data-rank="1">1</button>
               <button data-rank="2">2</button>
               <button data-rank="3">3</button>
