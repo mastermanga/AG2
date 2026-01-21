@@ -9,7 +9,7 @@
 </head>
 
 <body>
-  <!-- HEADER -->
+  <!-- HEADER (même structure que Opening Quizz pour l’alignement SVG) -->
   <header id="main-header">
     <div class="header-inner">
       <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
@@ -35,7 +35,9 @@
     </div>
   </header>
 
-  <!-- PERSONNALISATION -->
+  <!-- =========================
+       ✅ PERSONNALISATION (AU DÉPART)
+  ========================== -->
   <div id="custom-panel" class="main-container">
     <h2>⚙️ Personnalisation</h2>
 
@@ -85,7 +87,7 @@
       <div class="opt-value"></div>
     </div>
 
-    <!-- Rounds -->
+    <!-- Rounds (à droite, comme image 3) -->
     <div class="opt-row">
       <div class="opt-label">Rounds</div>
       <div class="opt-col"></div>
@@ -95,7 +97,7 @@
       </div>
     </div>
 
-    <!-- Preview count -->
+    <!-- Preview count (barre large comme image 3) -->
     <div id="previewCount" class="preview-count bad">
       ⏳ Chargement de la base…
     </div>
@@ -107,18 +109,26 @@
     </div>
   </div>
 
-  <!-- JEU -->
+  <!-- =========================
+       ✅ JEU (CACHÉ AU DÉPART)
+       ✅ (INTACT)
+  ========================== -->
   <div id="game-panel" style="display:none;">
     <div id="container">
+      <!-- BARRE DE SCORE -->
       <div id="score-bar-container">
         <div id="score-bar" style="width:100%;position:relative;">
           <span id="score-bar-label">3000 / 3000</span>
         </div>
       </div>
 
+      <!-- Round label -->
       <div id="roundLabel"></div>
+
+      <!-- Images persos -->
       <div id="character-container"></div>
 
+      <!-- Input + suggestions -->
       <div id="controls">
         <div class="input-container">
           <input type="text" id="characterInput" placeholder="Entrez le nom d'un anime..." autocomplete="off" />
