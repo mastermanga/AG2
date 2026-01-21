@@ -1,48 +1,146 @@
-// === MENU & THEME ===
-document.getElementById("back-to-menu").addEventListener("click", function() {
+/**********************
+ * Character Quizz (CLASSIC ONLY)
+ * - Dataset: ../data/licenses_only.json (format MAL + characters/top_characters)
+ * - Personnalisation: popularité/score/années/types + rounds
+ * - Pas de daily
+ **********************/
+
+const MAX_SCORE = 3000;
+const MIN_REQUIRED = 64;
+
+// ====== MENU + THEME ======
+document.getElementById("back-to-menu").addEventListener("click", () => {
   window.location.href = "../index.html";
 });
+
 document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
-  const isLight = document.body.classList.contains("light");
-  localStorage.setItem("theme", isLight ? "light" : "dark");
-});
-window.addEventListener("DOMContentLoaded", () => {
-  const savedTheme = localStorage.getItem("theme");
-  if (savedTheme === "light") document.body.classList.add("light");
+  localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
 
-function updateScoreBar(score = 3000) {
-  let percent = Math.max(0, Math.min(100, score / 3000 * 100));
-  document.getElementById("score-bar").style.width = percent + "%";
-  document.getElementById("score-bar-label").textContent = `${score} / 3000`;
-  // Pour la couleur dynamique :
-  if (score === 3000) document.getElementById("score-bar").style.background = "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
-  else if (score >= 2000) document.getElementById("score-bar").style.background = "linear-gradient(90deg,#fff96a,#ffc34b 90%)";
-  else if (score >= 1000) document.getElementById("score-bar").style.background = "linear-gradient(90deg,#ffb347,#fd654c 90%)";
-  else if (score > 0) document.getElementById("score-bar").style.background = "linear-gradient(90deg,#fd654c,#cb202d 90%)";
-  else document.getElementById("score-bar").style.background = "linear-gradient(90deg,#444,#333 90%)";
+window.addEventListener("DOMContentLoaded", () => {
+  if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
+});
+
+// ====== HELPERS ======
+function getDisplayTitle(a) {
+  return (
+    a.title_english ||
+    a.title_mal_default ||
+    a.title_original ||
+    a.title ||
+    (a.animethemes && a.animethemes.name) ||
+    "Titre inconnu"
+  );
 }
 
+function getYear(a) {
+  const s = (a.season || "").trim(); // ex "spring 2013"
+  const parts = s.split(/\s+/);
+  const y = parseInt(parts[1] || parts[0] || "0", 10);
+  return Number.isFinite(y) ? y : 0;
+}
+
+function clampYearSliders() {
+  const minEl = document.getElementById("yearMin");
+  const maxEl = document.getElementById("yearMax");
+  let a = parseInt(minEl.value, 10);
+  let b = parseInt(maxEl.value, 10);
+  if (a > b) {
+    [a, b] = [b, a];
+    minEl.value = a;
+    maxEl.value = b;
+  }
+}
+
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function safeArray(x) {
+  return Array.isArray(x) ? x : [];
+}
+
+// Sélection des persos: on prend une liste (top_characters si dispo, sinon characters),
+// puis on la coupe en 6 groupes et on pick 1 random par groupe.
+function splitCharacters(characters) {
+  const N = characters.length;
+
+  if (N < 6) {
+    const groups = [];
+    for (let i = 0; i < 6; i++) groups.push(i < N ? [characters[i]] : []);
+    return groups;
+  }
+
+  const baseSize = Math.floor(N / 6);
+  const surplus = N % 6;
+  const groupSizes = Array(6).fill(baseSize);
+
+  // surplus sur les derniers groupes (souvent plus "populaires" si la liste est triée)
+  for (let i = 0; i < surplus; i++) groupSizes[5 - i] += 1;
+
+  const groups = [];
+  let start = 0;
+  for (let i = 0; i < 6; i++) {
+    groups.push(characters.slice(start, start + groupSizes[i]));
+    start += groupSizes[i];
+  }
+  return groups;
+}
+
+function pickRandomPerGroup(characters) {
+  const groups = splitCharacters(characters);
+  return groups
+    .map((g) => {
+      if (g.length === 0) return null;
+      if (g.length === 1) return g[0];
+      return g[Math.floor(Math.random() * g.length)];
+    })
+    .filter(Boolean);
+}
+
+// ====== SCORE BAR ======
+function updateScoreBar(score = 3000) {
+  const bar = document.getElementById("score-bar");
+  const label = document.getElementById("score-bar-label");
+  const percent = Math.max(0, Math.min(100, (score / 3000) * 100));
+
+  bar.style.width = percent + "%";
+  label.textContent = `${score} / 3000`;
+
+  if (score === 3000) bar.style.background = "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
+  else if (score >= 2000) bar.style.background = "linear-gradient(90deg,#fff96a,#ffc34b 90%)";
+  else if (score >= 1000) bar.style.background = "linear-gradient(90deg,#ffb347,#fd654c 90%)";
+  else if (score > 0) bar.style.background = "linear-gradient(90deg,#fd654c,#cb202d 90%)";
+  else bar.style.background = "linear-gradient(90deg,#444,#333 90%)";
+}
+
+// ====== FIREWORKS ======
 function launchFireworks() {
   const canvas = document.getElementById("fireworks");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
+
   const particles = [];
   function createParticle(x, y) {
     const angle = Math.random() * 2 * Math.PI;
     const speed = Math.random() * 5 + 2;
     return { x, y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 60 };
   }
-  for (let i = 0; i < 80; i++) {
-    particles.push(createParticle(canvas.width / 2, canvas.height / 2));
-  }
+
+  for (let i = 0; i < 80; i++) particles.push(createParticle(canvas.width / 2, canvas.height / 2));
+
   function animate() {
     ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    particles.forEach(p => {
+
+    particles.forEach((p) => {
       ctx.beginPath();
       ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
       ctx.fillStyle = `hsl(${Math.random() * 360}, 100%, 50%)`;
@@ -52,57 +150,33 @@ function launchFireworks() {
       p.dy += 0.05;
       p.life--;
     });
+
     for (let i = particles.length - 1; i >= 0; i--) {
       if (particles[i].life <= 0) particles.splice(i, 1);
     }
+
     if (particles.length > 0) requestAnimationFrame(animate);
     else ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
   animate();
 }
 
+// ====== DOM REFS ======
+const customPanel = document.getElementById("custom-panel");
+const gamePanel = document.getElementById("game-panel");
 
-// === MODE PARCOURS ? ===
-const urlParams = new URLSearchParams(window.location.search);
-const isParcours = urlParams.get("parcours") === "1";
-const parcoursCount = parseInt(urlParams.get("count") || "1", 10);
-let parcoursIndex = 0;
-let parcoursTotalScore = 0;
+const popEl = document.getElementById("popPercent");
+const scoreEl = document.getElementById("scorePercent");
+const yearMinEl = document.getElementById("yearMin");
+const yearMaxEl = document.getElementById("yearMax");
+const popValEl = document.getElementById("popPercentVal");
+const scoreValEl = document.getElementById("scorePercentVal");
+const yearMinValEl = document.getElementById("yearMinVal");
+const yearMaxValEl = document.getElementById("yearMaxVal");
+const previewCountEl = document.getElementById("previewCount");
+const applyBtn = document.getElementById("applyFiltersBtn");
+const roundsInputEl = document.getElementById("roundsCount");
 
-// === DAILY SYSTEME (SEEDING DETERMINISTE) ===
-let isDaily = !isParcours;
-const DAILY_BANNER = document.getElementById("daily-banner");
-const DAILY_STATUS = document.getElementById("daily-status");
-const DAILY_SCORE = document.getElementById("daily-score");
-const SWITCH_MODE_BTN = document.getElementById("switch-mode-btn");
-
-function getTodayString() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function simpleHash(str) {
-  let hash = 5381;
-  for (let i = 0; i < str.length; i++) hash = ((hash << 5) + hash) + str.charCodeAt(i);
-  return Math.abs(hash) >>> 0;
-}
-function getDailyIndex(len) {
-  const dateStr = getTodayString();
-  const hash = simpleHash(dateStr + "|" + "characterquizz");
-  return hash % len;
-}
-
-const todayString = getTodayString();
-const SCORE_KEY = `dailyScore_characterquizz_${todayString}`;
-const STARTED_KEY = `dailyStarted_characterquizz_${todayString}`;
-
-let dailyPlayed = false;
-let dailyScore = null;
-
-// === VARIABLES & DOM ===
 const container = document.getElementById("character-container");
 const feedback = document.getElementById("feedback");
 const timerDisplay = document.getElementById("timer");
@@ -111,192 +185,180 @@ const submitBtn = document.getElementById("submit-btn");
 const restartBtn = document.getElementById("restart-btn");
 const suggestions = document.getElementById("suggestions");
 
+// ====== DATA ======
 let allAnimes = [];
+let filteredBase = []; // pool après personnalisation
+
+// ====== ROUNDS STATE ======
+let roundsTotal = 5;
+let roundsLeft = 0;
+let totalScore = 0;
+
+// ====== GAME STATE ======
 let currentAnime = null;
 let revealedCount = 0;
 let gameEnded = false;
-let countdown = 5;
+
+let countdown = 7;
 let countdownInterval = null;
 
-let parcoursPool = [];
+let visibleCharacters = []; // persos affichés (6 max)
 
-// --- NOUVELLE LOGIQUE DE GROUPES & RANDOM ---
-function splitCharacters(characters) {
-  const N = characters.length;
-  // Cas particulier : moins de 6 persos, retourner des groupes "vides" ou d'1
-  if (N < 6) {
-    let groups = [];
-    for (let i = 0; i < 6; i++) {
-      if (i < N) groups.push([characters[i]]);
-      else groups.push([]);
-    }
-    return groups;
-  }
-  const baseSize = Math.floor(N / 6);
-  const surplus = N % 6;
-  let groupSizes = Array(6).fill(baseSize);
-  // Les plus populaires (fin du tableau) prennent le surplus
-  for (let i = 0; i < surplus; i++) {
-    groupSizes[5 - i] += 1;
-  }
-  let groups = [];
-  let start = 0;
-  for (let i = 0; i < 6; i++) {
-    groups.push(characters.slice(start, start + groupSizes[i]));
-    start += groupSizes[i];
-  }
-  return groups;
-}
-function pickRandomPerGroup(characters) {
-  // Prend 1 random par groupe parmi 6 groupes
-  const groups = splitCharacters(characters);
-  // Retourne que les persos sélectionnés (par groupe), ignore les groupes vides
-  return groups.map(group => {
-    if (group.length === 0) return null;
-    if (group.length === 1) return group[0];
-    return group[Math.floor(Math.random() * group.length)];
-  }).filter(Boolean);
+// ====== UI show/hide ======
+function showCustomization() {
+  if (customPanel) customPanel.style.display = "block";
+  if (gamePanel) gamePanel.style.display = "none";
 }
 
-// ---- DAILY LOGIC / MODE SWITCH ----
-if (SWITCH_MODE_BTN) {
-  SWITCH_MODE_BTN.onclick = () => {
-    isDaily = !isDaily;
-    startNewGame();
-  };
-}
-function updateSwitchModeBtn() {
-  if (!SWITCH_MODE_BTN) return;
-  if (isDaily) {
-    SWITCH_MODE_BTN.textContent = "Passer en mode Classique";
-    SWITCH_MODE_BTN.style.backgroundColor = "#42a5f5";
-  } else {
-    SWITCH_MODE_BTN.textContent = "Revenir au Daily";
-    SWITCH_MODE_BTN.style.backgroundColor = "#00bcd4";
-  }
-}
-function showDailyBanner() {
-  if (!DAILY_BANNER) return;
-  DAILY_BANNER.style.display = "flex";
-  updateSwitchModeBtn();
-  if (dailyPlayed) {
-    DAILY_STATUS.innerHTML = `✅ <b>Daily du jour déjà jouée !</b>`;
-    DAILY_SCORE.innerHTML = `Score : <b>${dailyScore} pts</b>`;
-  } else {
-    DAILY_STATUS.innerHTML = "🎲 Daily du jour :";
-    DAILY_SCORE.innerHTML = "";
-  }
+function showGame() {
+  if (customPanel) customPanel.style.display = "none";
+  if (gamePanel) gamePanel.style.display = "block";
 }
 
-// ---- CHARGEMENT DATA ----
-async function loadAnimes() {
-  try {
-    const response = await fetch('../data/animes.json');
-    allAnimes = await response.json();
-    if (isParcours) {
-      parcoursIndex = 0;
-      parcoursTotalScore = 0;
-      parcoursPool = [...allAnimes];
-      startNewParcoursRound();
-    } else {
-      startNewGame();
-    }
-  } catch (error) {
-    timerDisplay.textContent = "Erreur de chargement des données.";
-    console.error(error);
-  }
-}
-
-// --- START/RESET/CLASSIC/DAILY ---
-function startNewGame() {
-  dailyScore = localStorage.getItem(SCORE_KEY);
-  dailyPlayed = !!dailyScore;
-  updateScoreBar(3000);
-  if (isDaily && allAnimes.length > 0) {
-    // Marque le daily comme commencé si pas déjà fini
-    if (localStorage.getItem(STARTED_KEY) && !localStorage.getItem(SCORE_KEY)) {
-      dailyPlayed = true;
-      dailyScore = 0;
-      showDailyBanner();
-      showSuccessDailyMsg();
-      blockInputs();
-      return;
-    }
-    // Sélection déterministe du daily (identique pour tous)
-    const animeIdx = getDailyIndex(allAnimes.length);
-    currentAnime = allAnimes[animeIdx];
-    localStorage.setItem(STARTED_KEY, "1");
-    showDailyBanner();
-    if (dailyPlayed) {
-      showSuccessDailyMsg();
-      blockInputs();
-      return;
-    }
-  } else if (allAnimes.length > 0) {
-    currentAnime = allAnimes[Math.floor(Math.random() * allAnimes.length)];
-    if (DAILY_BANNER) DAILY_BANNER.style.display = "none";
-    unlockClassicInputs();
+// ====== PERSONALISATION UI INIT ======
+function initPersonalisationUI() {
+  function syncLabels() {
+    clampYearSliders();
+    popValEl.textContent = popEl.value;
+    scoreValEl.textContent = scoreEl.value;
+    yearMinValEl.textContent = yearMinEl.value;
+    yearMaxValEl.textContent = yearMaxEl.value;
+    updatePreview();
   }
 
-  // --- NOUVELLE SÉLECTION DE PERSOS À AFFICHER ---
-  let selectedCharacters = pickRandomPerGroup(currentAnime.characters);
-  // Reset de tout
-  container.innerHTML = '';
-  feedback.textContent = '';
-  feedback.className = "";
-  revealedCount = 0;
-  gameEnded = false;
-  restartBtn.style.display = 'none';
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
 
-  // Affiche tous les persos masqués
-  selectedCharacters.forEach((char, i) => {
-    const img = document.createElement("img");
-    img.src = char.image;
-    img.alt = char.name;
-    img.className = "character-img";
-    img.id = "char-" + i;
-    img.style.display = "none";
-    container.appendChild(img);
+  // rounds input guard
+  if (roundsInputEl) {
+    roundsInputEl.addEventListener("input", () => {
+      let v = parseInt(roundsInputEl.value || "1", 10);
+      if (!Number.isFinite(v)) v = 1;
+      v = Math.max(1, Math.min(50, v));
+      roundsInputEl.value = String(v);
+    });
+  }
+
+  // type pills
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      updatePreview();
+    });
   });
 
-  // On garde la liste sélectionnée dans currentAnime.visibleCharacters pour revealNextCharacter
-  currentAnime.visibleCharacters = selectedCharacters;
+  applyBtn.addEventListener("click", () => {
+    filteredBase = applyFilters();
 
-  revealNextCharacter();
+    if (filteredBase.length < MIN_REQUIRED) {
+      alert(`Pas assez de titres pour lancer (${filteredBase.length}/${MIN_REQUIRED}).`);
+      return;
+    }
 
-  input.disabled = false;
-  input.value = '';
-  submitBtn.disabled = true;
-  input.focus();
+    roundsTotal = Math.max(1, Math.min(50, parseInt(roundsInputEl?.value || "5", 10) || 5));
+    roundsLeft = roundsTotal;
+    totalScore = 0;
 
-  suggestions.innerHTML = '';
-  timerDisplay.textContent = '';
-  clearInterval(countdownInterval);
-  resetTimer();
+    showGame();
+    startNewRound();
+  });
+
+  syncLabels();
 }
 
-// === MODE PARCOURS ===
-function startNewParcoursRound() {
-  document.getElementById("back-to-menu").style.display = "none";
+// ====== FILTERS ======
+function applyFilters() {
+  const popPercent = parseInt(popEl.value, 10);
+  const scorePercent = parseInt(scoreEl.value, 10);
+  const yearMin = parseInt(yearMinEl.value, 10);
+  const yearMax = parseInt(yearMaxEl.value, 10);
+
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
+  if (allowedTypes.length === 0) return [];
+
+  // 1) année + type
+  let pool = allAnimes.filter((a) => a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type));
+
+  // 2) popularité top %
+  pool.sort((a, b) => b._members - a._members);
+  pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
+
+  // 3) score top %
+  pool.sort((a, b) => b._score - a._score);
+  pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
+
+  return pool;
+}
+
+// ====== PREVIEW ======
+function updatePreview() {
+  const pool = applyFilters();
+  const ok = pool.length >= MIN_REQUIRED;
+
+  previewCountEl.textContent = `📚 Titres disponibles : ${pool.length} ${ok ? "(OK)" : "(Min 64)"}`;
+  previewCountEl.classList.toggle("good", ok);
+  previewCountEl.classList.toggle("bad", !ok);
+
+  applyBtn.disabled = !ok;
+}
+
+// ====== ROUND FLOW ======
+function pickCharactersForAnime(anime) {
+  const list = safeArray(anime.top_characters).length ? anime.top_characters : safeArray(anime.characters);
+  const cleaned = list
+    .map((c) => ({
+      name: String(c?.name || "").trim(),
+      image: String(c?.image || "").trim(),
+    }))
+    .filter((c) => c.name && c.image);
+
+  return pickRandomPerGroup(cleaned).slice(0, 6);
+}
+
+function resetRoundUI() {
+  container.innerHTML = "";
+  feedback.textContent = "";
+  feedback.className = "";
+  timerDisplay.textContent = "";
+  suggestions.innerHTML = "";
+
+  input.value = "";
+  input.disabled = false;
+  submitBtn.disabled = true;
+
+  restartBtn.style.display = "none";
+  restartBtn.textContent = "Suivant";
+
+  revealedCount = 0;
+  gameEnded = false;
+
+  clearInterval(countdownInterval);
+  countdownInterval = null;
+
   updateScoreBar(3000);
-  if (DAILY_BANNER) DAILY_BANNER.style.display = "none";
-  if (parcoursPool.length === 0 || parcoursIndex >= parcoursCount) {
-    showFinalRecapParcours();
+}
+
+function startNewRound() {
+  if (!filteredBase || filteredBase.length < MIN_REQUIRED) {
+    showCustomization();
     return;
   }
-  currentAnime = parcoursPool.splice(Math.floor(Math.random() * parcoursPool.length), 1)[0];
 
-  // --- NOUVELLE SÉLECTION DE PERSOS À AFFICHER ---
-  let selectedCharacters = pickRandomPerGroup(currentAnime.characters);
+  if (roundsLeft <= 0) {
+    showFinalRecap();
+    return;
+  }
 
-  container.innerHTML = '';
-  feedback.textContent = '';
-  feedback.className = "";
-  revealedCount = 0;
-  gameEnded = false;
-  restartBtn.style.display = 'none';
+  resetRoundUI();
 
-  selectedCharacters.forEach((char, i) => {
+  // pick anime
+  currentAnime = filteredBase[Math.floor(Math.random() * filteredBase.length)];
+
+  // pick 6 characters
+  visibleCharacters = pickCharactersForAnime(currentAnime);
+
+  // render hidden imgs
+  visibleCharacters.forEach((char, i) => {
     const img = document.createElement("img");
     img.src = char.image;
     img.alt = char.name;
@@ -306,63 +368,71 @@ function startNewParcoursRound() {
     container.appendChild(img);
   });
 
-  currentAnime.visibleCharacters = selectedCharacters;
-
   revealNextCharacter();
 
-  input.disabled = false;
-  input.value = '';
-  submitBtn.disabled = true;
   input.focus();
-
-  suggestions.innerHTML = '';
-  timerDisplay.textContent = '';
-  clearInterval(countdownInterval);
-  resetTimer();
 }
 
-// --- VICTOIRE (Daily) ---
-function showSuccessDailyMsg() {
-  feedback.innerHTML = `<input type='checkbox' checked disabled style='accent-color:#38d430; margin-right:6px;vertical-align:-2px;'> <b>Daily du jour déjà jouée !</b> Score : <b>${dailyScore} pts</b>`;
-  feedback.className = "success";
-  restartBtn.textContent = "Retour menu";
-  restartBtn.style.display = 'inline-block';
-  timerDisplay.textContent = "";
+// ====== REVEAL + TIMER ======
+function revealNextCharacter() {
+  if (revealedCount < visibleCharacters.length) {
+    const img = document.getElementById("char-" + revealedCount);
+    if (img) img.style.display = "block";
+
+    const potentialScore = Math.max(3000 - revealedCount * 500, 0);
+    updateScoreBar(potentialScore);
+
+    revealedCount++;
+    resetTimer();
+  }
 }
 
-// --- BLOQUER LES ENTRÉES ---
-function blockInputs() {
-  input.disabled = true;
+function resetTimer() {
+  countdown = 7;
+  timerDisplay.textContent = `Temps restant : ${countdown} s`;
+  if (countdownInterval) clearInterval(countdownInterval);
+
+  countdownInterval = setInterval(() => {
+    countdown--;
+
+    if (countdown <= 0) {
+      clearInterval(countdownInterval);
+
+      if (gameEnded) return;
+
+      if (revealedCount >= visibleCharacters.length) {
+        // Lose by time
+        feedback.textContent = `⏰ Temps écoulé ! Tu as perdu. C'était "${currentAnime._title}".`;
+        feedback.className = "error";
+        endRound(0, false);
+      } else {
+        revealNextCharacter();
+      }
+    } else {
+      timerDisplay.textContent = `Temps restant : ${countdown} s`;
+    }
+  }, 1000);
+}
+
+// ====== AUTOCOMPLETE ======
+input.addEventListener("input", function () {
+  if (gameEnded) return;
+
+  const val = this.value.toLowerCase().trim();
+  suggestions.innerHTML = "";
+  feedback.textContent = "";
   submitBtn.disabled = true;
-  suggestions.innerHTML = '';
-  restartBtn.textContent = "Retour menu";
-  restartBtn.style.display = 'inline-block';
-}
 
-// --- DÉBLOQUER EN CLASSIC ---
-function unlockClassicInputs() {
-  input.disabled = false;
-  submitBtn.disabled = true;
-  restartBtn.textContent = "Rejouer";
-  restartBtn.style.display = "none";
-}
-
-// --- SUGGESTIONS ---
-input.addEventListener("input", function() {
-  if (gameEnded || (isDaily && dailyPlayed)) return;
-  const val = this.value.toLowerCase();
-  suggestions.innerHTML = '';
-  feedback.textContent = '';
-  submitBtn.disabled = true;
   if (!val) return;
-  const found = [...new Set(allAnimes.map(a => a.title))]
-    .filter(title => title.toLowerCase().includes(val))
-    .slice(0, 7);
 
-  found.forEach(title => {
+  const uniqueTitles = [...new Set(filteredBase.map((a) => a._title))];
+  const matches = uniqueTitles.filter((t) => t.toLowerCase().includes(val));
+  shuffleInPlace(matches);
+
+  matches.slice(0, 7).forEach((title) => {
     const div = document.createElement("div");
-    div.innerHTML = `<span>${title.replace(new RegExp(val, 'i'), match => `<b>${match}</b>`)}</span>`;
-    div.addEventListener("mousedown", function(e) {
+    div.innerHTML = `<span>${title.replace(new RegExp(val, "i"), (m) => `<b>${m}</b>`)}</span>`;
+    div.addEventListener("mousedown", (e) => {
       e.preventDefault();
       input.value = title;
       suggestions.innerHTML = "";
@@ -372,241 +442,136 @@ input.addEventListener("input", function() {
     suggestions.appendChild(div);
   });
 
-  const titles = allAnimes.map(a => a.title.toLowerCase());
-  submitBtn.disabled = !titles.includes(val) || (isDaily && dailyPlayed);
+  // enable submit only if exact match exists
+  const titlesLower = filteredBase.map((a) => a._titleLower);
+  submitBtn.disabled = !titlesLower.includes(val);
 });
-input.addEventListener("keydown", function(e) {
-  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded && !(isDaily && dailyPlayed)) {
-    if (isParcours) {
-      checkGuessParcours();
-    } else {
-      checkGuess();
-    }
-  }
-});
-submitBtn.addEventListener("click", () => {
-  if (isParcours) checkGuessParcours();
-  else checkGuess();
-});
-restartBtn.addEventListener("click", function() {
-  if (isParcours) {
-    if (parcoursIndex < parcoursCount - 1) {
-      parcoursIndex++;
-      startNewParcoursRound();
-    } else {
-      showFinalRecapParcours();
-    }
-  } else if (isDaily && dailyPlayed) {
-    window.location.href = "../index.html";
-  } else {
-    startNewGame();
+
+input.addEventListener("keydown", function (e) {
+  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) {
+    checkGuess();
   }
 });
 
-// --- REVEAL UN PERSO ---
-function revealNextCharacter() {
-  // On s'appuie désormais sur la liste visibleCharacters (sélectionnée et randomisée par groupe)
-  if (revealedCount < (currentAnime.visibleCharacters ? currentAnime.visibleCharacters.length : 0)) {
-    const img = document.getElementById("char-" + revealedCount);
+submitBtn.addEventListener("click", () => checkGuess());
+
+document.addEventListener("click", (e) => {
+  if (e.target !== input) suggestions.innerHTML = "";
+});
+
+// ====== GUESS ======
+function computeRoundScore(isWin) {
+  if (!isWin) return 0;
+  const malus = (revealedCount - 1) * 500;
+  return Math.max(3000 - malus, 0);
+}
+
+function revealAllCharacters() {
+  for (let i = 0; i < visibleCharacters.length; i++) {
+    const img = document.getElementById("char-" + i);
     if (img) img.style.display = "block";
-    let potentialScore = Math.max(3000 - (revealedCount) * 500, 0);
-    updateScoreBar(potentialScore);
-    revealedCount++;
-    resetTimer();
   }
 }
 
-// --- TIMER ---
-function resetTimer() {
-  countdown = 7;
-  timerDisplay.textContent = `Temps restant : ${countdown} s`;
-  if (countdownInterval) clearInterval(countdownInterval);
-  countdownInterval = setInterval(() => {
-    countdown--;
-    if (countdown <= 0) {
-      clearInterval(countdownInterval);
-      if (!gameEnded) {
-        if (revealedCount === (currentAnime.visibleCharacters ? currentAnime.visibleCharacters.length : 0)) {
-          if (isParcours) {
-            showFeedbackParcours(false);
-          } else if (isDaily && !dailyPlayed) {
-            localStorage.setItem(SCORE_KEY, 0);
-            dailyPlayed = true;
-            dailyScore = 0;
-            showDailyBanner();
-            feedback.textContent = `⏰ Temps écoulé ! Tu as perdu. C'était "${currentAnime.title}".`;
-            feedback.className = "error";
-            endGame();
-          } else {
-            feedback.textContent = `⏰ Temps écoulé ! Tu as perdu. C'était "${currentAnime.title}".`;
-            feedback.className = "error";
-            endGame();
-          }
-        } else {
-          revealNextCharacter();
-        }
-      }
-    } else {
-      timerDisplay.textContent = `Temps restant : ${countdown} s`;
-    }
-  }, 1000);
-}
-
-// --- VALIDATION CLASSIC/DAILY ---
 function checkGuess() {
-  if (gameEnded || (isDaily && dailyPlayed)) return;
-  const guess = input.value.trim();
+  if (gameEnded) return;
+
+  const guess = input.value.trim().toLowerCase();
   if (!guess) {
     feedback.textContent = "⚠️ Tu dois écrire un nom d'anime.";
     feedback.className = "error";
     return;
   }
-  const normalizedGuess = guess.toLowerCase();
-  const answer = currentAnime.title.toLowerCase();
 
-  if (normalizedGuess === answer) {
-    let malus = (revealedCount - 1) * 500;
-    let score = Math.max(3000 - malus, 0);
+  const isCorrect = guess === currentAnime._titleLower;
+
+  if (isCorrect) {
+    const score = computeRoundScore(true);
     updateScoreBar(score);
     if (score > 0) launchFireworks();
-    feedback.textContent = `🎉 Bonne réponse ! C'était bien "${currentAnime.title}"`;
+
+    feedback.textContent = `🎉 Bonne réponse ! C'était bien "${currentAnime._title}"`;
     feedback.className = "success";
+
     clearInterval(countdownInterval);
-    for (let i = revealedCount; i < (currentAnime.visibleCharacters ? currentAnime.visibleCharacters.length : 0); i++) {
-      document.getElementById("char-" + i).style.display = "block";
-    }
-    if (isDaily && !dailyPlayed) {
-      localStorage.setItem(SCORE_KEY, score);
-      dailyPlayed = true;
-      dailyScore = score;
-      showDailyBanner();
-      restartBtn.textContent = "Retour menu";
-    } else {
-      restartBtn.textContent = "Rejouer";
-    }
-    endGame();
+    revealAllCharacters();
+
+    endRound(score, true);
   } else {
     feedback.textContent = "❌ Mauvaise réponse.";
     feedback.className = "error";
-    if (revealedCount < (currentAnime.visibleCharacters ? currentAnime.visibleCharacters.length : 0)) {
+
+    if (revealedCount < visibleCharacters.length) {
       clearInterval(countdownInterval);
       revealNextCharacter();
     } else {
-      if (isDaily && !dailyPlayed) {
-        localStorage.setItem(SCORE_KEY, 0);
-        dailyPlayed = true;
-        dailyScore = 0;
-        updateScoreBar(0);
-        showDailyBanner();
-      }
-      feedback.textContent += ` Tu as épuisé tous les indices. C'était "${currentAnime.title}".`;
-      endGame();
+      updateScoreBar(0);
+      feedback.textContent += ` Tu as épuisé tous les indices. C'était "${currentAnime._title}".`;
+      endRound(0, false);
     }
   }
-  input.value = '';
+
+  input.value = "";
   submitBtn.disabled = true;
   input.focus();
-  suggestions.innerHTML = '';
+  suggestions.innerHTML = "";
 }
 
-// --- VALIDATION PARCOURS ---
-function checkGuessParcours() {
-  if (gameEnded) return;
-  const guess = input.value.trim();
-  if (!guess) {
-    feedback.textContent = "⚠️ Tu dois écrire un nom d'anime.";
-    feedback.className = "error";
-    return;
-  }
-  const normalizedGuess = guess.toLowerCase();
-  const answer = currentAnime.title.toLowerCase();
+function endRound(score, isWin) {
+  gameEnded = true;
 
-  if (normalizedGuess === answer) {
-    showFeedbackParcours(true);
-  } else {
-    feedback.textContent = "❌ Mauvaise réponse.";
-    feedback.className = "error";
-    if (revealedCount < (currentAnime.visibleCharacters ? currentAnime.visibleCharacters.length : 0)) {
-      clearInterval(countdownInterval);
-      revealNextCharacter();
-    } else {
-      showFeedbackParcours(false);
-    }
-  }
-  input.value = '';
-  submitBtn.disabled = true;
-  input.focus();
-  suggestions.innerHTML = '';
-}
-
-// --- FIN ROUND PARCOURS ---
-function showFeedbackParcours(isWin) {
   clearInterval(countdownInterval);
-  for (let i = revealedCount; i < (currentAnime.visibleCharacters ? currentAnime.visibleCharacters.length : 0); i++) {
-    document.getElementById("char-" + i).style.display = "block";
-  }
-  let roundScore = 0;
-  if (isWin) {
-    let malus = (revealedCount - 1) * 500;
-    roundScore = Math.max(3000 - malus, 0);
-    if (roundScore > 0) launchFireworks();
-    updateScoreBar(roundScore);
-    feedback.textContent = `🎉 Bonne réponse ! "${currentAnime.title}" | Score : ${roundScore}`;
-    feedback.className = "success";
-  } else {
-    updateScoreBar(0);
-    feedback.textContent = `❌ Perdu. C'était "${currentAnime.title}". | Score : 0`;
-    feedback.className = "error";
-  }
-  parcoursTotalScore += roundScore;
-  endGameParcours();
-}
+  countdownInterval = null;
 
-// --- FIN JEU/ROUND ---
-function endGame() {
-  gameEnded = true;
   input.disabled = true;
   submitBtn.disabled = true;
-  restartBtn.style.display = 'inline-block';
-  timerDisplay.textContent = "Jeu terminé.";
-  suggestions.innerHTML = '';
-}
-function endGameParcours() {
-  gameEnded = true;
-  input.disabled = true;
-  submitBtn.disabled = true;
-  restartBtn.style.display = 'inline-block';
-  timerDisplay.textContent = "Round terminé.";
-  suggestions.innerHTML = '';
-  if (parcoursIndex < parcoursCount - 1) {
-    restartBtn.textContent = "Suivant";
-  } else {
-    restartBtn.textContent = "Terminer";
-  }
+  suggestions.innerHTML = "";
+
+  // rounds
+  totalScore += score;
+  roundsLeft = Math.max(0, roundsLeft - 1);
+
+  // bouton suivant / terminer
+  restartBtn.style.display = "inline-block";
+  restartBtn.textContent = roundsLeft > 0 ? "Suivant" : "Terminer";
+  timerDisplay.textContent = roundsLeft > 0 ? `Round terminé. (${roundsTotal - roundsLeft}/${roundsTotal})` : "Série terminée.";
+
+  restartBtn.onclick = () => {
+    if (roundsLeft > 0) startNewRound();
+    else showFinalRecap();
+  };
 }
 
-// --- RECAP FINAL PARCOURS ---
-function showFinalRecapParcours() {
-  container.innerHTML = '';
-  feedback.innerHTML = `<div style="font-size:1.3em;">🏆 Parcours terminé !<br>Score total : <b>${parcoursTotalScore}</b> / ${parcoursCount * 3000}</div>`;
+function showFinalRecap() {
+  // clean main area
+  container.innerHTML = "";
+  suggestions.innerHTML = "";
+  input.value = "";
+  input.disabled = true;
+  submitBtn.disabled = true;
+
+  const totalMax = roundsTotal * 3000;
+
+  feedback.innerHTML = `
+    <div style="font-size:1.25em; text-align:center;">
+      🏁 Série terminée !<br>
+      Score total : <b>${totalScore}</b> / ${totalMax}
+    </div>
+  `;
   feedback.className = "success";
+
   timerDisplay.textContent = "";
-  restartBtn.style.display = "none";
-  setTimeout(() => {
-    parent.postMessage({
-      parcoursScore: {
-        label: "Character Quizz",
-        score: parcoursTotalScore,
-        total: parcoursCount * 3000
-      }
-    }, "*");
-  }, 300);
+  restartBtn.style.display = "inline-block";
+  restartBtn.textContent = "Rejouer";
+  restartBtn.onclick = () => {
+    // relance avec mêmes réglages
+    roundsLeft = roundsTotal;
+    totalScore = 0;
+    startNewRound();
+  };
 }
 
-// --- LANCE LE CHARGEMENT AU DÉMARRAGE ---
-loadAnimes();
-
-// ========== TOOLTIP AIDE (icône info) ==========
+// ====== TOOLTIP AIDE ======
 document.addEventListener("click", (e) => {
   const icon = e.target.closest(".info-icon");
   if (!icon) return;
@@ -620,6 +585,33 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach(w => w.classList.remove("open"));
+    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
   }
 });
+
+// ====== LOAD DATASET ======
+fetch("../data/licenses_only.json")
+  .then((r) => r.json())
+  .then((data) => {
+    // normalize
+    allAnimes = (Array.isArray(data) ? data : []).map((a) => {
+      const title = getDisplayTitle(a);
+      return {
+        ...a,
+        _title: title,
+        _titleLower: title.toLowerCase(),
+        _year: getYear(a),
+        _members: Number.isFinite(+a.members) ? +a.members : 0,
+        _score: Number.isFinite(+a.score) ? +a.score : 0,
+        _type: a.type || "Unknown",
+      };
+    });
+
+    initPersonalisationUI();
+    updatePreview();
+    showCustomization();
+  })
+  .catch((e) => {
+    alert("Erreur chargement dataset: " + e.message);
+    console.error(e);
+  });
