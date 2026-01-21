@@ -206,13 +206,7 @@ function currentPotentialScore() {
   return Math.max(MAX_SCORE - malus, 0);
 }
 
-// ====== grid perso (2 colonnes <=4, 3 colonnes >=5) ======
-function updateCharacterGrid() {
-  if (!container) return;
-  const is3 = revealedCount >= 5;
-  container.classList.toggle("grid-3", is3);
-  container.classList.toggle("grid-2", !is3);
-}
+
 
 // ====== Custom UI init ======
 function initCustomUI() {
@@ -320,7 +314,6 @@ function resetRoundUI() {
   timerDisplay.textContent = "";
 
   revealedCount = 0;
-  updateCharacterGrid();
 
   gameEnded = false;
 
@@ -366,7 +359,6 @@ function revealNextCharacter() {
     if (img) img.style.display = "block";
     revealedCount++;
 
-    updateCharacterGrid();
     setScoreBar(currentPotentialScore());
     resetTimer();
   } else {
@@ -411,7 +403,6 @@ function endRound(roundScore, won, messageHtml) {
     if (img) img.style.display = "block";
   }
   revealedCount = visibleCharacters.length;
-  updateCharacterGrid();
 
   input.disabled = true;
   submitBtn.disabled = true;
