@@ -6,9 +6,7 @@
   <title>👤 Character Quizz</title>
   <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
 
-  <!-- ✅ même dossier -->
   <link rel="stylesheet" href="./style.css" />
-  <!-- ✅ defer pour éviter les soucis de DOM -->
   <script src="./script.js" defer></script>
 </head>
 
@@ -46,13 +44,12 @@
   <div id="custom-panel" class="main-container">
     <h2>⚙️ Personnalisation</h2>
 
-    <!-- Mode (visuel comme tes autres menus) -->
+    <!-- Mode (✅ Songs supprimé) -->
     <div class="opt-row">
       <div class="opt-label">Mode</div>
       <div class="opt-col">
         <div class="opt-pill-group" id="modePills">
           <button type="button" class="pill active" aria-pressed="true">Animes</button>
-          <button type="button" class="pill pill-disabled" aria-disabled="true" tabindex="-1">Songs</button>
         </div>
         <div class="opt-hint">Choisis le contenu à deviner.</div>
       </div>
@@ -77,7 +74,7 @@
       <div class="opt-value">Top <span id="scorePercentVal">25</span>%</div>
     </div>
 
-    <!-- Années (double slider) -->
+    <!-- Années (✅ 2 barres séparées) -->
     <div class="opt-row">
       <div class="opt-label">Années</div>
       <div class="opt-col">
@@ -105,18 +102,18 @@
       <div class="opt-value"></div>
     </div>
 
-    <!-- Preview count (barre large) -->
+    <!-- Preview count -->
     <div id="previewCount" class="preview-count bad">
       ⏳ Chargement de la base…
     </div>
 
-    <!-- Rounds (✅ 1 à 100, sous "Titres disponibles") -->
+    <!-- Rounds (✅ défaut = 1 + texte exact) -->
     <div class="opt-row opt-row-rounds">
       <div class="opt-label">Rounds</div>
       <div class="opt-col"></div>
       <div class="opt-value opt-right">
-        <input id="roundCount" class="round-input" type="number" min="1" max="100" step="1" value="5" />
-        <span class="round-hint">(1 à 100)</span>
+        <input id="roundCount" class="round-input" type="number" min="1" max="100" step="1" value="1" />
+        <span class="round-hint">(1 à 100) — Enchaîne plusieurs parties avec la même config.</span>
       </div>
     </div>
 
@@ -128,23 +125,19 @@
   </div>
 
   <!-- =========================
-       JEU (CACHÉ AU DÉPART)
+       JEU
   ========================== -->
   <div id="game-panel" style="display:none;">
     <div id="container">
-      <!-- BARRE DE SCORE (✅ label séparé pour rester centré) -->
       <div id="score-bar-container">
         <div id="score-bar"></div>
         <span id="score-bar-label">3000 / 3000</span>
       </div>
 
-      <!-- Round label -->
       <div id="roundLabel"></div>
 
-      <!-- Images persos -->
       <div id="character-container"></div>
 
-      <!-- Input + suggestions -->
       <div id="controls">
         <div class="input-container">
           <input type="text" id="characterInput" placeholder="Entrez le nom d'un anime..." autocomplete="off" />
