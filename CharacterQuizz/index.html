@@ -9,16 +9,16 @@
 </head>
 
 <body>
-  <!-- HEADER -->
+  <!-- HEADER (même structure que Opening Quizz pour l’alignement SVG) -->
   <header id="main-header">
     <div class="header-inner">
       <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
-  
+
       <h1>👤 Character Quizz 👤</h1>
-  
+
       <div class="header-right">
         <button id="themeToggle" class="toggle-btn">🌓</button>
-  
+
         <span class="info-wrap header-help">
           <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-character">
             <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
@@ -26,7 +26,7 @@
                 d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
             </svg>
           </span>
-  
+
           <span class="info-tip" id="help-character" role="tooltip">
             Six personnages à découvrir progressivement pour deviner l’anime. Un nouveau apparaît toutes les 8 secondes ou après un essai.
           </span>
@@ -35,22 +35,20 @@
     </div>
   </header>
 
-
   <!-- =========================
        ✅ PERSONNALISATION (AU DÉPART)
+       (style comme tes images 2/3 : slider + valeur à droite, rounds à droite, barre "titres disponibles")
   ========================== -->
-  <div id="custom-panel" class="main-container" style="max-width: 1400px; width: 98vw; padding: 1.7rem 1.8rem; margin: 0 auto 1.2rem auto;">
-    <h2 style="margin:0 0 1.0rem 0; text-align:center;">⚙️ Personnalisation</h2>
+  <div id="custom-panel" class="main-container">
+    <h2>⚙️ Personnalisation</h2>
 
     <!-- Popularité -->
     <div class="opt-row">
       <div class="opt-label">Popularité</div>
       <div class="opt-col">
         <input id="popPercent" type="range" min="5" max="100" step="5" value="25" />
-        <div class="opt-value">
-          Top <span id="popPercentVal">25</span>%
-        </div>
       </div>
+      <div class="opt-value">Top <span id="popPercentVal">25</span>%</div>
     </div>
 
     <!-- Score -->
@@ -58,26 +56,20 @@
       <div class="opt-label">Score</div>
       <div class="opt-col">
         <input id="scorePercent" type="range" min="5" max="100" step="5" value="25" />
-        <div class="opt-value">
-          Top <span id="scorePercentVal">25</span>%
-        </div>
       </div>
+      <div class="opt-value">Top <span id="scorePercentVal">25</span>%</div>
     </div>
 
     <!-- Années (double slider) -->
     <div class="opt-row">
       <div class="opt-label">Années</div>
       <div class="opt-col">
-        <div style="display:flex; flex-direction:column; gap:8px;">
-          <div style="display:flex; gap:12px; align-items:center;">
-            <input id="yearMin" type="range" min="1950" max="2026" step="1" value="2000" style="flex:1;">
-            <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026" style="flex:1;">
-          </div>
-          <div class="opt-value">
-            <span id="yearMinVal">2000</span> → <span id="yearMaxVal">2026</span>
-          </div>
+        <div class="double-range">
+          <input id="yearMin" type="range" min="1950" max="2026" step="1" value="2000">
+          <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026">
         </div>
       </div>
+      <div class="opt-value"><span id="yearMinVal">2000</span> → <span id="yearMaxVal">2026</span></div>
     </div>
 
     <!-- Types -->
@@ -91,38 +83,28 @@
           <button type="button" class="pill" data-type="ONA" aria-pressed="false">ONA</button>
           <button type="button" class="pill" data-type="Special" aria-pressed="false">Special</button>
         </div>
-        <div style="margin-top:8px; opacity:0.85; font-weight:700; font-size:0.95rem;">
-          Choisis au moins 1 type.
-        </div>
+        <div class="opt-hint">Choisis au moins 1 type.</div>
       </div>
+      <div class="opt-value"></div>
     </div>
 
-    <!-- ✅ Nombre de rounds -->
+    <!-- Rounds (à droite, comme image 3) -->
     <div class="opt-row">
       <div class="opt-label">Rounds</div>
-      <div class="opt-col" style="display:flex; gap:12px; align-items:center; justify-content:flex-end; flex-wrap:wrap;">
-        <input
-          id="roundCount"
-          type="number"
-          min="1"
-          max="50"
-          step="1"
-          value="5"
-          class="round-input"
-        />
-        <div style="opacity:0.85; font-weight:700; font-size:0.95rem;">
-          (1 à 50)
-        </div>
+      <div class="opt-col"></div>
+      <div class="opt-value opt-right">
+        <input id="roundCount" class="round-input" type="number" min="1" max="50" step="1" value="5" />
+        <span class="round-hint">(1 à 50)</span>
       </div>
     </div>
 
-    <!-- Preview + Start -->
+    <!-- Preview count (barre large comme image 3) -->
     <div id="previewCount" class="preview-count bad">
       ⏳ Chargement de la base…
     </div>
 
-    <div style="display:flex; justify-content:center; margin-top:12px;">
-      <button id="applyFiltersBtn" class="menu-btn" style="font-size:1.05rem; padding:0.85rem 1.6rem;">
+    <div class="opt-actions">
+      <button id="applyFiltersBtn" class="menu-btn">
         ✅ Lancer avec ces réglages
       </button>
     </div>
@@ -134,35 +116,31 @@
   <div id="game-panel" style="display:none;">
     <div id="container">
       <!-- BARRE DE SCORE -->
-      <div id="score-bar-container" style="margin-bottom:12px;">
+      <div id="score-bar-container">
         <div id="score-bar" style="width:100%;position:relative;">
-          <span id="score-bar-label" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-weight:bold;">
-            3000 / 3000
-          </span>
+          <span id="score-bar-label">3000 / 3000</span>
         </div>
       </div>
 
       <!-- Round label -->
       <div id="roundLabel"></div>
 
-      <!-- Persos -->
+      <!-- Images persos -->
       <div id="character-container"></div>
 
       <!-- Input + suggestions -->
-      <div id="controls" style="width:100%; max-width:520px; margin-top:12px;">
+      <div id="controls">
         <div class="input-container">
-          <input type="text" id="characterInput" placeholder="Entrez le nom de l'anime..." autocomplete="off" />
+          <input type="text" id="characterInput" placeholder="Entrez le nom d'un anime..." autocomplete="off" />
           <div id="suggestions" class="suggestions"></div>
         </div>
 
-        <div style="display:flex; justify-content:center; gap:12px; margin-top:14px;">
-          <button id="submit-btn" disabled>Valider</button>
-          <button id="restart-btn" style="display:none;">Suivant</button>
-        </div>
+        <button id="submit-btn" disabled>Valider</button>
+        <button id="restart-btn" style="display:none;">Suivant</button>
       </div>
 
-      <div id="timer" style="margin-top:14px;"></div>
-      <div id="feedback" style="margin-top:10px;"></div>
+      <p id="timer"></p>
+      <p id="feedback"></p>
 
       <canvas id="fireworks"></canvas>
     </div>
@@ -175,3 +153,4 @@
   <script src="script.js"></script>
 </body>
 </html>
+
