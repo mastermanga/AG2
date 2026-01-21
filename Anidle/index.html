@@ -17,13 +17,13 @@
     <h1>🕵️‍♂️ Guess the Anime 🕵️‍♂️</h1>
 
     <div class="header-right">
-      <button id="themeToggle" class="toggle-btn" aria-label="Changer le thème">🌓</button>
+      <button id="themeToggle" class="toggle-btn">🌓</button>
 
       <span class="info-wrap header-help">
         <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-anidle">
           <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor"
-              d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 00 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
+              d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
           </svg>
         </span>
 
@@ -37,129 +37,97 @@
     </div>
   </header>
 
-  <!-- =========================
-       PERSONNALISATION (MENU)
-       ========================= -->
-  <section id="custom-panel" class="settings-card">
-    <div class="settings-title">
-      <span class="settings-gear">⚙️</span>
-      <h2>Personnalisation</h2>
-    </div>
+  <!-- ✅ PERSONNALISATION -->
+  <div id="custom-panel">
+    <h2><span class="gear">⚙️</span> Personnalisation</h2>
 
-    <!-- Mode (même si 1 seul choix pour l’instant) -->
-    <div class="set-row">
-      <div class="set-label">Mode</div>
-
-      <div class="set-main">
-        <div id="modePills" class="pill-group">
+    <!-- Mode (prévu pour futur: layout déjà en place) -->
+    <div class="opt-row">
+      <div class="opt-label">Mode</div>
+      <div class="opt-col">
+        <div class="opt-pill-group" id="modePills">
           <button type="button" class="pill active" data-mode="anime" aria-pressed="true">Animes</button>
         </div>
-        <div class="set-hint">Choisis le contenu à deviner.</div>
+        <div class="opt-sub">Choisis le contenu à deviner.</div>
       </div>
-
-      <div class="set-right"></div>
     </div>
 
     <!-- Popularité -->
-    <div class="set-row">
-      <div class="set-label">Popularité</div>
-
-      <div class="set-main">
-        <input id="popPercent" class="range" type="range" min="5" max="100" step="5" value="25" />
-      </div>
-
-      <div class="set-right">
-        <div class="set-right-text">Top <span id="popPercentVal">25</span>%</div>
+    <div class="opt-row">
+      <div class="opt-label">Popularité</div>
+      <div class="opt-col">
+        <input id="popPercent" type="range" min="5" max="100" step="5" value="25" />
+        <div class="opt-value">Top <span id="popPercentVal">25</span>%</div>
       </div>
     </div>
 
     <!-- Score -->
-    <div class="set-row">
-      <div class="set-label">Score</div>
-
-      <div class="set-main">
-        <input id="scorePercent" class="range" type="range" min="5" max="100" step="5" value="25" />
-      </div>
-
-      <div class="set-right">
-        <div class="set-right-text">Top <span id="scorePercentVal">25</span>%</div>
+    <div class="opt-row">
+      <div class="opt-label">Score</div>
+      <div class="opt-col">
+        <input id="scorePercent" type="range" min="5" max="100" step="5" value="25" />
+        <div class="opt-value">Top <span id="scorePercentVal">25</span>%</div>
       </div>
     </div>
 
-    <!-- Années -->
-    <div class="set-row">
-      <div class="set-label">Années</div>
-
-      <div class="set-main">
-        <div class="years-dual">
-          <input id="yearMin" class="range" type="range" min="1950" max="2026" step="1" value="2000" />
-          <input id="yearMax" class="range" type="range" min="1950" max="2026" step="1" value="2026" />
+    <!-- Années (double slider) -->
+    <div class="opt-row">
+      <div class="opt-label">Années</div>
+      <div class="opt-col">
+        <div class="year-row">
+          <input id="yearMin" type="range" min="1950" max="2026" step="1" value="2000">
+          <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026">
         </div>
-      </div>
-
-      <div class="set-right">
-        <div class="set-right-text">
+        <div class="opt-value">
           <span id="yearMinVal">2000</span> → <span id="yearMaxVal">2026</span>
         </div>
       </div>
     </div>
 
     <!-- Types -->
-    <div class="set-row">
-      <div class="set-label">Types</div>
-
-      <div class="set-main">
-        <div id="typePills" class="pill-group">
+    <div class="opt-row">
+      <div class="opt-label">Types</div>
+      <div class="opt-col">
+        <div id="typePills" class="opt-pill-group">
           <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
           <button type="button" class="pill" data-type="Movie" aria-pressed="false">Movie</button>
           <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
           <button type="button" class="pill" data-type="ONA" aria-pressed="false">ONA</button>
           <button type="button" class="pill" data-type="Special" aria-pressed="false">Special</button>
         </div>
-        <div class="set-hint">Choisis au moins 1 type.</div>
-      </div>
-
-      <div class="set-right"></div>
-    </div>
-
-    <!-- Titres disponibles (barre) -->
-    <div class="set-bar-row">
-      <div class="set-label"></div>
-      <div id="previewCount" class="available-bar bad">⏳ Chargement de la base…</div>
-    </div>
-
-    <!-- Rounds (DERNIER) -->
-    <div class="set-row">
-      <div class="set-label">Rounds</div>
-
-      <div class="set-main set-main-right">
-        <input id="roundCount" class="round-input" type="number" min="1" max="100" step="1" value="1" />
-      </div>
-
-      <div class="set-right">
-        <div class="set-right-text">
-          (1 à 100) — Enchaîne plusieurs parties avec la même config.
-        </div>
+        <div class="opt-sub">Choisis au moins 1 type.</div>
       </div>
     </div>
 
-    <!-- Bouton -->
-    <div class="set-action">
-      <button id="applyFiltersBtn" class="big-start" disabled>
+    <!-- Preview -->
+    <div id="previewCount" class="preview-count bad">
+      ⏳ Chargement de la base…
+    </div>
+
+    <!-- Rounds (1..100) -->
+    <div class="opt-row rounds-row">
+      <div class="opt-label">Rounds</div>
+      <div class="opt-col rounds-col">
+        <input id="roundCount" type="number" min="1" max="100" step="1" value="1" class="round-input" />
+        <div class="round-hint">(1 à 100) — Enchaîne plusieurs parties avec la même config.</div>
+      </div>
+    </div>
+
+    <!-- Start -->
+    <div class="start-row">
+      <button id="applyFiltersBtn" class="menu-btn start-btn" disabled>
         ✅ Lancer avec ces réglages
       </button>
     </div>
-  </section>
+  </div>
 
-  <!-- =========================
-           JEU (HIDDEN)
-       ========================= -->
+  <!-- ✅ JEU (caché au départ) -->
   <div id="game-panel">
     <div id="container" class="main-container">
       <div class="game-layout">
-        <aside id="aideContainer" aria-label="Suggestions"></aside>
+        <div id="aideContainer" class="aide-container"></div>
 
-        <main class="game-main">
+        <div class="game-col">
           <div id="successContainer" style="display:none;"></div>
 
           <div class="input-container">
@@ -169,6 +137,7 @@
               placeholder="Entrez le nom d'un anime..."
               autocomplete="off"
             />
+
             <div id="suggestions" class="suggestions"></div>
 
             <div id="counter">Tentatives : 0 (-150)</div>
@@ -179,7 +148,7 @@
               </div>
             </div>
 
-            <div id="indices-bar">
+            <div id="indices-bar" class="indices-bar">
               <button id="btnIndiceStudio" class="indice-btn" disabled>Indice Studio (-300)</button>
               <button id="btnIndiceSaison" class="indice-btn" disabled>Indice Année (-300)</button>
               <button id="btnIndiceGenres" class="indice-btn" disabled>Indice Genres/Thèmes (-300)</button>
@@ -188,7 +157,7 @@
           </div>
 
           <div id="results"></div>
-        </main>
+        </div>
       </div>
 
       <canvas id="fireworks"></canvas>
