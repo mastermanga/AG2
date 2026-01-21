@@ -346,8 +346,7 @@ body.light .split-layout{
 }
 body.light .anime-list li{ background:#f8f8f8; }
 
-.anime-list li img,
-.anime-list li video{
+.anime-list li img{
   width:100%;
   height: 150px;
   object-fit: cover;
@@ -356,7 +355,6 @@ body.light .anime-list li{ background:#f8f8f8; }
   box-shadow: 0 2px 14px #1116;
 }
 
-/* ✅ placeholder / thumb */
 .placeholder{
   width:100%;
   height:150px;
@@ -367,7 +365,7 @@ body.light .anime-list li{ background:#f8f8f8; }
 
 .anime-list li span{
   display:block;
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   margin-top: 10px;
   font-weight: 700;
   color:#f5f5f5;
@@ -375,47 +373,6 @@ body.light .anime-list li{ background:#f8f8f8; }
   word-break: break-word;
 }
 body.light .anime-list li span{ color:#111; }
-
-/* ✅ SONG THUMB (lazy) */
-.song-thumb{
-  width:100%;
-  height:150px;
-  border-radius:12px;
-  background:#222 center/cover no-repeat;
-  box-shadow: 0 2px 14px #1116;
-  position: relative;
-  overflow:hidden;
-}
-.song-thumb::before{
-  content:"";
-  position:absolute;
-  inset:0;
-  background: linear-gradient(180deg, rgba(0,0,0,0.15), rgba(0,0,0,0.55));
-}
-.song-thumb .load-btn{
-  position:absolute;
-  left:50%;
-  top:50%;
-  transform:translate(-50%,-50%);
-  border:none;
-  cursor:pointer;
-  border-radius: 999px;
-  padding: 8px 12px;              /* ✅ plus petit */
-  font-weight: 900;
-  font-size: 0.88rem;             /* ✅ plus petit */
-  color:#fff;
-  background: linear-gradient(120deg, #00bcd4 70%, #1e88e5 100%);
-  box-shadow: 0 2px 14px rgba(0,234,255,0.22);
-  opacity: 0.95;
-}
-.song-thumb .load-btn:hover{
-  background: linear-gradient(120deg, #1de9b6 70%, #1565c0 100%);
-  opacity: 1;
-}
-.song-thumb .load-btn:disabled{
-  opacity:0.55;
-  cursor:not-allowed;
-}
 
 /* Item card */
 .anime-item{
@@ -438,22 +395,12 @@ body.light .anime-item{ background:#e4f2fc; }
   height: auto;
 }
 #item-name{
-  font-size:1.05rem;
+  font-size:1.10rem;
   font-weight:900;
-  margin: 0 0 10px 0;
+  margin: 0 0 14px 0;
   text-align:center;
-  letter-spacing: 0.3px;
-}
-
-/* ✅ status chargement */
-.media-status{
-  width:100%;
-  min-height: 1.2em;
-  text-align:center;
-  font-weight: 900;
-  opacity:0.9;
-  margin: 0 0 10px 0;
-  user-select:none;
+  letter-spacing: 0.4px;
+  line-height: 1.2;
 }
 
 /* Player zone */
@@ -468,27 +415,28 @@ body.light .anime-item{ background:#e4f2fc; }
   box-shadow: 0 2px 12px #1116;
 }
 
-/* ✅ VOLUME BAR (Songs mode) */
+/* ==== VOLUME BAR (Songs) ==== */
 .volume-row{
-  width: 100%;
+  width:100%;
   display:flex;
   align-items:center;
   gap:12px;
+  justify-content:center;
   padding: 10px 12px;
   border-radius: 14px;
   background: rgba(0,0,0,0.14);
-  border: 1px solid rgba(0,188,212,0.25);
-  margin: 0 0 12px 0;
+  border: 1px solid rgba(0,188,212,0.20);
+  margin-bottom: 12px;
 }
-.vol-ico{ font-size: 1.05rem; opacity: 0.95; }
-.vol-label{ font-weight: 900; opacity: 0.9; min-width: 74px; }
-
-#volumeVal{
-  font-weight: 900;
-  opacity: 0.92;
-  min-width: 52px;
-  text-align: right;
+.vol-label{
+  font-weight:900;
+  opacity:0.95;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width: 105px;
 }
+.vol-icon{ filter: drop-shadow(0 0 6px rgba(0,234,255,0.22)); }
 
 #volumeSlider{
   flex:1;
@@ -505,7 +453,7 @@ body.light .anime-item{ background:#e4f2fc; }
   border-radius:999px;
   background:#0fbcd4;
   border:2px solid rgba(255,255,255,0.6);
-  box-shadow: 0 0 14px rgba(0, 234, 255, 0.55);
+  box-shadow: 0 0 14px rgba(0,234,255,0.55);
   cursor:pointer;
 }
 #volumeSlider::-moz-range-thumb{
@@ -514,8 +462,22 @@ body.light .anime-item{ background:#e4f2fc; }
   border-radius:999px;
   background:#0fbcd4;
   border:2px solid rgba(255,255,255,0.6);
-  box-shadow: 0 0 14px rgba(0, 234, 255, 0.55);
+  box-shadow: 0 0 14px rgba(0,234,255,0.55);
   cursor:pointer;
+}
+.vol-val{
+  font-weight:900;
+  opacity:0.95;
+  min-width: 52px;
+  text-align:right;
+}
+
+body.light .volume-row{
+  background: rgba(255,255,255,0.70);
+  border: 1px solid rgba(25,118,210,0.30);
+}
+body.light #volumeSlider{
+  background: linear-gradient(90deg, #42a5f5 0%, #ffffff 75%);
 }
 
 /* Rank buttons */
@@ -551,7 +513,7 @@ body.light .anime-item{ background:#e4f2fc; }
 
 /* Result */
 .result{
-  margin-top: 10px;
+  margin-top: 14px;
   font-weight:900;
   opacity:0.95;
 }
