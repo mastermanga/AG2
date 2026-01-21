@@ -1,21 +1,45 @@
+// ===============================
+// ANIDLE — script.js (modifié)
+// - Menu personnalisation identique (prévu pour mode futur)
+// - MIN_REQUIRED = 64
+// - Rounds: 1 → 100 (1 par défaut)
+// - Types: si aucun type actif, force TV + Movie (donc Movie par défaut garanti côté JS)
+// ===============================
+
 const MAX_SCORE = 3000;
 const TENTATIVE_COST = 150;
 const INDICE_COST = 300;
 
 const MIN_REQUIRED = 64;
+const ROUNDS_MIN = 1;
+const ROUNDS_MAX = 100;
 
 // ========== MENU + THEME ==========
-document.getElementById("back-to-menu").addEventListener("click", () => {
+document.getElementById("back-to-menu")?.addEventListener("click", () => {
   window.location.href = "../index.html";
 });
 
-document.getElementById("themeToggle").addEventListener("click", () => {
+document.getElementById("themeToggle")?.addEventListener("click", () => {
   document.body.classList.toggle("light");
   localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
 
 window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
+});
+
+// ========== TOOLTIP AIDE ==========
+document.addEventListener("pointerdown", (e) => {
+  const wrap = e.target.closest(".info-wrap");
+
+  if (wrap && e.target.closest(".info-icon")) {
+    e.preventDefault();
+    e.stopPropagation();
+    wrap.classList.toggle("open");
+    return;
+  }
+
+  document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
 });
 
 // ========== HELPERS ==========
@@ -31,10 +55,11 @@ function getDisplayTitle(a) {
 }
 
 function getYear(a) {
-  const s = (a.season || "").trim(); // "spring 2013"
+  const s = String(a.season || "").trim(); // ex: "spring 2013"
+  if (!s) return 0;
   const parts = s.split(/\s+/);
-  const y = parseInt(parts[1] || parts[0] || "0", 10);
-  return Number.isFinite(y) ? y : 0;
+  const maybeYear = parseInt(parts[1] || parts[0] || "0", 10);
+  return Number.isFinite(maybeYear) ? maybeYear : 0;
 }
 
 function shuffleInPlace(arr) {
@@ -48,12 +73,17 @@ function shuffleInPlace(arr) {
 function clampYearSliders() {
   const minEl = document.getElementById("yearMin");
   const maxEl = document.getElementById("yearMax");
+  if (!minEl || !maxEl) return;
+
   let a = parseInt(minEl.value, 10);
   let b = parseInt(maxEl.value, 10);
+  if (!Number.isFinite(a)) a = 0;
+  if (!Number.isFinite(b)) b = 0;
+
   if (a > b) {
     [a, b] = [b, a];
-    minEl.value = a;
-    maxEl.value = b;
+    minEl.value = String(a);
+    maxEl.value = String(b);
   }
 }
 
@@ -61,20 +91,79 @@ function clampRoundsValue() {
   const el = document.getElementById("roundCount");
   if (!el) return 1;
   let v = parseInt(el.value, 10);
-  if (!Number.isFinite(v) || v < 1) v = 1;
-  if (v > 100) v = 100;
+  if (!Number.isFinite(v) || v < ROUNDS_MIN) v = ROUNDS_MIN;
+  if (v > ROUNDS_MAX) v = ROUNDS_MAX;
   el.value = String(v);
   return v;
 }
 
+function setPillActive(btn, isActive) {
+  btn.classList.toggle("active", !!isActive);
+  btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+}
+
+function ensureDefaultTypes() {
+  const pills = Array.from(document.querySelectorAll(".pill[data-type]"));
+  if (!pills.length) return;
+
+  const active = pills.filter((b) => b.classList.contains("active"));
+  if (active.length > 0) return;
+
+  // ✅ sécurité: si rien n'est sélectionné, on active TV + Movie
+  pills.forEach((b) => {
+    const t = b.dataset.type;
+    const should = t === "TV" || t === "Movie";
+    setPillActive(b, should);
+  });
+}
+
+// ========== MODE (prévu pour le futur) ==========
+let contentMode = "anime"; // seul mode actuel
+function initModeUI() {
+  // Supporte 2 formats possibles :
+  // 1) des boutons .pill avec data-mode dans un #modePills
+  // 2) des boutons avec ids #mode-anime / #mode-other
+  const modeBtns = Array.from(document.querySelectorAll('[data-mode]'));
+  const animeBtn = document.getElementById("mode-anime");
+
+  // Si rien dans le HTML, on ne fait rien
+  if (!modeBtns.length && !animeBtn) return;
+
+  // Format data-mode
+  if (modeBtns.length) {
+    // default: anime actif si trouvé
+    modeBtns.forEach((b) => {
+      const m = b.dataset.mode;
+      setPillActive(b, m === contentMode);
+      if (b.disabled) b.setAttribute("aria-disabled", "true");
+      b.addEventListener("click", () => {
+        if (b.disabled) return;
+        const next = b.dataset.mode;
+        if (!next || next === contentMode) return;
+        contentMode = next;
+
+        modeBtns.forEach((x) => setPillActive(x, x.dataset.mode === contentMode));
+        updatePreview();
+      });
+    });
+    return;
+  }
+
+  // Format ids
+  if (animeBtn) {
+    animeBtn.classList.add("active");
+    animeBtn.setAttribute("aria-pressed", "true");
+  }
+}
+
 // ========== GLOBAL DATA ==========
 let allAnimes = [];
-let filteredBase = [];
+let filteredBase = []; // pool après personnalisation
 let targetAnime = null;
 
 // ========== MULTI-ROUNDS STATE ==========
 let totalRounds = 1;
-let currentRound = 1;
+let currentRound = 1; // 1..totalRounds
 let totalScore = 0;
 
 // ========== GAME STATE ==========
@@ -90,6 +179,15 @@ let indicesStudioAtActivation = null;
 let indicesScoreRange = null;
 let indicesGenresFoundSet = new Set();
 let indicesScoreRangeActivation = [0, 0];
+
+// ========== UI TOGGLE (perso vs jeu) ==========
+function showCustomization() {
+  document.body.classList.remove("game-started");
+}
+
+function showGame() {
+  document.body.classList.add("game-started");
+}
 
 // ========== LOAD DATA ==========
 fetch("../data/licenses_only.json")
@@ -114,17 +212,10 @@ fetch("../data/licenses_only.json")
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
 
-// ========== UI TOGGLE (perso vs jeu) ==========
-function showCustomization() {
-  document.body.classList.remove("game-started");
-}
-
-function showGame() {
-  document.body.classList.add("game-started");
-}
-
 // ========== PERSONALISATION UI ==========
 function initPersonalisationUI() {
+  initModeUI();
+
   const pop = document.getElementById("popPercent");
   const score = document.getElementById("scorePercent");
   const yMin = document.getElementById("yearMin");
@@ -135,33 +226,47 @@ function initPersonalisationUI() {
   const yMinVal = document.getElementById("yearMinVal");
   const yMaxVal = document.getElementById("yearMaxVal");
 
+  // rounds (1..100)
   const roundInput = document.getElementById("roundCount");
   if (roundInput) {
-    roundInput.addEventListener("input", () => clampRoundsValue());
+    roundInput.addEventListener("input", () => {
+      clampRoundsValue();
+    });
     clampRoundsValue();
   }
 
   function syncLabels() {
     clampYearSliders();
-    popVal.textContent = pop.value;
-    scoreVal.textContent = score.value;
-    yMinVal.textContent = yMin.value;
-    yMaxVal.textContent = yMax.value;
+    if (popVal && pop) popVal.textContent = pop.value;
+    if (scoreVal && score) scoreVal.textContent = score.value;
+    if (yMinVal && yMin) yMinVal.textContent = yMin.value;
+    if (yMaxVal && yMax) yMaxVal.textContent = yMax.value;
     updatePreview();
   }
 
-  [pop, score, yMin, yMax].forEach((el) => el.addEventListener("input", syncLabels));
+  [pop, score, yMin, yMax].forEach((el) => el && el.addEventListener("input", syncLabels));
 
   // Pills types
-  document.querySelectorAll("#typePills .pill").forEach((btn) => {
+  document.querySelectorAll(".pill[data-type]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      // toggle
+      const next = !btn.classList.contains("active");
+      setPillActive(btn, next);
+
+      // si on a tout désactivé -> sécurité (TV + Movie)
+      const active = document.querySelectorAll(".pill[data-type].active");
+      if (active.length === 0) {
+        ensureDefaultTypes();
+      }
+
       updatePreview();
     });
   });
 
-  document.getElementById("applyFiltersBtn").addEventListener("click", () => {
+  // ✅ Garantit Movie par défaut (et TV) même si HTML n’a pas été mis à jour
+  ensureDefaultTypes();
+
+  document.getElementById("applyFiltersBtn")?.addEventListener("click", () => {
     filteredBase = applyFilters();
 
     if (filteredBase.length < MIN_REQUIRED) {
@@ -169,6 +274,7 @@ function initPersonalisationUI() {
       return;
     }
 
+    // multi-rounds: session
     totalRounds = clampRoundsValue();
     currentRound = 1;
     totalScore = 0;
@@ -182,12 +288,13 @@ function initPersonalisationUI() {
 
 // ========== APPLY FILTERS ==========
 function applyFilters() {
-  const popPercent = parseInt(document.getElementById("popPercent").value, 10);
-  const scorePercent = parseInt(document.getElementById("scorePercent").value, 10);
-  const yearMin = parseInt(document.getElementById("yearMin").value, 10);
-  const yearMax = parseInt(document.getElementById("yearMax").value, 10);
+  // (contentMode prévu pour futur; pour l’instant: anime)
+  const popPercent = parseInt(document.getElementById("popPercent")?.value || "25", 10);
+  const scorePercent = parseInt(document.getElementById("scorePercent")?.value || "25", 10);
+  const yearMin = parseInt(document.getElementById("yearMin")?.value || "1950", 10);
+  const yearMax = parseInt(document.getElementById("yearMax")?.value || "2026", 10);
 
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
+  const allowedTypes = [...document.querySelectorAll(".pill[data-type].active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
   // 1) année + type
@@ -209,14 +316,17 @@ function updatePreview() {
   const preview = document.getElementById("previewCount");
   const btn = document.getElementById("applyFiltersBtn");
 
+  ensureDefaultTypes();
   const pool = applyFilters();
   const ok = pool.length >= MIN_REQUIRED;
 
-  preview.textContent = `📚 Titres disponibles : ${pool.length} ${ok ? "(OK)" : "(Min 64)"}`;
-  preview.classList.toggle("good", ok);
-  preview.classList.toggle("bad", !ok);
+  if (preview) {
+    preview.textContent = `📚 Titres disponibles : ${pool.length} ${ok ? "(OK)" : "(Min 64)"}`;
+    preview.classList.toggle("good", ok);
+    preview.classList.toggle("bad", !ok);
+  }
 
-  btn.disabled = !ok;
+  if (btn) btn.disabled = !ok;
 }
 
 // ========== GAME INIT ==========
@@ -228,6 +338,9 @@ function resetScoreBar() {
 }
 
 function startNewGame() {
+  if (!filteredBase.length) return;
+
+  // choisit un anime mystère DANS filteredBase
   targetAnime = filteredBase[Math.floor(Math.random() * filteredBase.length)];
 
   attemptCount = 0;
@@ -242,13 +355,23 @@ function startNewGame() {
   indicesScoreRange = null;
   indicesScoreRangeActivation = [0, 0];
 
-  document.getElementById("animeInput").value = "";
-  document.getElementById("suggestions").innerHTML = "";
-  document.getElementById("results").innerHTML = "";
-  document.getElementById("counter").textContent = "Tentatives : 0 (-150)";
-  document.getElementById("successContainer").style.display = "none";
-  document.getElementById("successContainer").innerHTML = "";
-  document.getElementById("animeInput").disabled = false;
+  const input = document.getElementById("animeInput");
+  const suggestions = document.getElementById("suggestions");
+  const results = document.getElementById("results");
+  const counter = document.getElementById("counter");
+  const successContainer = document.getElementById("successContainer");
+
+  if (input) {
+    input.value = "";
+    input.disabled = false;
+  }
+  if (suggestions) suggestions.innerHTML = "";
+  if (results) results.innerHTML = "";
+  if (counter) counter.textContent = "Tentatives : 0 (-150)";
+  if (successContainer) {
+    successContainer.style.display = "none";
+    successContainer.innerHTML = "";
+  }
 
   ["btnIndiceStudio", "btnIndiceSaison", "btnIndiceGenres", "btnIndiceScore"].forEach((id) => {
     const btn = document.getElementById(id);
@@ -264,27 +387,27 @@ function startNewGame() {
 }
 
 // ========== INDICES BUTTONS ==========
-document.getElementById("btnIndiceStudio").addEventListener("click", function () {
+document.getElementById("btnIndiceStudio")?.addEventListener("click", function () {
   if (!indicesAvailable.studio || indicesActivated.studio) return;
   indicesActivated.studio = true;
-  indicesStudioAtActivation = targetAnime.studio;
+  indicesStudioAtActivation = targetAnime?.studio || null;
   this.disabled = true;
   this.classList.add("used");
   updateAideList();
   updateScoreBar();
 });
 
-document.getElementById("btnIndiceSaison").addEventListener("click", function () {
+document.getElementById("btnIndiceSaison")?.addEventListener("click", function () {
   if (!indicesAvailable.saison || indicesActivated.saison) return;
   indicesActivated.saison = true;
-  indicesYearAtActivation = String(targetAnime._year);
+  indicesYearAtActivation = String(targetAnime?._year || "");
   this.disabled = true;
   this.classList.add("used");
   updateAideList();
   updateScoreBar();
 });
 
-document.getElementById("btnIndiceGenres").addEventListener("click", function () {
+document.getElementById("btnIndiceGenres")?.addEventListener("click", function () {
   if (!indicesAvailable.genres || indicesActivated.genres) return;
   indicesActivated.genres = true;
   indicesGenresFound = [...indicesGenresFoundSet];
@@ -294,7 +417,7 @@ document.getElementById("btnIndiceGenres").addEventListener("click", function ()
   updateScoreBar();
 });
 
-document.getElementById("btnIndiceScore").addEventListener("click", function () {
+document.getElementById("btnIndiceScore")?.addEventListener("click", function () {
   if (!indicesAvailable.score || indicesActivated.score) return;
   indicesActivated.score = true;
   indicesScoreRange = indicesScoreRangeActivation.slice();
@@ -310,6 +433,8 @@ function updateScoreBar() {
   const scoreBarLabel = document.getElementById("score-bar-label");
 
   const indiceCount = Object.values(indicesActivated).filter(Boolean).length;
+
+  // 1ère tentative ne retire pas 150 (comme ton ancien code)
   const tentative = Math.max(0, attemptCount - 1);
 
   let score = MAX_SCORE - tentative * TENTATIVE_COST - indiceCount * INDICE_COST;
@@ -331,11 +456,12 @@ function updateScoreBar() {
 }
 
 // ========== AUTOCOMPLETE (top 5) ==========
-document.getElementById("animeInput").addEventListener("input", function () {
+document.getElementById("animeInput")?.addEventListener("input", function () {
   if (gameOver) return;
 
   const input = this.value.trim().toLowerCase();
   const suggestions = document.getElementById("suggestions");
+  if (!suggestions) return;
   suggestions.innerHTML = "";
 
   if (!input) return;
@@ -347,7 +473,7 @@ document.getElementById("animeInput").addEventListener("input", function () {
     const div = document.createElement("div");
     div.textContent = anime._title;
     div.onclick = () => {
-      document.getElementById("animeInput").value = anime._title;
+      this.value = anime._title;
       suggestions.innerHTML = "";
       guessAnime();
     };
@@ -355,11 +481,22 @@ document.getElementById("animeInput").addEventListener("input", function () {
   });
 });
 
+// Enter = valider
+document.getElementById("animeInput")?.addEventListener("keydown", function (e) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    guessAnime();
+  }
+});
+
 // ========== GUESS ==========
 function guessAnime() {
   if (gameOver) return;
 
-  const input = document.getElementById("animeInput").value.trim().toLowerCase();
+  const inputEl = document.getElementById("animeInput");
+  if (!inputEl) return;
+
+  const input = inputEl.value.trim().toLowerCase();
   const guessedAnime = filteredBase.find((a) => a._titleLower === input);
 
   if (!guessedAnime) {
@@ -368,23 +505,26 @@ function guessAnime() {
   }
 
   attemptCount++;
-  document.getElementById("counter").textContent = `Tentatives : ${attemptCount} (-150)`;
+  const counter = document.getElementById("counter");
+  if (counter) counter.textContent = `Tentatives : ${attemptCount} (-150)`;
 
   // 1) Studio
-  if (!indicesActivated.studio && guessedAnime.studio && guessedAnime.studio === targetAnime.studio) {
+  if (!indicesActivated.studio && guessedAnime.studio && guessedAnime.studio === targetAnime?.studio) {
     indicesAvailable.studio = true;
-    document.getElementById("btnIndiceStudio").disabled = false;
+    const b = document.getElementById("btnIndiceStudio");
+    if (b) b.disabled = false;
   }
 
   // 2) Année
-  if (!indicesActivated.saison && String(guessedAnime._year) === String(targetAnime._year)) {
+  if (!indicesActivated.saison && String(guessedAnime._year) === String(targetAnime?._year)) {
     indicesAvailable.saison = true;
-    document.getElementById("btnIndiceSaison").disabled = false;
+    const b = document.getElementById("btnIndiceSaison");
+    if (b) b.disabled = false;
   }
 
   // 3) Genres/Thèmes
   const allGuessed = [...(guessedAnime.genres || []), ...(guessedAnime.themes || [])];
-  const allTarget = [...(targetAnime.genres || []), ...(targetAnime.themes || [])];
+  const allTarget = [...(targetAnime?.genres || []), ...(targetAnime?.themes || [])];
 
   allGuessed.forEach((g) => {
     if (allTarget.includes(g) && !indicesGenresFoundSet.has(g)) indicesGenresFoundSet.add(g);
@@ -392,12 +532,13 @@ function guessAnime() {
 
   if (!indicesActivated.genres && indicesGenresFoundSet.size > 0) {
     indicesAvailable.genres = true;
-    document.getElementById("btnIndiceGenres").disabled = false;
+    const b = document.getElementById("btnIndiceGenres");
+    if (b) b.disabled = false;
   }
 
   // 4) Score (+/-0.30)
   const gScore = guessedAnime._score;
-  const tScore = targetAnime._score;
+  const tScore = targetAnime?._score || 0;
 
   let isClose = false;
   if (gScore === tScore) {
@@ -405,19 +546,18 @@ function guessAnime() {
     indicesScoreRangeActivation = [gScore - 0.3, gScore + 0.3];
   } else if (Math.abs(gScore - tScore) <= 0.3) {
     isClose = true;
-    indicesScoreRangeActivation = [
-      Math.min(gScore, tScore) - 0.3,
-      Math.max(gScore, tScore) + 0.3,
-    ];
+    indicesScoreRangeActivation = [Math.min(gScore, tScore) - 0.3, Math.max(gScore, tScore) + 0.3];
   }
 
   if (!indicesActivated.score && isClose) {
     indicesAvailable.score = true;
-    document.getElementById("btnIndiceScore").disabled = false;
+    const b = document.getElementById("btnIndiceScore");
+    if (b) b.disabled = false;
   }
 
   // --- Affichage résultat ---
   const results = document.getElementById("results");
+  if (!results) return;
 
   if (attemptCount === 1) {
     const header = document.createElement("div");
@@ -458,7 +598,7 @@ function guessAnime() {
   // Title
   const cellTitle = document.createElement("div");
   cellTitle.classList.add("cell", "cell-title");
-  const isTitleMatch = guessedAnime.mal_id === targetAnime.mal_id;
+  const isTitleMatch = guessedAnime.mal_id === targetAnime?.mal_id;
   cellTitle.classList.add(isTitleMatch ? "green" : "red");
   cellTitle.textContent = guessedAnime._title;
   row.appendChild(cellTitle);
@@ -466,20 +606,20 @@ function guessAnime() {
   // Year
   const cellYear = document.createElement("div");
   cellYear.classList.add("cell", "cell-season");
-  if (guessedAnime._year === targetAnime._year) {
+  if (guessedAnime._year === targetAnime?._year) {
     cellYear.classList.add("green");
     cellYear.textContent = `✅ ${guessedAnime._year}`;
   } else {
     cellYear.classList.add("red");
     cellYear.textContent =
-      guessedAnime._year < targetAnime._year ? `🔼 ${guessedAnime._year}` : `${guessedAnime._year} 🔽`;
+      guessedAnime._year < (targetAnime?._year || 0) ? `🔼 ${guessedAnime._year}` : `${guessedAnime._year} 🔽`;
   }
   row.appendChild(cellYear);
 
   // Studio
   const cellStudio = document.createElement("div");
   cellStudio.classList.add("cell", "cell-studio");
-  const isStudioMatch = (guessedAnime.studio || "") === (targetAnime.studio || "");
+  const isStudioMatch = (guessedAnime.studio || "") === (targetAnime?.studio || "");
   cellStudio.classList.add(isStudioMatch ? "green" : "red");
   cellStudio.textContent = guessedAnime.studio || "—";
   row.appendChild(cellStudio);
@@ -491,7 +631,6 @@ function guessAnime() {
   if (isTitleMatch) {
     cellGenres.classList.add("green");
     cellGenres.innerHTML = allGuessed.length ? allGuessed.join("<br>") : "—";
-    row.appendChild(cellGenres);
   } else {
     const norm = (s) => String(s || "").trim().toLowerCase();
     const guessedSet = new Set(allGuessed.map(norm).filter(Boolean));
@@ -499,16 +638,15 @@ function guessAnime() {
     const common = [...guessedSet].filter((x) => targetSet.has(x));
 
     const isExactSame =
-      guessedSet.size === targetSet.size &&
-      [...guessedSet].every((x) => targetSet.has(x));
+      guessedSet.size === targetSet.size && [...guessedSet].every((x) => targetSet.has(x));
 
     if (isExactSame) cellGenres.classList.add("green");
     else if (common.length > 0) cellGenres.classList.add("orange");
     else cellGenres.classList.add("red");
 
     cellGenres.innerHTML = allGuessed.length ? allGuessed.join("<br>") : "—";
-    row.appendChild(cellGenres);
   }
+  row.appendChild(cellGenres);
 
   // Score
   const cellScore = document.createElement("div");
@@ -525,19 +663,23 @@ function guessAnime() {
   }
   row.appendChild(cellScore);
 
-  const header = results.querySelector(".header-row") || results.querySelector(".row");
+  // Insert under header
+  const header = results.querySelector(".header-row");
   if (header) results.insertBefore(row, header.nextSibling);
   else results.appendChild(row);
 
-  document.getElementById("animeInput").value = "";
-  document.getElementById("suggestions").innerHTML = "";
+  // cleanup
+  inputEl.value = "";
+  const sugg = document.getElementById("suggestions");
+  if (sugg) sugg.innerHTML = "";
 
   updateAideList();
   updateScoreBar();
 
   if (isTitleMatch) {
     gameOver = true;
-    document.getElementById("animeInput").disabled = true;
+    inputEl.disabled = true;
+
     ["btnIndiceStudio", "btnIndiceSaison", "btnIndiceGenres", "btnIndiceScore"].forEach((id) => {
       const b = document.getElementById(id);
       if (b) b.disabled = true;
@@ -548,9 +690,10 @@ function guessAnime() {
   }
 }
 
-// ========== AIDE LIST ==========
+// ========== AIDE LIST (FILTRÉE PAR INDICES + RANDOM) ==========
 function updateAideList() {
   const aideDiv = document.getElementById("aideContainer");
+  if (!aideDiv) return;
 
   let filtered = filteredBase;
 
@@ -579,23 +722,27 @@ function updateAideList() {
   aideDiv.innerHTML =
     `<h3>🔍 Suggestions</h3><ul>` +
     list
-      .slice(0, 120)
       .map((a) => `<li onclick="selectFromAide('${a._title.replace(/'/g, "\\'")}')">${a._title}</li>`)
       .join("") +
     `</ul>`;
 }
 
 window.selectFromAide = function (title) {
-  document.getElementById("animeInput").value = title;
+  const input = document.getElementById("animeInput");
+  if (!input) return;
+  input.value = title;
   guessAnime();
 };
 
 // ========== CONFETTIS ==========
 function launchFireworks() {
   const canvas = document.getElementById("fireworks");
+  if (!canvas) return;
+
   const ctx = canvas.getContext("2d");
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
+
   const particles = [];
 
   function createParticle(x, y) {
@@ -604,7 +751,9 @@ function launchFireworks() {
     return { x, y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 60 };
   }
 
-  for (let i = 0; i < 110; i++) particles.push(createParticle(canvas.width / 2, canvas.height / 2));
+  for (let i = 0; i < 110; i++) {
+    particles.push(createParticle(canvas.width / 2, canvas.height / 2));
+  }
 
   function animate() {
     ctx.fillStyle = "rgba(0, 0, 0, 0.10)";
@@ -643,6 +792,7 @@ function computeRoundScore() {
 
 function showSuccessMessage() {
   const container = document.getElementById("successContainer");
+  if (!container) return;
 
   const roundScore = computeRoundScore();
   totalScore += roundScore;
@@ -652,7 +802,7 @@ function showSuccessMessage() {
   container.innerHTML = `
     <div id="winMessage" style="margin-bottom: 18px; font-size: 2rem; font-weight: bold; text-align: center;">
       🎇 <span style="font-size:2.3rem;">🥳</span>
-      Bravo ! C'était <u>${targetAnime._title}</u> en ${attemptCount} tentative${attemptCount > 1 ? "s" : ""}.
+      Bravo ! C'était <u>${targetAnime?._title || "?"}</u> en ${attemptCount} tentative${attemptCount > 1 ? "s" : ""}.
       <span style="font-size:2.3rem;">🎉</span>
 
       <div style="margin-top:10px; font-size:1.2rem; opacity:0.92;">
@@ -679,28 +829,21 @@ function showSuccessMessage() {
     nextBtn.onclick = () => {
       if (currentRound < totalRounds) {
         currentRound += 1;
-        startNewGame();
+        startNewGame(); // même personnalisation
       } else {
+        // fin session => retour personnalisation
         showCustomization();
-        document.getElementById("results").innerHTML = "";
-        document.getElementById("aideContainer").innerHTML = "";
-        document.getElementById("suggestions").innerHTML = "";
-        document.getElementById("animeInput").value = "";
+
+        const results = document.getElementById("results");
+        const aide = document.getElementById("aideContainer");
+        const suggestions = document.getElementById("suggestions");
+        const input = document.getElementById("animeInput");
+
+        if (results) results.innerHTML = "";
+        if (aide) aide.innerHTML = "";
+        if (suggestions) suggestions.innerHTML = "";
+        if (input) input.value = "";
       }
     };
   }
 }
-
-// ========== TOOLTIP AIDE ==========
-document.addEventListener("pointerdown", (e) => {
-  const wrap = e.target.closest(".info-wrap");
-
-  if (wrap && e.target.closest(".info-icon")) {
-    e.preventDefault();
-    e.stopPropagation();
-    wrap.classList.toggle("open");
-    return;
-  }
-
-  document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
-});
