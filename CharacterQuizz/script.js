@@ -3,19 +3,17 @@
  * - Dataset: ../data/licenses_only.json
  * - Personnalisation: popularité/score/années/types + rounds
  * - Pas de daily
- * - Affiche 6 personnages (tirés UNIQUEMENT de "characters")
- * - Ordre d’apparition: du + obscur au + connu (on prend les 6 derniers groupes du tableau "characters",
- *   puis on tire 1 perso aléatoire dans chaque groupe, et on révèle du groupe 1 -> 6)
- * - Score max 3000, -500 par personnage révélé (auto toutes les 8s ou après un essai)
+ * - Utilise uniquement "characters" (pas top_characters)
+ * - 6 persos révélés progressivement (timer + essai)
+ * - Score: 3000 puis -500 par perso révélé (min 0)
  **********************/
 
 const MAX_SCORE = 3000;
-const STEP_PENALTY = 500;     // -500 par reveal
-const REVEAL_INTERVAL = 8000; // 8s (comme ton tooltip)
+const REVEAL_STEP = 500;          // -500 par reveal
+const REVEAL_INTERVAL_SEC = 8;    // reveal auto toutes les 8s
+const MAX_REVEALS = 6;
 
-/* ======================
-   MENU + THEME
-====================== */
+// ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
   window.location.href = "../index.html";
 });
@@ -29,9 +27,7 @@ window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
 });
 
-/* ======================
-   HELPERS (dataset)
-====================== */
+// ====== Helpers ======
 function getDisplayTitle(a) {
   return (
     a.title_english ||
@@ -75,9 +71,36 @@ function clampInt(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-/* ======================
-   DOM refs
-====================== */
+// --- Selection personnages (reprend l’idée “ancien JS”: on évite de montrer d’emblée les + connus)
+// On prend 6 persos au hasard, puis on trie par "difficulté": on met au début ceux qui semblent moins “main”
+function pick6CharactersBalanced(characters) {
+  if (!Array.isArray(characters) || characters.length === 0) return [];
+  // on retire les entrées invalides
+  const clean = characters.filter(c => c && typeof c.image === "string" && c.image && typeof c.name === "string");
+  if (clean.length === 0) return [];
+
+  // on randomise puis on prend 6
+  const pool = [...clean];
+  shuffleInPlace(pool);
+  const picked = pool.slice(0, Math.min(MAX_REVEALS, pool.length));
+
+  // Heuristique simple: pénaliser les noms "très courts" / ultra connus (souvent juste "Levi", "Naruto", etc.)
+  // => on met plutôt ces persos vers la fin. (On reste 100% sur `characters`, pas `top_characters`.)
+  const scoreName = (name) => {
+    const n = (name || "").trim();
+    const len = n.length;
+    const words = n.split(/\s+/).filter(Boolean).length;
+    // plus c’est “court/simple”, plus ça semble connu => score plus faible
+    // on veut les scores faibles PLUS TARD, donc on trie croissant -> puis on inverse
+    return (len * 2) + (words * 6);
+  };
+
+  // On veut commencer par “moins évidents” => scores plus élevés d’abord
+  picked.sort((a, b) => scoreName(b.name) - scoreName(a.name));
+  return picked;
+}
+
+// ====== DOM refs ======
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
 
@@ -95,35 +118,49 @@ const previewCountEl = document.getElementById("previewCount");
 const applyBtn = document.getElementById("applyFiltersBtn");
 const roundCountEl = document.getElementById("roundCount");
 
+// game refs
 const container = document.getElementById("character-container");
 const feedback = document.getElementById("feedback");
 const timerDisplay = document.getElementById("timer");
-
 const input = document.getElementById("characterInput");
 const submitBtn = document.getElementById("submit-btn");
 const restartBtn = document.getElementById("restart-btn");
 const suggestions = document.getElementById("suggestions");
-
 const roundLabel = document.getElementById("roundLabel");
 
-/* ======================
-   UI show/hide
-====================== */
+// score bar
+const scoreBar = document.getElementById("score-bar");
+const scoreBarLabel = document.getElementById("score-bar-label");
+
+// ====== Data ======
+let allAnimes = [];
+let filteredAnimes = [];
+
+// ====== Session (Rounds) ======
+let totalRounds = 5;
+let currentRound = 1;
+let totalScore = 0;
+
+// ====== Round state ======
+let currentAnime = null;
+let visibleCharacters = [];
+let revealedCount = 0;
+let gameEnded = false;
+
+let countdown = REVEAL_INTERVAL_SEC;
+let countdownInterval = null;
+
+// ====== UI show/hide ======
 function showCustomization() {
   customPanel.style.display = "block";
   gamePanel.style.display = "none";
-  document.body.classList.remove("game-started");
 }
-
 function showGame() {
   customPanel.style.display = "none";
   gamePanel.style.display = "block";
-  document.body.classList.add("game-started");
 }
 
-/* ======================
-   Score bar
-====================== */
+// ====== Score bar ======
 function getScoreBarColor(score) {
   if (score >= 2500) return "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
   if (score >= 1500) return "linear-gradient(90deg,#fff96a,#ffc34b 90%)";
@@ -132,18 +169,378 @@ function getScoreBarColor(score) {
   return "linear-gradient(90deg,#444,#333 90%)";
 }
 
-function updateScoreBar(score = MAX_SCORE) {
-  const bar = document.getElementById("score-bar");
-  const label = document.getElementById("score-bar-label");
-  const percent = Math.max(0, Math.min(100, (score / MAX_SCORE) * 100));
-  label.textContent = `${score} / ${MAX_SCORE}`;
-  bar.style.width = percent + "%";
-  bar.style.background = getScoreBarColor(score);
+function setScoreBar(score) {
+  const s = Math.max(0, Math.min(MAX_SCORE, score));
+  const pct = Math.max(0, Math.min(100, (s / MAX_SCORE) * 100));
+  scoreBar.style.width = pct + "%";
+  scoreBar.style.background = getScoreBarColor(s);
+  scoreBarLabel.textContent = `${s} / ${MAX_SCORE}`;
 }
 
-/* ======================
-   Fireworks
-====================== */
+function currentPotentialScore() {
+  // revealedCount inclut le perso déjà affiché : score = 3000 - (revealedCount-1)*500
+  const malus = Math.max(0, (revealedCount - 1) * REVEAL_STEP);
+  return Math.max(MAX_SCORE - malus, 0);
+}
+
+// ====== Custom UI init ======
+function initCustomUI() {
+  function syncLabels() {
+    clampYearSliders();
+    popValEl.textContent = popEl.value;
+    scoreValEl.textContent = scoreEl.value;
+    yearMinValEl.textContent = yearMinEl.value;
+    yearMaxValEl.textContent = yearMaxEl.value;
+    updatePreview();
+  }
+
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
+
+  // type pills
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      updatePreview();
+    });
+  });
+
+  applyBtn.addEventListener("click", () => {
+    filteredAnimes = applyFilters();
+    if (filteredAnimes.length === 0) return;
+
+    totalRounds = clampInt(parseInt(roundCountEl.value || "5", 10), 1, 50);
+    currentRound = 1;
+    totalScore = 0;
+
+    showGame();
+    startNewRound();
+  });
+
+  syncLabels();
+}
+
+// ====== Filters ======
+function applyFilters() {
+  const popPercent = parseInt(popEl.value, 10);
+  const scorePercent = parseInt(scoreEl.value, 10);
+  const yearMin = parseInt(yearMinEl.value, 10);
+  const yearMax = parseInt(yearMaxEl.value, 10);
+
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
+  if (allowedTypes.length === 0) return [];
+
+  // 1) base filter (year/type + doit avoir des characters)
+  let pool = allAnimes.filter((a) => {
+    return (
+      a._year >= yearMin &&
+      a._year <= yearMax &&
+      allowedTypes.includes(a._type) &&
+      Array.isArray(a.characters) &&
+      a.characters.length > 0
+    );
+  });
+
+  if (pool.length === 0) return [];
+
+  // 2) top pop% par members
+  pool.sort((a, b) => b._members - a._members);
+  pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
+
+  // 3) top score% par score
+  pool.sort((a, b) => b._score - a._score);
+  pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
+
+  // Nettoyage final: éviter les titres sans images valides
+  pool = pool.filter(a => {
+    const chars = Array.isArray(a.characters) ? a.characters : [];
+    return chars.some(c => c && c.image && typeof c.image === "string");
+  });
+
+  return pool;
+}
+
+// ====== Preview ======
+function updatePreview() {
+  const pool = applyFilters();
+  const ok = pool.length > 0;
+
+  previewCountEl.textContent = ok
+    ? `👤 Titres disponibles : ${pool.length} (OK)`
+    : `👤 Titres disponibles : 0 (Min 1)`;
+
+  previewCountEl.classList.toggle("good", ok);
+  previewCountEl.classList.toggle("bad", !ok);
+
+  applyBtn.disabled = !ok;
+  applyBtn.classList.toggle("disabled", !ok);
+}
+
+// ====== Game flow ======
+function resetRoundUI() {
+  if (roundLabel) roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
+
+  container.innerHTML = "";
+  feedback.textContent = "";
+  feedback.className = "";
+  timerDisplay.textContent = "";
+
+  revealedCount = 0;
+  gameEnded = false;
+
+  input.value = "";
+  input.disabled = false;
+  submitBtn.disabled = true;
+
+  restartBtn.style.display = "none";
+  restartBtn.textContent = (currentRound < totalRounds) ? "Suivant" : "Terminer";
+
+  suggestions.innerHTML = "";
+
+  clearInterval(countdownInterval);
+  countdownInterval = null;
+
+  setScoreBar(MAX_SCORE);
+}
+
+function startNewRound() {
+  resetRoundUI();
+
+  currentAnime = filteredAnimes[Math.floor(Math.random() * filteredAnimes.length)];
+  visibleCharacters = pick6CharactersBalanced(currentAnime.characters);
+
+  // crée les images (cachées)
+  visibleCharacters.forEach((char, i) => {
+    const img = document.createElement("img");
+    img.src = char.image;
+    img.alt = char.name;
+    img.className = "character-img";
+    img.id = "char-" + i;
+    img.style.display = "none";
+    container.appendChild(img);
+  });
+
+  // reveal 1er perso
+  revealNextCharacter();
+}
+
+function revealNextCharacter() {
+  if (!currentAnime || gameEnded) return;
+
+  if (revealedCount < visibleCharacters.length) {
+    const img = document.getElementById("char-" + revealedCount);
+    if (img) img.style.display = "block";
+    revealedCount++;
+
+    setScoreBar(currentPotentialScore());
+    resetTimer();
+  } else {
+    // plus rien à révéler -> fin par timeout logique
+    resetTimer(); // garde le timer, mais on gère à 0
+  }
+}
+
+function resetTimer() {
+  countdown = REVEAL_INTERVAL_SEC;
+  timerDisplay.textContent = `Temps restant : ${countdown} s`;
+
+  if (countdownInterval) clearInterval(countdownInterval);
+  countdownInterval = setInterval(() => {
+    countdown--;
+    if (countdown <= 0) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+
+      if (gameEnded) return;
+
+      // si tout révélé => perdu
+      if (revealedCount >= visibleCharacters.length) {
+        loseRound("⏰ Temps écoulé !");
+      } else {
+        // sinon on révèle un nouveau perso
+        revealNextCharacter();
+      }
+      return;
+    }
+    timerDisplay.textContent = `Temps restant : ${countdown} s`;
+  }, 1000);
+}
+
+// ====== End round ======
+function endRound(roundScore, won, messageHtml) {
+  gameEnded = true;
+
+  clearInterval(countdownInterval);
+  countdownInterval = null;
+
+  // afficher tous les persos restants
+  for (let i = 0; i < visibleCharacters.length; i++) {
+    const img = document.getElementById("char-" + i);
+    if (img) img.style.display = "block";
+  }
+
+  // bloc input
+  input.disabled = true;
+  submitBtn.disabled = true;
+  suggestions.innerHTML = "";
+
+  setScoreBar(roundScore);
+
+  // message
+  feedback.innerHTML = messageHtml;
+  feedback.className = won ? "success" : "error";
+
+  // score total
+  totalScore += roundScore;
+
+  // bouton next / end
+  restartBtn.style.display = "inline-block";
+  restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
+
+  restartBtn.onclick = () => {
+    if (currentRound >= totalRounds) {
+      showFinalRecap();
+    } else {
+      currentRound += 1;
+      startNewRound();
+    }
+  };
+}
+
+function winRound() {
+  const score = currentPotentialScore();
+  if (score > 0) launchFireworks();
+
+  const msg = `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>Score : <b>${score}</b> / ${MAX_SCORE}`;
+  endRound(score, true, msg);
+}
+
+function loseRound(prefix) {
+  const msg = `${prefix} ❌<br>Réponse : <b>${currentAnime._title}</b><br>Score : <b>0</b> / ${MAX_SCORE}`;
+  endRound(0, false, msg);
+}
+
+function showFinalRecap() {
+  // on reste dans game-panel mais on remplace le contenu
+  const gameContainer = document.getElementById("container");
+  gameContainer.innerHTML = `
+    <div style="width:100%;max-width:520px;text-align:center;">
+      <div style="font-size:1.35rem;font-weight:900;opacity:0.95;margin-bottom:10px;">🏆 Série terminée !</div>
+      <div style="font-size:1.15rem;font-weight:900;margin-bottom:14px;">
+        Score total : <b>${totalScore}</b> / <b>${totalRounds * MAX_SCORE}</b>
+      </div>
+      <button id="backToSettings" class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
+        Retour réglages
+      </button>
+    </div>
+  `;
+  document.getElementById("backToSettings").onclick = () => {
+    // reset simple: recharger la page = safe pour remettre DOM initial
+    // (si tu préfères sans reload, dis-moi et je le fais)
+    window.location.reload();
+  };
+}
+
+// ====== Guess logic ======
+function normalizeTitle(s) {
+  return (s || "").trim().toLowerCase();
+}
+
+function checkGuess() {
+  if (!currentAnime || gameEnded) return;
+
+  const guess = input.value.trim();
+  if (!guess) {
+    feedback.textContent = "⚠️ Tu dois écrire un nom d'anime.";
+    feedback.className = "error";
+    return;
+  }
+
+  const ok = normalizeTitle(guess) === normalizeTitle(currentAnime._title);
+
+  if (ok) {
+    winRound();
+    return;
+  }
+
+  // mauvais: révèle 1 perso (si possible)
+  feedback.textContent = "❌ Mauvaise réponse.";
+  feedback.className = "error";
+
+  input.value = "";
+  submitBtn.disabled = true;
+  input.focus();
+  suggestions.innerHTML = "";
+
+  clearInterval(countdownInterval);
+  countdownInterval = null;
+
+  if (revealedCount < visibleCharacters.length) {
+    revealNextCharacter();
+  } else {
+    loseRound("❌ Mauvaise réponse.");
+  }
+}
+
+// ====== Autocomplete ======
+input.addEventListener("input", function () {
+  if (gameEnded) return;
+
+  const val = this.value.toLowerCase().trim();
+  suggestions.innerHTML = "";
+  feedback.textContent = "";
+  submitBtn.disabled = true;
+
+  if (!val) return;
+
+  // titres uniques sur base filtrée
+  const titles = [...new Set(filteredAnimes.map(a => a._title))];
+  const matches = titles.filter(t => t.toLowerCase().includes(val)).slice(0, 7);
+
+  matches.forEach((title) => {
+    const div = document.createElement("div");
+    div.innerHTML = `<span>${title.replace(new RegExp(val, "i"), (m) => `<b>${m}</b>`)}</span>`;
+    div.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      input.value = title;
+      suggestions.innerHTML = "";
+      submitBtn.disabled = false;
+      input.focus();
+    });
+    suggestions.appendChild(div);
+  });
+
+  // enable si match exact
+  submitBtn.disabled = !titles.map(t => t.toLowerCase()).includes(val);
+});
+
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) {
+    checkGuess();
+  }
+});
+
+submitBtn.addEventListener("click", checkGuess);
+
+// ====== Tooltip (icône info) ======
+document.addEventListener("click", (e) => {
+  const icon = e.target.closest(".info-icon");
+  if (!icon) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  const wrap = icon.closest(".info-wrap");
+  if (wrap) wrap.classList.toggle("open");
+});
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".info-wrap")) {
+    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
+  }
+});
+
+// ====== Fireworks ======
 function launchFireworks() {
   const canvas = document.getElementById("fireworks");
   if (!canvas) return;
@@ -184,458 +581,7 @@ function launchFireworks() {
   animate();
 }
 
-/* ======================
-   Character selection logic
-   - UTILISE UNIQUEMENT anime.characters
-   - on considère que "characters" est trié du moins important -> plus important
-   - on coupe en 6 groupes, mais le surplus va aux derniers groupes (les plus connus)
-   - on tire 1 perso aléatoire par groupe
-   - révélation du 1er groupe au 6e (du + obscur au + connu)
-====================== */
-function splitCharactersInto6(characters) {
-  const N = characters.length;
-
-  // Si moins de 6 persos: groupes avec trous
-  if (N < 6) {
-    const groups = [];
-    for (let i = 0; i < 6; i++) groups.push(i < N ? [characters[i]] : []);
-    return groups;
-  }
-
-  const baseSize = Math.floor(N / 6);
-  const surplus = N % 6;
-
-  const sizes = Array(6).fill(baseSize);
-  // surplus -> derniers groupes (plus connus)
-  for (let i = 0; i < surplus; i++) sizes[5 - i] += 1;
-
-  const groups = [];
-  let start = 0;
-  for (let i = 0; i < 6; i++) {
-    groups.push(characters.slice(start, start + sizes[i]));
-    start += sizes[i];
-  }
-  return groups;
-}
-
-function pickOneRandomPerGroup(characters) {
-  const groups = splitCharactersInto6(characters);
-  return groups
-    .map((g) => {
-      if (!g || g.length === 0) return null;
-      if (g.length === 1) return g[0];
-      return g[Math.floor(Math.random() * g.length)];
-    })
-    .filter(Boolean);
-}
-
-/* ======================
-   Data
-====================== */
-let allAnimes = [];
-let filteredAnimes = [];
-
-/* ======================
-   Session (Rounds)
-====================== */
-let totalRounds = 5;
-let currentRound = 1;
-let totalScore = 0;
-
-/* ======================
-   Round state
-====================== */
-let currentAnime = null;
-let visibleCharacters = [];
-let revealedCount = 0;
-let gameEnded = false;
-
-let countdown = 8;
-let countdownInterval = null;
-
-/* ======================
-   Filters (same spirit as OpeningQuizz)
-====================== */
-function applyFilters() {
-  const popPercent = parseInt(popEl.value, 10);
-  const scorePercent = parseInt(scoreEl.value, 10);
-  const yearMin = parseInt(yearMinEl.value, 10);
-  const yearMax = parseInt(yearMaxEl.value, 10);
-
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
-  if (allowedTypes.length === 0) return [];
-
-  // 1) filtre de base
-  let pool = allAnimes.filter((a) => {
-    return a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type);
-  });
-
-  // 2) top pop% par members
-  pool.sort((a, b) => b._members - a._members);
-  pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
-
-  // 3) top score% par score
-  pool.sort((a, b) => b._score - a._score);
-  pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
-
-  // 4) doit avoir au moins 1 personnage avec image (sinon injouable)
-  pool = pool.filter((a) => Array.isArray(a.characters) && a.characters.some((c) => c && c.image));
-
-  return pool;
-}
-
-function updatePreview() {
-  const pool = applyFilters();
-  const ok = pool.length >= 1; // ici, pas de min 64
-  previewCountEl.textContent = ok ? `👤 Titres disponibles : ${pool.length} (OK)` : `👤 Titres disponibles : ${pool.length}`;
-  previewCountEl.classList.toggle("good", ok);
-  previewCountEl.classList.toggle("bad", !ok);
-  applyBtn.disabled = !ok;
-  applyBtn.classList.toggle("disabled", !ok);
-}
-
-/* ======================
-   Custom UI init
-====================== */
-function initCustomUI() {
-  function syncLabels() {
-    clampYearSliders();
-    popValEl.textContent = popEl.value;
-    scoreValEl.textContent = scoreEl.value;
-    yearMinValEl.textContent = yearMinEl.value;
-    yearMaxValEl.textContent = yearMaxEl.value;
-    updatePreview();
-  }
-
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
-
-  // type pills
-  document.querySelectorAll("#typePills .pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-      updatePreview();
-    });
-  });
-
-  applyBtn.addEventListener("click", () => {
-    filteredAnimes = applyFilters();
-    if (filteredAnimes.length < 1) return;
-
-    totalRounds = clampInt(parseInt(roundCountEl.value || "5", 10), 1, 50);
-    currentRound = 1;
-    totalScore = 0;
-
-    showGame();
-    startNewRound();
-  });
-
-  syncLabels();
-}
-
-/* ======================
-   Round flow
-====================== */
-function resetRoundUI() {
-  container.innerHTML = "";
-  feedback.textContent = "";
-  feedback.className = "";
-  suggestions.innerHTML = "";
-
-  revealedCount = 0;
-  gameEnded = false;
-
-  input.value = "";
-  input.disabled = false;
-  submitBtn.disabled = true;
-
-  restartBtn.style.display = "none";
-  restartBtn.textContent = currentRound < totalRounds ? "Suivant" : "Terminer";
-
-  timerDisplay.textContent = "";
-
-  clearInterval(countdownInterval);
-  countdownInterval = null;
-
-  updateScoreBar(MAX_SCORE);
-
-  if (roundLabel) {
-    roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
-  }
-}
-
-function startNewRound() {
-  resetRoundUI();
-
-  // pick anime
-  currentAnime = filteredAnimes[Math.floor(Math.random() * filteredAnimes.length)];
-
-  // pick 6 characters (from characters only)
-  const chars = Array.isArray(currentAnime.characters) ? currentAnime.characters : [];
-  visibleCharacters = pickOneRandomPerGroup(chars);
-
-  // render (hidden)
-  visibleCharacters.forEach((char, i) => {
-    const img = document.createElement("img");
-    img.src = char.image;
-    img.alt = char.name || "Character";
-    img.className = "character-img";
-    img.id = "char-" + i;
-    img.style.display = "none";
-    container.appendChild(img);
-  });
-
-  // reveal first immediately
-  revealNextCharacter();
-}
-
-function currentPotentialScore() {
-  // revealedCount = nb déjà affichés
-  // score basé sur le nombre déjà révélé (coût par perso révélé)
-  const score = Math.max(MAX_SCORE - (revealedCount - 1) * STEP_PENALTY, 0);
-  return score;
-}
-
-function revealNextCharacter() {
-  if (gameEnded) return;
-
-  if (revealedCount < visibleCharacters.length) {
-    const img = document.getElementById("char-" + revealedCount);
-    if (img) img.style.display = "block";
-
-    // revealedCount augmente après affichage
-    revealedCount++;
-
-    // score potentiel à ce moment (après reveal)
-    const score = Math.max(MAX_SCORE - (revealedCount - 1) * STEP_PENALTY, 0);
-    updateScoreBar(score);
-
-    resetTimer();
-  } else {
-    // plus de persos -> perdu si pas déjà fini
-    loseRound();
-  }
-}
-
-/* ======================
-   Timer (8s)
-====================== */
-function resetTimer() {
-  countdown = 8;
-  timerDisplay.textContent = `Temps restant : ${countdown} s`;
-  if (countdownInterval) clearInterval(countdownInterval);
-
-  countdownInterval = setInterval(() => {
-    countdown--;
-    if (countdown <= 0) {
-      clearInterval(countdownInterval);
-      countdownInterval = null;
-
-      if (!gameEnded) {
-        if (revealedCount >= visibleCharacters.length) loseRound();
-        else revealNextCharacter();
-      }
-    } else {
-      timerDisplay.textContent = `Temps restant : ${countdown} s`;
-    }
-  }, 1000);
-}
-
-/* ======================
-   Autocomplete
-====================== */
-function buildUniqueTitles() {
-  // titres des animes filtrés
-  return [...new Set(filteredAnimes.map((a) => a._title))];
-}
-
-input.addEventListener("input", function () {
-  if (gameEnded) return;
-
-  const val = this.value.toLowerCase().trim();
-  suggestions.innerHTML = "";
-  feedback.textContent = "";
-  submitBtn.disabled = true;
-
-  if (!val) return;
-
-  const titles = buildUniqueTitles();
-  const found = titles
-    .filter((t) => t.toLowerCase().includes(val))
-    .slice(0, 7);
-
-  found.forEach((title) => {
-    const div = document.createElement("div");
-    div.innerHTML = `<span>${title.replace(new RegExp(val, "i"), (m) => `<b>${m}</b>`)}</span>`;
-    div.addEventListener("mousedown", function (e) {
-      e.preventDefault();
-      input.value = title;
-      suggestions.innerHTML = "";
-      submitBtn.disabled = false;
-      input.focus();
-    });
-    suggestions.appendChild(div);
-  });
-
-  submitBtn.disabled = !titles.map((t) => t.toLowerCase()).includes(val);
-});
-
-input.addEventListener("keydown", function (e) {
-  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) {
-    checkGuess();
-  }
-});
-
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".input-container")) suggestions.innerHTML = "";
-});
-
-/* ======================
-   Guess logic
-====================== */
-function revealAllCharacters() {
-  for (let i = 0; i < visibleCharacters.length; i++) {
-    const img = document.getElementById("char-" + i);
-    if (img) img.style.display = "block";
-  }
-}
-
-function endRound(roundScore, won) {
-  gameEnded = true;
-
-  clearInterval(countdownInterval);
-  countdownInterval = null;
-
-  input.disabled = true;
-  submitBtn.disabled = true;
-  suggestions.innerHTML = "";
-
-  totalScore += roundScore;
-
-  // bouton next
-  restartBtn.style.display = "inline-block";
-  restartBtn.textContent = currentRound < totalRounds ? "Round suivant" : "Terminer";
-
-  // timer text
-  timerDisplay.textContent = "Round terminé.";
-
-  // si fin de série: affiche total + bouton retour réglages
-  if (currentRound >= totalRounds) {
-    const extra = document.createElement("div");
-    extra.style.marginTop = "10px";
-    extra.style.fontWeight = "900";
-    extra.style.opacity = "0.95";
-    extra.innerHTML = `✅ Série terminée !<br>Score total : <b>${totalScore}</b> / <b>${totalRounds * MAX_SCORE}</b>`;
-    feedback.appendChild(extra);
-
-    restartBtn.textContent = "Retour réglages";
-  }
-}
-
-function winRound() {
-  const score = Math.max(MAX_SCORE - (revealedCount - 1) * STEP_PENALTY, 0);
-  updateScoreBar(score);
-  if (score > 0) launchFireworks();
-
-  revealAllCharacters();
-
-  feedback.textContent = `🎉 Bonne réponse ! C'était bien "${currentAnime._title}" | Score : ${score} / ${MAX_SCORE}`;
-  feedback.className = "success";
-
-  endRound(score, true);
-}
-
-function loseRound() {
-  updateScoreBar(0);
-  revealAllCharacters();
-
-  feedback.textContent = `❌ Perdu. C'était "${currentAnime._title}" | Score : 0 / ${MAX_SCORE}`;
-  feedback.className = "error";
-
-  endRound(0, false);
-}
-
-function checkGuess() {
-  if (gameEnded) return;
-
-  const guess = input.value.trim();
-  if (!guess) {
-    feedback.textContent = "⚠️ Tu dois écrire un nom d'anime.";
-    feedback.className = "error";
-    return;
-  }
-
-  const normalizedGuess = guess.toLowerCase();
-  const answer = currentAnime._titleLower;
-
-  if (normalizedGuess === answer) {
-    winRound();
-  } else {
-    feedback.textContent = "❌ Mauvaise réponse.";
-    feedback.className = "error";
-
-    // chaque essai déclenche un reveal immédiat (comme avant)
-    if (revealedCount < visibleCharacters.length) {
-      clearInterval(countdownInterval);
-      countdownInterval = null;
-      revealNextCharacter();
-    } else {
-      loseRound();
-    }
-  }
-
-  input.value = "";
-  submitBtn.disabled = true;
-  input.focus();
-  suggestions.innerHTML = "";
-}
-
-/* ======================
-   Buttons
-====================== */
-submitBtn.addEventListener("click", () => checkGuess());
-
-restartBtn.addEventListener("click", () => {
-  if (currentRound >= totalRounds) {
-    // retour réglages
-    showCustomization();
-    // reset "soft"
-    suggestions.innerHTML = "";
-    input.value = "";
-    feedback.textContent = "";
-    timerDisplay.textContent = "";
-    container.innerHTML = "";
-    updatePreview();
-    return;
-  }
-
-  currentRound += 1;
-  startNewRound();
-});
-
-/* ======================
-   Tooltip (icône info)
-====================== */
-document.addEventListener("click", (e) => {
-  const icon = e.target.closest(".info-icon");
-  if (!icon) return;
-
-  e.preventDefault();
-  e.stopPropagation();
-
-  const wrap = icon.closest(".info-wrap");
-  if (wrap) wrap.classList.toggle("open");
-});
-
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
-  }
-});
-
-/* ======================
-   Load dataset
-====================== */
+// ====== Load dataset ======
 fetch("../data/licenses_only.json")
   .then((r) => r.json())
   .then((data) => {
@@ -657,3 +603,4 @@ fetch("../data/licenses_only.json")
     showCustomization();
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
+
