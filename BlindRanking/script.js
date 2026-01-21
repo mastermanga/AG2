@@ -1,8 +1,8 @@
 /**********************
- * Blind Ranking (v2)
+ * Blind Ranking (v3)
  * ✅ Songs title format: Oeuvre + Type(OP/ED/Insert) + numéro + nom + artiste
- * ✅ Ranking grid: lazy-load videos (no lag)
- * ✅ Main player: anti-bug loader (retries + anti-stall + cache-buster)
+ * ✅ Ranking grid: lazy-load videos + image anime en fond
+ * ✅ Main player: anti-bug loader (1er essai + 5 retries: 2,4,6,8,10s)
  **********************/
 
 // ====== MENU & THEME ======
@@ -37,8 +37,8 @@ document.addEventListener("click", (e) => {
 // ====== HELPERS ======
 const MIN_REQUIRED = 64;
 
-// anti-bug média (inspiré OpeningQuizz)
-const RETRY_DELAYS = [0, 2000, 6000];
+// ✅ 1er essai immédiat + 5 retries: 2,4,6,8,10s
+const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const STALL_TIMEOUT_MS = 6000;
 
 function setMediaStatus(msg) {
@@ -102,7 +102,7 @@ function typeLabel(songType) {
 
 // ✅ format demandé
 function formatSongTitle(item) {
-  const anime = item.animeTitle || item.titleAnime || item.anime || "";
+  const anime = item.animeTitle || "";
   const t = typeLabel(item.songType);
   const num = item.songNumber ? ` ${item.songNumber}` : "";
   const name = item.songName ? ` — ${item.songName}` : "";
@@ -255,10 +255,7 @@ function loadVideoWithRetries(videoEl, url, localToken, onReady, onFail, { autop
     cleanup();
     setMediaStatus("");
     if (typeof onReady === "function") onReady();
-
-    if (autoplay) {
-      videoEl.play?.().catch(() => {});
-    }
+    if (autoplay) videoEl.play?.().catch(() => {});
   };
 
   const triggerRetry = (msg) => {
@@ -274,7 +271,7 @@ function loadVideoWithRetries(videoEl, url, localToken, onReady, onFail, { autop
       return;
     }
 
-    setMediaStatus(msg || `🔄 Nouvelle tentative (${attemptIndex + 1}/${RETRY_DELAYS.length})...`);
+    setMediaStatus(msg || `🔄 Tentative (${attemptIndex + 1}/${RETRY_DELAYS.length})...`);
     setTimeout(() => {
       if (!isStillValid() || done) return;
       doAttempt();
@@ -384,7 +381,6 @@ function initCustomUI() {
     });
   });
 
-  // Sliders sync
   function syncLabels() {
     clampYearSliders();
     popValEl.textContent = popEl.value;
@@ -395,7 +391,6 @@ function initCustomUI() {
   }
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncLabels));
 
-  // Apply
   applyBtn.addEventListener("click", () => {
     filteredPool = applyFilters();
     const minNeeded = Math.max(10, MIN_REQUIRED);
@@ -414,7 +409,6 @@ function initCustomUI() {
     startRound();
   });
 
-  // Rank buttons events
   [...rankButtonsWrap.querySelectorAll("button[data-rank]")].forEach(btn => {
     btn.addEventListener("click", () => {
       const r = parseInt(btn.dataset.rank, 10);
@@ -422,7 +416,6 @@ function initCustomUI() {
     });
   });
 
-  // defaults forced mode
   if (forcedMode === "anime" || forcedMode === "songs") {
     currentMode = forcedMode;
     updateModePillsFromState();
@@ -474,7 +467,6 @@ function applyFilters() {
     }));
   }
 
-  // songs mode
   const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map(b => b.dataset.song);
   if (allowedSongs.length === 0) return [];
 
@@ -491,18 +483,18 @@ function applyFilters() {
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  // ✅ Nouveau titre demandé
+  // ✅ donne l'image d'anime au ranking grid (fond)
   return pool.map(s => {
     const item = {
       kind: "song",
       _key: `song|${s._key}`,
       animeTitle: s.animeTitle || "Anime",
       songName: s.songName || "",
-      songType: s.songType, // OP/ED/IN
+      songType: s.songType,
       songNumber: s.songNumber || 1,
       songArtists: s.songArtists || "",
       url: s.url,
-      image: ""
+      image: s.animeImage || ""   // ✅ IMPORTANT
     };
     item.title = formatSongTitle(item);
     return item;
@@ -539,14 +531,11 @@ function resetGameUI() {
   nextBtn.style.display = "none";
   setMediaStatus("");
 
-  // stop main player + cleanup handlers
   mainMediaToken++;
   if (mainCleanup) { try { mainCleanup(); } catch {} }
   mainCleanup = null;
 
-  if (songPlayer) {
-    hardResetVideo(songPlayer);
-  }
+  if (songPlayer) hardResetVideo(songPlayer);
 }
 
 function pick10FromPool(pool) {
@@ -598,21 +587,15 @@ function startRound() {
 
 function displayCurrentItem() {
   const item = selectedItems[currentIndex];
-
-  if (!item) {
-    finishRound();
-    return;
-  }
+  if (!item) { finishRound(); return; }
 
   setMediaStatus("");
   itemName.textContent = item.title || "";
 
   if (currentMode === "songs") {
     animeImg.style.display = "none";
-
     playerZone.style.display = "block";
 
-    // anti-bug load + autoplay
     mainMediaToken++;
     const local = mainMediaToken;
 
@@ -624,14 +607,8 @@ function displayCurrentItem() {
         songPlayer,
         item.url,
         local,
-        () => {
-          // prêt → tentative autoplay
-          songPlayer.play?.().catch(() => {});
-        },
-        () => {
-          // fail → laisse l’utilisateur passer
-          setMediaStatus("❌ Impossible de charger cette vidéo.");
-        },
+        () => { songPlayer.play?.().catch(() => {}); },
+        () => { setMediaStatus("❌ Impossible de charger cette vidéo."); },
         { autoplay: true }
       );
     } else {
@@ -639,7 +616,6 @@ function displayCurrentItem() {
       playerZone.style.display = "none";
     }
   } else {
-    // anime mode normal
     playerZone.style.display = "none";
     hardResetVideo(songPlayer);
 
@@ -670,10 +646,14 @@ function assignRank(rank) {
   displayCurrentItem();
 }
 
-// ✅ Lazy-load video in grid (anti-lag)
-function createLazyVideoThumb(url) {
+// ✅ Lazy-load video in grid (fond image + bouton)
+function createLazyVideoThumb(url, bgImage = "") {
   const wrap = document.createElement("div");
   wrap.className = "video-thumb";
+
+  if (bgImage) {
+    wrap.style.backgroundImage = `url("${bgImage}")`;
+  }
 
   const btn = document.createElement("button");
   btn.type = "button";
@@ -692,7 +672,6 @@ function createLazyVideoThumb(url) {
     // remplace le thumb par la vidéo
     wrap.replaceWith(vid);
 
-    // protections simples (retry + stall) localisées
     let attempt = 0;
     let stallTimer = null;
     let alive = true;
@@ -712,26 +691,24 @@ function createLazyVideoThumb(url) {
       if (stallTimer) clearTimeout(stallTimer);
       stallTimer = setTimeout(() => {
         if (!alive) return;
-        retry("🔄 Rechargement (stall)...");
+        retry();
       }, STALL_TIMEOUT_MS);
     };
 
-    const retry = (msg) => {
+    const retry = () => {
       attempt++;
       cleanup();
 
       if (attempt >= RETRY_DELAYS.length) {
-        // fallback: affiche un bouton retry
         const back = document.createElement("div");
         back.className = "video-thumb";
+        if (bgImage) back.style.backgroundImage = `url("${bgImage}")`;
 
         const retryBtn = document.createElement("button");
         retryBtn.type = "button";
         retryBtn.className = "load-video-btn";
         retryBtn.textContent = "↻ Réessayer";
-        retryBtn.onclick = () => {
-          back.replaceWith(createLazyVideoThumb(url));
-        };
+        retryBtn.onclick = () => back.replaceWith(createLazyVideoThumb(url, bgImage));
 
         back.appendChild(retryBtn);
         vid.replaceWith(back);
@@ -750,14 +727,8 @@ function createLazyVideoThumb(url) {
       vid.src = src;
       vid.load();
 
-      vid.onloadedmetadata = () => {
-        if (!alive) return;
-        vid.play?.().catch(() => {});
-      };
-      vid.oncanplay = () => {
-        if (!alive) return;
-        vid.play?.().catch(() => {});
-      };
+      vid.onloadedmetadata = () => { vid.play?.().catch(() => {}); };
+      vid.oncanplay = () => { vid.play?.().catch(() => {}); };
       vid.onwaiting = startStall;
       vid.onstalled = startStall;
       vid.onplaying = () => {
@@ -765,6 +736,7 @@ function createLazyVideoThumb(url) {
         stallTimer = null;
       };
       vid.onerror = () => retry();
+
       startStall();
     };
 
@@ -784,8 +756,8 @@ function updateRankingList() {
 
     if (it) {
       if (it.kind === "song") {
-        // ✅ PAS de vidéo auto dans la grille → bouton charger
-        li.appendChild(createLazyVideoThumb(it.url || ""));
+        // ✅ fond image + bouton, vidéo seulement au clic
+        li.appendChild(createLazyVideoThumb(it.url || "", it.image || ""));
       } else {
         const img = document.createElement("img");
         img.src = it.image || "";
@@ -813,7 +785,6 @@ function updateRankingList() {
 function finishRound() {
   [...rankButtonsWrap.querySelectorAll("button[data-rank]")].forEach(b => b.disabled = true);
 
-  // stop main player
   mainMediaToken++;
   if (mainCleanup) { try { mainCleanup(); } catch {} }
   mainCleanup = null;
