@@ -142,19 +142,25 @@
 
             <div id="counter">Tentatives : 0 (-150)</div>
 
-            <div id="score-bar-container">
-              <div id="score-bar">
-                <span id="score-bar-label"></span>
-              </div>
+            <!-- INDICES (alignés sur les colonnes Année / Studio / Genres / Score) -->
+            <div id="indices-bar" class="indices-grid">
+              <span class="indices-spacer" aria-hidden="true"></span>
+              <span class="indices-spacer" aria-hidden="true"></span>
+            
+              <!-- ordre = colonnes 3 à 6 -->
+              <button id="btnIndiceSaison" class="indice-btn" disabled>
+                Indice Année (-300)
+              </button>
+              <button id="btnIndiceStudio" class="indice-btn" disabled>
+                Indice Studio (-300)
+              </button>
+              <button id="btnIndiceGenres" class="indice-btn" disabled>
+                Indice Genres/Thèmes (-300)
+              </button>
+              <button id="btnIndiceScore" class="indice-btn" disabled>
+                Indice Score (-300)
+              </button>
             </div>
-
-            <div id="indices-bar" class="indices-bar">
-              <button id="btnIndiceStudio" class="indice-btn" disabled>Indice Studio (-300)</button>
-              <button id="btnIndiceSaison" class="indice-btn" disabled>Indice Année (-300)</button>
-              <button id="btnIndiceGenres" class="indice-btn" disabled>Indice Genres/Thèmes (-300)</button>
-              <button id="btnIndiceScore" class="indice-btn" disabled>Indice Score (-300)</button>
-            </div>
-          </div>
 
           <div id="results"></div>
         </div>
