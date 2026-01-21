@@ -867,4 +867,70 @@ function finishRound() {
     nextBtn.textContent = "Retour réglages";
     nextBtn.onclick = () => {
       showCustomization();
-      upd
+      updatePreview();
+    };
+
+    if (isParcours) {
+      try {
+        parent.postMessage({
+          parcoursScore: { label: "Blind Ranking", score: 0, total: 0 }
+        }, "*");
+      } catch {}
+    }
+  }
+}
+
+// ====== INIT VOLUME ======
+loadSavedVolume();
+if (volumeSlider) volumeSlider.addEventListener("input", applyVolumeEverywhere);
+
+// ====== LOAD DATA ======
+fetch("../data/licenses_only.json")
+  .then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status} - ${r.statusText}`);
+    return r.json();
+  })
+  .then(json => {
+    const raw = normalizeAnimeList(json);
+
+    allAnimes = raw.map(a => {
+      const title = getDisplayTitle(a);
+      return {
+        ...a,
+        _title: title,
+        _titleLower: title.toLowerCase(),
+        _year: getYear(a),
+        _members: Number.isFinite(+a.members) ? +a.members : 0,
+        _score: Number.isFinite(+a.score) ? +a.score : 0,
+        _type: a.type || "Unknown",
+      };
+    });
+
+    allSongs = [];
+    for (const a of allAnimes) allSongs.push(...extractSongsFromAnime(a));
+
+    initCustomUI();
+    updatePreview();
+    showCustomization();
+
+    // parcours auto start
+    if (isParcours) {
+      if (forcedMode === "anime" || forcedMode === "songs") currentMode = forcedMode;
+      updateModePillsFromState();
+      filteredPool = applyFilters();
+      const minNeeded = Math.max(10, MIN_REQUIRED);
+      if (filteredPool.length >= minNeeded) {
+        totalRounds = clampInt(parcoursCount, 1, 100);
+        currentRound = 1;
+        showGame();
+        startRound();
+      }
+    }
+  })
+  .catch(e => {
+    previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
+    previewCountEl.classList.add("bad");
+    applyBtn.disabled = true;
+    applyBtn.classList.add("disabled");
+    console.error(e);
+  });
