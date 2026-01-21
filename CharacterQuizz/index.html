@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>👤 Character Quizz</title>
   <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
-  <link rel="stylesheet" href="style.css" />
+
+  <!-- ✅ même dossier -->
+  <link rel="stylesheet" href="./style.css" />
+  <!-- ✅ defer pour éviter les soucis de DOM -->
+  <script src="./script.js" defer></script>
 </head>
 
 <body>
@@ -17,7 +21,7 @@
       <h1>👤 Character Quizz 👤</h1>
 
       <div class="header-right">
-        <button id="themeToggle" class="toggle-btn">🌓</button>
+        <button id="themeToggle" class="toggle-btn" aria-label="Changer le thème">🌓</button>
 
         <span class="info-wrap header-help">
           <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-character">
@@ -28,7 +32,8 @@
           </span>
 
           <span class="info-tip" id="help-character" role="tooltip">
-            Six personnages à découvrir progressivement pour deviner l’anime. Un nouveau apparaît toutes les 8 secondes ou après un essai.
+            Six personnages à découvrir progressivement pour deviner l’anime.
+            Un nouveau apparaît toutes les 8 secondes ou après un essai.
           </span>
         </span>
       </div>
@@ -36,18 +41,18 @@
   </header>
 
   <!-- =========================
-       ✅ PERSONNALISATION
+       PERSONNALISATION
   ========================== -->
   <div id="custom-panel" class="main-container">
     <h2>⚙️ Personnalisation</h2>
 
-    <!-- ✅ Mode (comme image 1) -->
+    <!-- Mode (visuel comme tes autres menus) -->
     <div class="opt-row">
       <div class="opt-label">Mode</div>
       <div class="opt-col">
-        <div id="modePills" class="opt-pill-group">
-          <button type="button" class="pill active" data-mode="Animes" aria-pressed="true">Animes</button>
-          <button type="button" class="pill" data-mode="Songs" aria-pressed="false" disabled title="Bientôt">Songs</button>
+        <div class="opt-pill-group" id="modePills">
+          <button type="button" class="pill active" aria-pressed="true">Animes</button>
+          <button type="button" class="pill pill-disabled" aria-disabled="true" tabindex="-1">Songs</button>
         </div>
         <div class="opt-hint">Choisis le contenu à deviner.</div>
       </div>
@@ -100,12 +105,12 @@
       <div class="opt-value"></div>
     </div>
 
-    <!-- ✅ Preview count (au-dessus des rounds, comme image 1) -->
+    <!-- Preview count (barre large) -->
     <div id="previewCount" class="preview-count bad">
       ⏳ Chargement de la base…
     </div>
 
-    <!-- ✅ Rounds (SOUS titres disponibles + 1 à 100) -->
+    <!-- Rounds (✅ 1 à 100, sous "Titres disponibles") -->
     <div class="opt-row opt-row-rounds">
       <div class="opt-label">Rounds</div>
       <div class="opt-col"></div>
@@ -123,15 +128,14 @@
   </div>
 
   <!-- =========================
-       ✅ JEU (CACHÉ AU DÉPART)
+       JEU (CACHÉ AU DÉPART)
   ========================== -->
   <div id="game-panel" style="display:none;">
     <div id="container">
-      <!-- BARRE DE SCORE -->
+      <!-- BARRE DE SCORE (✅ label séparé pour rester centré) -->
       <div id="score-bar-container">
-        <div id="score-bar" style="width:100%;position:relative;">
-          <span id="score-bar-label">3000 / 3000</span>
-        </div>
+        <div id="score-bar"></div>
+        <span id="score-bar-label">3000 / 3000</span>
       </div>
 
       <!-- Round label -->
@@ -161,7 +165,5 @@
   <footer>
     © 2025 mastermanga
   </footer>
-
-  <script src="script.js"></script>
 </body>
 </html>
