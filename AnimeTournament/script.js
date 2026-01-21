@@ -1,12 +1,10 @@
 // =======================
 // Anime Tournament — script.js (mis à jour)
+// - Panel OU jeu (jamais les deux) via body.game-started
 // - Fix year (season -> year)
-// - Personnalisation identique Anidle
-// - Pills pour Mode/Types/Songs
-// - Preview OK/bad + start disabled
+// - UI personnalisation type Anidle
 // - Vote anime cliquable
-// - Chargement vidéo robuste (sans play())
-// - Fin de tournoi simple + Rejouer
+// - Chargement vidéo robuste
 // =======================
 
 const DATA_URL = "../data/licenses_only.json";
@@ -33,6 +31,17 @@ let roundMatchIndex = 0;
 let currentMatch = null;
 
 // =======================
+// UI TOGGLE (perso vs jeu)
+// =======================
+function showCustomization() {
+  document.body.classList.remove("game-started");
+}
+
+function showGame() {
+  document.body.classList.add("game-started");
+}
+
+// =======================
 // BASIC UI
 // =======================
 document.getElementById("back-to-menu").onclick = () => {
@@ -51,7 +60,7 @@ if (localStorage.getItem("theme") === "light") {
   document.body.classList.add("light");
 }
 
-// Tooltip (clic) — comme Anidle (optionnel mais pratique)
+// Tooltip (clic)
 document.addEventListener("pointerdown", (e) => {
   const wrap = e.target.closest(".info-wrap");
   if (wrap && e.target.closest(".info-icon")) {
@@ -85,11 +94,9 @@ function parseYearFromSeason(seasonStr) {
 }
 
 function getYear(a) {
-  // 1) season principal
   let y = parseYearFromSeason(a.season);
   if (y) return y;
 
-  // 2) fallback sur seasons des songs
   const lists = [
     ...(a.song?.openings || []),
     ...(a.song?.endings || []),
@@ -99,7 +106,6 @@ function getYear(a) {
     const yy = parseYearFromSeason(s?.season);
     if (yy) return yy;
   }
-
   return 0;
 }
 
@@ -190,6 +196,9 @@ fetch(DATA_URL)
     initPersonalisationUI();
     updatePreview();
     setRoundIndicatorIdle();
+
+    // ✅ au chargement : on voit la personnalisation
+    showCustomization();
   })
   .catch((e) => {
     alert("Erreur chargement dataset: " + e.message);
@@ -210,12 +219,12 @@ function initPersonalisationUI() {
         setPillActive(b, b.dataset.mode === mode);
       });
 
-      resetTournamentUI();
+      resetTournamentUI(true);
       updatePreview();
     });
   });
 
-  // Range labels + clamp
+  // Ranges + labels
   const pop = document.getElementById("popPercent");
   const score = document.getElementById("scorePercent");
   const yMin = document.getElementById("yearMin");
@@ -234,7 +243,6 @@ function initPersonalisationUI() {
     if (yMaxVal && yMax) yMaxVal.textContent = yMax.value;
     updatePreview();
   }
-
   [pop, score, yMin, yMax].forEach((el) => el && el.addEventListener("input", syncLabels));
 
   // Types pills
@@ -260,9 +268,7 @@ function initPersonalisationUI() {
   // Rounds clamp
   const roundInput = document.getElementById("roundCount");
   if (roundInput) {
-    roundInput.addEventListener("input", () => {
-      clampRoundsValue();
-    });
+    roundInput.addEventListener("input", () => clampRoundsValue());
     clampRoundsValue();
   }
 
@@ -297,8 +303,6 @@ function readOptions() {
   return {
     popRatio: popPercent / 100,
     scoreRatio: scorePercent / 100,
-    popPercent,
-    scorePercent,
     yMin,
     yMax,
     types,
@@ -312,11 +316,9 @@ function filterTitles(data, o) {
     .filter((a) => o.types.has(a._type))
     .filter((a) => a._year >= o.yMin && a._year <= o.yMax);
 
-  // popularité top %
   arr.sort((a, b) => b._members - a._members);
   arr = arr.slice(0, Math.ceil(arr.length * o.popRatio));
 
-  // score top %
   arr.sort((a, b) => b._score - a._score);
   arr = arr.slice(0, Math.ceil(arr.length * o.scoreRatio));
 
@@ -383,7 +385,7 @@ function updatePreview() {
 // START GAME
 // =======================
 function startGame() {
-  resetTournamentUI();
+  resetTournamentUI(true);
 
   const o = readOptions();
   const titles = filterTitles(ALL_TITLES, o);
@@ -409,11 +411,17 @@ function startGame() {
     items = pool.slice(0, TOTAL_MATCH_ITEMS);
   }
 
+  // ✅ on passe en mode jeu
+  showGame();
+
   initTournament();
+
+  // (optionnel) scroll vers le jeu
+  document.getElementById("game-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // =======================
-// TOURNAMENT CORE (double elim simplifié)
+// TOURNAMENT CORE
 // =======================
 function initTournament() {
   losses = items.map(() => 0);
@@ -468,7 +476,6 @@ function showNextMatch() {
     buildNextRound();
   }
 
-  // Si malgré tout aucun match possible (cas rare), on termine proprement
   if (!roundMatches.length) {
     finishTournament(alive[0]);
     return;
@@ -522,27 +529,12 @@ async function renderMatch() {
 // =======================
 // VIDEO LOAD WITH RETRY (sans autoplay)
 // =======================
-function waitVideoEvent(video, timeoutMs = 6000) {
+function waitVideoEvent(video, timeoutMs = 6500) {
   return new Promise((resolve, reject) => {
     let done = false;
-    const onOk = () => {
-      if (done) return;
-      done = true;
-      cleanup();
-      resolve();
-    };
-    const onErr = () => {
-      if (done) return;
-      done = true;
-      cleanup();
-      reject(new Error("video error"));
-    };
-    const t = setTimeout(() => {
-      if (done) return;
-      done = true;
-      cleanup();
-      reject(new Error("timeout"));
-    }, timeoutMs);
+    const onOk = () => { if (done) return; done = true; cleanup(); resolve(); };
+    const onErr = () => { if (done) return; done = true; cleanup(); reject(new Error("video error")); };
+    const t = setTimeout(() => { if (done) return; done = true; cleanup(); reject(new Error("timeout")); }, timeoutMs);
 
     function cleanup() {
       clearTimeout(t);
@@ -562,15 +554,12 @@ async function loadVideoWithRetry(video, url) {
 
   for (const delay of delays) {
     if (delay) await new Promise((r) => setTimeout(r, delay));
-
     try {
       video.src = url;
       video.load();
-      await waitVideoEvent(video, 6500);
+      await waitVideoEvent(video);
       return;
-    } catch (e) {
-      // retry
-    }
+    } catch {}
   }
 
   const s = document.createElement("div");
@@ -601,11 +590,13 @@ function vote(winner) {
 // =======================
 function setRoundIndicatorIdle() {
   const el = document.getElementById("round-indicator");
-  el.textContent = "Prêt : choisis tes réglages puis lance une partie ✅";
+  if (!el) return;
+  el.textContent = "Tournoi : en cours…";
 }
 
 function updateRoundIndicator() {
   const el = document.getElementById("round-indicator");
+  if (!el) return;
   const total = roundMatches.length || 0;
   const idx = Math.min(roundMatchIndex, total);
   el.textContent = `Round ${roundNumber} — Match ${idx}/${Math.max(1, total)} — Mode: ${mode === "anime" ? "Animes" : "Songs"}`;
@@ -618,11 +609,6 @@ function finishTournament(winnerIndex) {
   let winnerLabel = "—";
   if (typeof winnerIndex === "number" && items[winnerIndex]) {
     winnerLabel = mode === "anime" ? items[winnerIndex].title : items[winnerIndex].label;
-  } else {
-    const alive = getAliveIndices();
-    if (alive.length && items[alive[0]]) {
-      winnerLabel = mode === "anime" ? items[alive[0]].title : items[alive[0]].label;
-    }
   }
 
   duel.innerHTML = `
@@ -636,17 +622,19 @@ function finishTournament(winnerIndex) {
 
   replay.style.display = "inline-flex";
   replay.onclick = () => {
+    // ✅ retour au panel (pas les deux)
     resetTournamentUI(true);
-    setRoundIndicatorIdle();
+    updatePreview();
+    showCustomization();
+    document.getElementById("custom-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 }
 
-function resetTournamentUI(clearOnly = false) {
+function resetTournamentUI(keepMode = true) {
   document.getElementById("duel-container").innerHTML = "";
   document.getElementById("classement").innerHTML = "";
   document.getElementById("next-match-btn").style.display = "none";
 
-  // reset state
   items = [];
   losses = [];
   aliveWB = [];
@@ -657,7 +645,8 @@ function resetTournamentUI(clearOnly = false) {
   roundMatchIndex = 0;
   currentMatch = null;
 
-  if (!clearOnly) setRoundIndicatorIdle();
+  // (optionnel) ne touche pas au mode sélectionné
+  if (!keepMode) mode = "anime";
 }
 
 function escapeHtml(s) {
