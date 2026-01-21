@@ -96,7 +96,7 @@
       </div>
     </div>
 
-    <!-- Songs (Opening par défaut uniquement) -->
+    <!-- Songs -->
     <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
       <div class="opt-label" style="font-weight:900; min-width:160px;">Songs</div>
       <div class="opt-col" style="flex:1; min-width:280px;">
@@ -164,18 +164,21 @@
         <div id="suggestions" class="suggestions"></div>
       </div>
 
-      <!-- Volume (visible pendant la partie) -->
+      <!-- Volume -->
       <div id="volumeRow" style="width:100%; max-width:520px; margin:10px auto 12px auto; display:flex; align-items:center; gap:12px; justify-content:center;">
         <div style="font-weight:900; opacity:0.9;">🔊 Volume</div>
         <input id="volumeSlider" type="range" min="0" max="100" value="50" style="flex:1; max-width:320px;">
         <div id="volumeVal" style="min-width:44px; text-align:right; font-weight:900; opacity:0.9;">50%</div>
       </div>
 
-      <div id="listen-buttons" style="display:flex; justify-content:center; gap:12px; margin-bottom:16px;">
+      <div id="listen-buttons" style="display:flex; justify-content:center; gap:12px; margin-bottom:10px;">
         <button id="playTry1">Début</button>
         <button id="playTry2" disabled>Refrain</button>
         <button id="playTry3" disabled>Complet</button>
       </div>
+
+      <!-- ✅ Status chargement média -->
+      <div id="mediaStatus" class="mediaStatus" aria-live="polite"></div>
 
       <!-- INDICES ÉCOUTE 3 -->
       <div id="indice-buttons" style="display:none;justify-content:center;gap:14px;margin-bottom:12px;">
@@ -190,9 +193,10 @@
 
       <canvas id="fireworks"></canvas>
 
-      <!-- Player/audio (CACHÉ, REVEAL À LA FIN) -->
+      <!-- Player (CACHÉ, REVEAL À LA FIN) -->
       <div id="playerWrapper" style="display:none; width:100%; max-width:520px; margin:14px auto 0 auto;">
-        <audio id="audioPlayer" controls style="width:100%;"></audio>
+        <!-- ✅ On passe en VIDEO pour mieux supporter les WebM "vidéo" -->
+        <video id="audioPlayer" controls playsinline style="width:100%;"></video>
       </div>
     </div>
   </div>
