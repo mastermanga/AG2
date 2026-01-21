@@ -49,12 +49,11 @@ function getDisplayTitle(a) {
   );
 }
 
+// ✅ FIX IMPORTANT: getYear robuste + pas de ligne cassée
 function getYear(a) {
-  const s = (a.season || "").։
-
-  const parts = s.split(/\s+/);
-  const y = parseInt(parts[1] || parts[0] || "0", 10);
-  return Number.isFinite(y) ? y : 0;
+  const s = ((a && a.season) ? String(a.season) : "").trim(); // ex "spring 2013"
+  const m = s.match(/(\d{4})/);
+  return m ? parseInt(m[1], 10) : 0;
 }
 
 function clampYearSliders() {
@@ -166,17 +165,15 @@ let allSongs = [];
 
 // ====== SETTINGS ======
 let currentMode = "anime"; // anime | songs
-
-// pool filtré (items jouables)
 let filteredPool = [];
 
 // ====== GAME STATE ======
 let totalRounds = 1;
 let currentRound = 1;
 
-let selectedItems = [];          // 10 items de la partie
-let currentIndex = 0;            // item courant 0..9
-let rankings = new Array(10).fill(null); // stocke l’item choisi à ce rang (objet)
+let selectedItems = [];
+let currentIndex = 0;
+let rankings = new Array(10).fill(null);
 
 // ====== UI SHOW/HIDE ======
 function showCustomization() {
@@ -237,16 +234,12 @@ function initCustomUI() {
   // Apply
   applyBtn.addEventListener("click", () => {
     filteredPool = applyFilters();
-
-    // min requis
     const minNeeded = Math.max(10, MIN_REQUIRED);
     if (filteredPool.length < minNeeded) return;
 
-    // rounds
     totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
     currentRound = 1;
 
-    // parcours override
     if (isParcours) {
       totalRounds = clampInt(parcoursCount, 1, 100);
       if (forcedMode === "anime" || forcedMode === "songs") currentMode = forcedMode;
@@ -285,7 +278,6 @@ function updateModePillsFromState() {
 }
 
 function updateModeVisibility() {
-  // Songs row visible uniquement en mode songs
   songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
 }
 
@@ -300,20 +292,16 @@ function applyFilters() {
   if (allowedTypes.length === 0) return [];
 
   if (currentMode === "anime") {
-    // base
     let pool = allAnimes.filter(a =>
       a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type)
     );
 
-    // top pop%
     pool.sort((a, b) => b._members - a._members);
     pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-    // top score%
     pool.sort((a, b) => b._score - a._score);
     pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-    // map items
     return pool.map(a => ({
       kind: "anime",
       _key: `anime|${a.mal_id}`,
@@ -333,30 +321,20 @@ function applyFilters() {
     allowedSongs.includes(s.songType)
   );
 
-  // top pop% (animeMembers)
   pool.sort((a, b) => b.animeMembers - a.animeMembers);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-  // top score% (animeScore)
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  // ✅ IMPORTANT: en songs on affiche le NOM DE L'ANIME, pas le nom de la song
+  // ✅ En songs: afficher le nom de l'anime, pas le nom de la song
   return pool.map(s => ({
     kind: "song",
     _key: `song|${s._key}`,
-
-    // ✅ affichage
     title: s.animeTitle || "Anime",
-
-    // (optionnel) on garde le nom de la song si tu veux t'en servir plus tard
     songName: s.songName || "",
-
-    // ✅ vidéo
     url: s.url,
     songType: s.songType,
-
-    // image inutile en songs
     image: ""
   }));
 }
@@ -383,7 +361,6 @@ function updatePreview() {
 function loadAndAutoplayVideo(url) {
   playerZone.style.display = "block";
 
-  // reset propre
   songPlayer.pause?.();
   songPlayer.removeAttribute("src");
   songPlayer.load?.();
@@ -395,10 +372,7 @@ function loadAndAutoplayVideo(url) {
     songPlayer.play?.().catch(() => {});
   };
 
-  // ✅ autoplay dès que possible
   songPlayer.addEventListener("canplay", tryPlay, { once: true });
-
-  // fallback
   setTimeout(tryPlay, 250);
 }
 
@@ -408,13 +382,11 @@ function resetGameUI() {
   currentIndex = 0;
   selectedItems = [];
 
-  // re-enable rank buttons
   [...rankButtonsWrap.querySelectorAll("button[data-rank]")].forEach(b => b.disabled = false);
 
   resultDiv.textContent = "";
   nextBtn.style.display = "none";
 
-  // clear player
   if (songPlayer) {
     songPlayer.pause?.();
     songPlayer.removeAttribute("src");
@@ -423,7 +395,6 @@ function resetGameUI() {
 }
 
 function pick10FromPool(pool) {
-  // 10 uniques (par _key)
   const used = new Set();
   const out = [];
   const shuffled = shuffleInPlace([...pool]);
@@ -440,10 +411,8 @@ function pick10FromPool(pool) {
 function startRound() {
   resetGameUI();
 
-  // round label
   roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
 
-  // need pool
   const minNeeded = Math.max(10, MIN_REQUIRED);
   if (!filteredPool || filteredPool.length < minNeeded) {
     resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
@@ -458,7 +427,6 @@ function startRound() {
 
   selectedItems = pick10FromPool(filteredPool);
 
-  // fallback si pool trop petite
   if (selectedItems.length < 10) {
     resultDiv.textContent = "❌ Impossible de sélectionner 10 items uniques avec ces filtres.";
     nextBtn.style.display = "block";
@@ -477,17 +445,15 @@ function startRound() {
 function displayCurrentItem() {
   const item = selectedItems[currentIndex];
 
-  // fin
   if (!item) {
     finishRound();
     return;
   }
 
-  // ✅ Nom affiché (anime en songs)
   itemName.textContent = item.title || "";
 
   if (currentMode === "songs") {
-    // ✅ PAS d'image en songs -> que la vidéo
+    // ✅ en songs: pas d'image, que la vidéo
     animeImg.style.display = "none";
 
     if (item.url) {
@@ -499,7 +465,7 @@ function displayCurrentItem() {
       songPlayer.load?.();
     }
   } else {
-    // mode anime normal
+    // anime mode normal
     playerZone.style.display = "none";
     songPlayer.pause?.();
     songPlayer.removeAttribute("src");
@@ -523,7 +489,6 @@ function assignRank(rank) {
   const item = selectedItems[currentIndex];
   rankings[rank - 1] = item;
 
-  // disable button
   const btn = rankButtonsWrap.querySelector(`button[data-rank="${rank}"]`);
   if (btn) btn.disabled = true;
 
@@ -538,10 +503,10 @@ function updateRankingList() {
 
   for (let i = 0; i < 10; i++) {
     const li = document.createElement("li");
-
     const it = rankings[i];
+
     if (it) {
-      // ✅ en mode songs -> on met une VIDEO au lieu d'une image
+      // ✅ en songs: vidéos dans la grille
       if (it.kind === "song") {
         const vid = document.createElement("video");
         vid.src = it.url || "";
@@ -550,7 +515,6 @@ function updateRankingList() {
         vid.playsInline = true;
         li.appendChild(vid);
       } else {
-        // anime -> image
         const img = document.createElement("img");
         img.src = it.image || "";
         img.alt = it.title || "";
@@ -575,15 +539,12 @@ function updateRankingList() {
 }
 
 function finishRound() {
-  // bloque tout
   [...rankButtonsWrap.querySelectorAll("button[data-rank]")].forEach(b => b.disabled = true);
   if (songPlayer) songPlayer.pause?.();
 
   resultDiv.textContent = "✅ Partie terminée !";
-
   nextBtn.style.display = "block";
 
-  // rounds / parcours
   const isLast = currentRound >= totalRounds;
 
   if (!isLast) {
@@ -599,15 +560,10 @@ function finishRound() {
       updatePreview();
     };
 
-    // parcours: on envoie un score neutre (jeu sans score)
     if (isParcours) {
       try {
         parent.postMessage({
-          parcoursScore: {
-            label: "Blind Ranking",
-            score: 0,
-            total: 0
-          }
+          parcoursScore: { label: "Blind Ranking", score: 0, total: 0 }
         }, "*");
       } catch {}
     }
@@ -616,7 +572,10 @@ function finishRound() {
 
 // ====== LOAD DATA ======
 fetch("../data/licenses_only.json")
-  .then(r => r.json())
+  .then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status} - ${r.statusText}`);
+    return r.json();
+  })
   .then(data => {
     const raw = Array.isArray(data) ? data : [];
 
@@ -640,7 +599,6 @@ fetch("../data/licenses_only.json")
     updatePreview();
     showCustomization();
 
-    // parcours: démarre direct si besoin
     if (isParcours) {
       filteredPool = applyFilters();
       const minNeeded = Math.max(10, MIN_REQUIRED);
@@ -654,4 +612,5 @@ fetch("../data/licenses_only.json")
   })
   .catch(e => {
     alert("Erreur chargement dataset: " + e.message);
+    console.error(e);
   });
