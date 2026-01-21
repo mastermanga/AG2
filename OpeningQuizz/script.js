@@ -21,8 +21,8 @@ const SCORE_TRY3_WITH_3 = 500;
 const MIN_REQUIRED_SONGS = 64;
 
 // retries like Tournament
-const RETRY_DELAYS = [0, 3000, 10000];
-const STALL_TIMEOUT_MS = 8000; // si au bout de 8s pas prêt => retry
+const RETRY_DELAYS = [0, 2000, 6000];
+const STALL_TIMEOUT_MS = 6000; // si au bout de 8s pas prêt => retry
 
 // ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
