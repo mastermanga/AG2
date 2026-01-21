@@ -1,3 +1,15 @@
+/* =========================================
+   GLOBAL RESET
+   ========================================= */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* =========================================
+   BACKGROUND + BASE
+   ========================================= */
 body {
   background: radial-gradient(circle at 50% 25%, #263859 0%, #121212 100%);
   background-color: #121212;
@@ -30,6 +42,9 @@ body::before {
   100% { background-position: 33vw 22vh, 68vw 78vh; }
 }
 
+/* =========================================
+   HEADER
+   ========================================= */
 header {
   max-width: 1200px;
   width: 100%;
@@ -58,6 +73,21 @@ header h1 {
     0 0 10px #fff1;
 }
 
+.tournament-title {
+  padding: 0 0.5em;
+  white-space: nowrap;
+}
+
+.header-right{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  flex-shrink:0;
+}
+
+/* =========================================
+   BUTTONS
+   ========================================= */
 .menu-btn,
 .toggle-btn {
   background: linear-gradient(120deg, #00bcd4 75%, #1e88e5 100%);
@@ -87,7 +117,9 @@ header h1 {
   transform: translateY(-2px);
 }
 
-/* Mode clair */
+/* =========================================
+   LIGHT MODE
+   ========================================= */
 body.light {
   background-color: #f5f5f5;
   color: #222;
@@ -105,6 +137,9 @@ body.light .toggle-btn:hover {
   border: 2px solid #1976d277;
 }
 
+/* =========================================
+   GENERIC BLOCK (used by game blocks)
+   ========================================= */
 .main-block {
   max-width: 1500px;
   width: 98vw;
@@ -131,9 +166,9 @@ body.light .main-block {
   border: 1.5px solid #42a5f577;
 }
 
-/* =========================
+/* =========================================
    PERSONNALISATION (style Anidle)
-   ========================= */
+   ========================================= */
 #custom-panel{
   background: #161e27ee;
   border-radius: 22px;
@@ -360,9 +395,9 @@ body.light .round-input{
   border-color: rgba(25,118,210,0.35);
 }
 
-/* =========================
+/* =========================================
    INDICATEUR DE ROUND (en jeu)
-   ========================= */
+   ========================================= */
 #round-indicator {
   max-width: 520px;
   width: min(92vw, 520px);
@@ -391,53 +426,58 @@ body.light #round-indicator {
   box-shadow: 0 2px 14px #42a5f54b;
 }
 
-/* =========================
-   DUEL
-   ========================= */
+/* =========================================
+   DUEL (FIX: plus de chevauchement)
+   ========================================= */
 #duel-container {
-  flex-wrap: nowrap;
   display: flex;
-  flex-direction: row !important;
-  gap: 2rem;
+  flex-wrap: wrap;                 /* ✅ autorise le retour à la ligne */
+  gap: clamp(18px, 3vw, 46px);     /* ✅ espace auto */
   justify-content: center;
   align-items: flex-start;
-  margin-bottom: 1.2rem;
   width: 100%;
   max-width: 1600px;
+  margin-bottom: 1.2rem;
 }
 
-#duel-container .anime {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: 320px;
-  max-width: 48vw;
-  gap: 1rem;
-}
-
+/* ✅ Chaque choix devient une "colonne" responsive */
+#duel-container .anime,
 #duel-container .opening {
+  flex: 1 1 520px;                 /* base: 520px puis s'adapte */
+  max-width: 760px;
+  width: 100%;
+
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  width: 100%;
-  max-width: 650px;
-  gap: 0.85rem;
+  align-items: stretch;
+  gap: 0.9rem;
+}
+
+/* Desktop large: 2 colonnes propres */
+@media (min-width: 1200px) {
+  #duel-container .anime,
+  #duel-container .opening {
+    max-width: calc(50% - 28px);   /* ✅ évite "collé" */
+  }
 }
 
 /* Anime images */
 #duel-container .anime img {
   width: 100%;
-  height: 440px;
+  height: auto;
+  aspect-ratio: 3 / 4;
+  max-height: 480px;
   object-fit: cover;
   border-radius: 8px;
   box-shadow: 0 0 18px #1116;
 }
 
-/* Songs videos */
+/* Songs videos (✅ plus de width fixe 650px) */
 #duel-container .opening video {
-  width: 650px;
-  max-width: 98vw;
-  height: 338px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  max-height: 360px;
   object-fit: cover;
   border-radius: 8px;
   box-shadow: 0 0 18px #1116;
@@ -450,7 +490,7 @@ body.light #round-indicator {
   background: #00bcd4;
   color: #121212;
   border-radius: 12px;
-  margin: 0.2rem 0 0 0;
+  margin: 0;
   padding: 0.75em 1.1em;
   font-size: 1.15rem;
   font-weight: 900;
@@ -484,29 +524,19 @@ body.light #round-indicator {
   transform: scale(0.98);
 }
 
-#classement { display: none; }
-
-/* TITRE */
-.tournament-title {
-  padding: 0 0.5em;
-  white-space: nowrap;
-}
-
-.header-right{
-  display:inline-flex;
-  align-items:center;
-  gap:10px;
-  flex-shrink:0;
-}
-
-/* Tooltip help */
+/* =========================================
+   TOOLTIP HELP
+   ========================================= */
 .info-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; }
 .info-icon {
   width: 26px; height: 26px; border-radius: 999px;
   display: inline-flex; align-items: center; justify-content: center;
   background: rgba(18, 30, 39, 0.55);
   border: 1.5px solid rgba(255, 255, 255, 0.35);
-  box-shadow: 0 0 10px rgba(0, 234, 255, 0.55), 0 0 24px rgba(0, 188, 212, 0.35), inset 0 0 0 1px rgba(0, 234, 255, 0.18);
+  box-shadow:
+    0 0 10px rgba(0, 234, 255, 0.55),
+    0 0 24px rgba(0, 188, 212, 0.35),
+    inset 0 0 0 1px rgba(0, 234, 255, 0.18);
   color: #eaffff; cursor: help; user-select: none;
   transition: transform 0.16s, box-shadow 0.16s, background 0.16s, border-color 0.16s;
 }
@@ -515,7 +545,10 @@ body.light #round-indicator {
   transform: scale(1.08) rotate(-6deg);
   background: rgba(10, 18, 26, 0.72);
   border-color: rgba(255, 255, 255, 0.55);
-  box-shadow: 0 0 12px rgba(0, 234, 255, 0.9), 0 0 32px rgba(0, 234, 255, 0.55), inset 0 0 0 1px rgba(0, 234, 255, 0.25);
+  box-shadow:
+    0 0 12px rgba(0, 234, 255, 0.9),
+    0 0 32px rgba(0, 234, 255, 0.55),
+    inset 0 0 0 1px rgba(0, 234, 255, 0.25);
   outline: none;
 }
 .info-tip {
@@ -543,7 +576,9 @@ body.light #round-indicator {
   opacity: 1; visibility: visible; transform: translateY(0) scale(1);
 }
 
-/* Footer */
+/* =========================================
+   FOOTER
+   ========================================= */
 footer {
   padding: 1.2rem 0 0.4rem 0;
   color: #555;
@@ -559,16 +594,58 @@ footer {
 }
 body.light footer { color: #888; }
 
-/* Responsive */
-@media (max-width: 900px) {
-  #duel-container .opening video { width: 100%; height: 260px; }
+/* =========================================
+   ✅ PANEL vs GAME (sans wrapper HTML)
+   - par défaut: on voit la personnalisation
+   - quand body.game-started: on voit le jeu
+   ========================================= */
+
+/* Hide game UI by default */
+#round-indicator,
+#duel-container,
+#classement,
+#next-match-btn {
+  display: none;
 }
+
+/* Show game UI when started */
+body.game-started #round-indicator,
+body.game-started #duel-container,
+body.game-started #classement,
+body.game-started #next-match-btn {
+  display: flex;
+}
+
+/* Duel container needs flex when shown */
+body.game-started #duel-container { display: flex; }
+
+/* Round indicator is flex when shown */
+body.game-started #round-indicator { display: flex; }
+
+/* Hide custom panel when game started */
+body.game-started #custom-panel { display: none !important; }
+
+/* Classement: si tu le remplis plus tard, tu peux le passer en block */
+body.game-started #classement { display: block; }
+
+/* =========================================
+   RESPONSIVE
+   ========================================= */
+@media (max-width: 900px) {
+  header h1 { font-size: 1.6rem; }
+  #duel-container .opening video { max-height: 320px; }
+}
+
 @media (max-width: 600px) {
   header h1 { font-size: 1.4rem; }
   .info-tip { width: min(340px, 86vw); right: 0; }
+  #custom-panel { padding: 1.3rem 1rem; }
 }
 
-/* ✅ PANEL vs GAME (comme Anidle) */
-#game-panel { display: none; width: 100%; }
-body.game-started #custom-panel { display: none !important; }
-body.game-started #game-panel { display: block !important; }
+@media (max-width: 500px) {
+  .main-block {
+    width: 98vw;
+    padding: 1.1rem 0.6rem 1.4rem 0.6rem;
+    box-shadow: 0 0 13px 2px #00bcd4;
+  }
+}
