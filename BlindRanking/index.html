@@ -23,7 +23,7 @@
           <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-blind">
             <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor"
-                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
             </svg>
           </span>
 
@@ -36,7 +36,7 @@
   </header>
 
   <!-- =========================
-       ✅ PERSONNALISATION (AU DÉPART)
+       PERSONNALISATION (AU DÉPART)
   ========================== -->
   <div id="custom-panel" class="main-container">
     <h2>⚙️ Personnalisation</h2>
@@ -135,7 +135,7 @@
   </div>
 
   <!-- =========================
-       ✅ JEU (CACHÉ AU DÉPART)
+       JEU (CACHÉ AU DÉPART)
   ========================== -->
   <div id="game-panel" style="display:none;">
     <div id="game-shell" class="split-layout">
@@ -152,20 +152,16 @@
           <img id="anime-img" src="" alt="Cover" style="display:none">
           <p id="item-name">Nom</p>
 
-          <!-- ✅ status chargement -->
-          <div id="mediaStatus" class="media-status"></div>
-
           <!-- Player (Songs) -->
           <div id="player-zone" style="display:none;">
             <video id="songPlayer" controls preload="metadata" playsinline></video>
           </div>
 
-          <!-- ✅ Volume (Songs uniquement) -->
+          <!-- Volume (Songs only) -->
           <div id="volumeRow" class="volume-row" style="display:none;">
-            <div class="vol-ico">🔊</div>
-            <div class="vol-label">Volume</div>
-            <input id="volumeSlider" type="range" min="0" max="100" value="50">
-            <div id="volumeVal">50%</div>
+            <div class="vol-label"><span class="vol-icon">🔊</span> Volume</div>
+            <input id="volumeSlider" type="range" min="0" max="100" value="30" />
+            <div id="volumeVal" class="vol-val">30%</div>
           </div>
 
           <div id="rank-section">
@@ -193,6 +189,7 @@
   </div>
 
   <footer>© 2025 mastermanga</footer>
+
   <script src="script.js"></script>
 </body>
 </html>
