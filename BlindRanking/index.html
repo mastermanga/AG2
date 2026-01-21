@@ -90,7 +90,6 @@
       <div class="opt-label">Types</div>
       <div class="opt-col">
         <div id="typePills" class="opt-pill-group">
-          <!-- ✅ TV + Movie actifs par défaut -->
           <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
           <button type="button" class="pill active" data-type="Movie" aria-pressed="true">Movie</button>
           <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
@@ -106,7 +105,6 @@
       <div class="opt-label">Songs</div>
       <div class="opt-col">
         <div id="songPills" class="opt-pill-group">
-          <!-- ✅ Opening seul actif par défaut -->
           <button type="button" class="pill active" data-song="OP" aria-pressed="true">Opening</button>
           <button type="button" class="pill" data-song="ED" aria-pressed="false">Ending</button>
           <button type="button" class="pill" data-song="IN" aria-pressed="false">Insert</button>
@@ -120,7 +118,7 @@
       ⏳ Chargement de la base…
     </div>
 
-    <!-- ✅ Rounds (tout en bas) -->
+    <!-- ✅ Rounds -->
     <div class="opt-row">
       <div class="opt-label">Rounds</div>
       <div class="opt-col opt-rounds">
@@ -153,6 +151,9 @@
         <div class="anime-item" id="anime-item">
           <img id="anime-img" src="" alt="Cover" style="display:none">
           <p id="item-name">Nom</p>
+
+          <!-- ✅ status anti-bug -->
+          <div id="mediaStatus" class="media-status"></div>
 
           <!-- Player (Songs) -->
           <div id="player-zone" style="display:none;">
@@ -188,3 +189,4 @@
   <script src="script.js"></script>
 </body>
 </html>
+
