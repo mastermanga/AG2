@@ -700,3 +700,242 @@ body.light .info-icon{
   box-shadow: 0 0 10px rgba(0, 234, 255, 0.35);
   cursor: pointer;
 }
+
+/* =========================================================
+   ✅ PATCH GAME — remet l'affichage de la partie jeu (image 2)
+   Scope strict: uniquement #game-panel (ne touche pas aux autres pages)
+========================================================= */
+
+#game-panel{
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12px 0 46px;
+  position: relative;
+  z-index: 2;
+}
+
+#game-panel #container{
+  width: min(760px, 92vw);
+  background-color: #161e27ef;
+  border-radius: 40px;
+  box-shadow: 0 0 42px 6px #00bcd444;
+  border: 1.5px solid #00bcd455;
+  padding: 46px 44px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+/* Score bar */
+#game-panel #score-bar-container{
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  justify-content: center;
+  margin: 6px 0 10px;
+}
+
+#game-panel #score-bar-container{
+  height: 36px;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+#game-panel #score-bar{
+  height: 100%;
+  border-radius: 999px;
+}
+
+#game-panel #score-bar-label{
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.45);
+}
+
+/* Round */
+#game-panel #roundLabel{
+  width: 100%;
+  max-width: 600px;
+  text-align: left;
+  font-weight: 800;
+  opacity: 0.92;
+  margin-top: -6px;
+}
+
+/* Images personnages */
+#game-panel #character-container{
+  width: 100%;
+  max-width: 600px;
+  min-height: 260px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+}
+
+#game-panel .character-img{
+  width: 190px;
+  height: 240px;
+  object-fit: cover;
+  border-radius: 18px;
+  background: #222;
+  border: 2px solid rgba(255,255,255,0.14);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.35);
+}
+
+/* Controls */
+#game-panel #controls{
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+#game-panel .input-container{
+  width: 100%;
+  position: relative;
+}
+
+#game-panel #characterInput{
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(255,255,255,0.18);
+  background: rgba(0,0,0,0.26);
+  color: #eee;
+  font-size: 1.08rem;
+  outline: none;
+}
+
+#game-panel #characterInput:focus{
+  border-color: rgba(0,234,255,0.55);
+  box-shadow: 0 0 0 3px rgba(0,234,255,0.12);
+}
+
+/* Suggestions */
+#game-panel .suggestions{
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: rgba(16, 22, 30, 0.98);
+  border: 1px solid rgba(0,188,212,0.35);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+}
+
+#game-panel .suggestions div{
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+#game-panel .suggestions div:last-child{
+  border-bottom: none;
+}
+
+#game-panel .suggestions div:hover{
+  background: rgba(0,188,212,0.12);
+}
+
+/* Boutons valider/suivant */
+#game-panel #submit-btn,
+#game-panel #restart-btn{
+  background: rgba(255,255,255,0.22);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: #fff;
+  border-radius: 12px;
+  padding: 10px 22px;
+  font-size: 1.05rem;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  transition: transform 0.12s, background 0.18s;
+}
+
+#game-panel #submit-btn:hover:not(:disabled),
+#game-panel #restart-btn:hover:not(:disabled){
+  transform: translateY(-1px);
+  background: rgba(255,255,255,0.30);
+}
+
+#game-panel #submit-btn:disabled{
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Timer + feedback */
+#game-panel #timer{
+  margin: 4px 0 0;
+  font-weight: 900;
+  color: #00eaff;
+  text-shadow: 0 0 14px rgba(0,234,255,0.25);
+}
+
+#game-panel #feedback{
+  margin: 0;
+  font-weight: 800;
+  text-align: center;
+}
+
+#game-panel #feedback.success{ color: #1de9b6; }
+#game-panel #feedback.error{ color: #fd654c; }
+
+/* Fireworks */
+#game-panel #fireworks{
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* Light mode (optionnel mais propre) */
+body.light #game-panel #container{
+  background: #fff;
+  border: 1.5px solid rgba(66, 165, 245, 0.45);
+  box-shadow: 0 0 22px rgba(66, 165, 245, 0.55);
+}
+
+body.light #game-panel #characterInput{
+  background: rgba(255,255,255,0.85);
+  color: #222;
+  border-color: rgba(25,118,210,0.25);
+}
+
+body.light #game-panel .suggestions{
+  background: rgba(255,255,255,0.98);
+  border-color: rgba(66,165,245,0.45);
+}
+
+body.light #game-panel #timer{
+  color: #1565c0;
+}
+
+/* Mobile */
+@media (max-width: 560px){
+  #game-panel #container{
+    padding: 28px 18px 26px;
+    border-radius: 28px;
+  }
+  #game-panel .character-img{
+    width: 160px;
+    height: 210px;
+  }
+}
+
