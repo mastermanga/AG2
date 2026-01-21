@@ -34,6 +34,17 @@
     </div>
   </header>
 
+  <!-- ✅ VOLUME GLOBAL (visible partout) -->
+  <div id="globalVolumeBar" class="volume-bar" aria-label="Volume global">
+    <div class="volume-left">
+      <span class="volume-ico" aria-hidden="true">🔊</span>
+      <span class="volume-label">Volume</span>
+    </div>
+
+    <input id="globalVolume" type="range" min="0" max="100" step="1" value="50" />
+    <div class="volume-right"><span id="globalVolumePct">50</span>%</div>
+  </div>
+
   <!-- ✅ PERSONNALISATION -->
   <div id="custom-panel">
     <h2><span class="gear">⚙️</span> Personnalisation</h2>
@@ -132,16 +143,9 @@
 
   <!-- ✅ JEU (caché au départ) -->
   <div id="game-panel">
-    <!-- Indicateur de round (uniquement en jeu) -->
     <div id="round-indicator" class="main-block"></div>
-
-    <!-- Duel -->
     <div id="duel-container" class="main-block"></div>
-
-    <!-- Bouton rejouer (fin de tournoi) -->
     <button id="next-match-btn" class="menu-btn" style="display:none;">Rejouer</button>
-
-    <!-- Classement (si tu veux l’utiliser plus tard) -->
     <div id="classement" class="main-block"></div>
   </div>
 
