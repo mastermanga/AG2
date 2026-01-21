@@ -9,7 +9,7 @@
 </head>
 
 <body>
-  <!-- HEADER (même structure que Opening Quizz pour l’alignement SVG) -->
+  <!-- HEADER -->
   <header id="main-header">
     <div class="header-inner">
       <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
@@ -36,10 +36,23 @@
   </header>
 
   <!-- =========================
-       ✅ PERSONNALISATION (AU DÉPART)
+       ✅ PERSONNALISATION
   ========================== -->
   <div id="custom-panel" class="main-container">
     <h2>⚙️ Personnalisation</h2>
+
+    <!-- ✅ Mode (comme image 1) -->
+    <div class="opt-row">
+      <div class="opt-label">Mode</div>
+      <div class="opt-col">
+        <div id="modePills" class="opt-pill-group">
+          <button type="button" class="pill active" data-mode="Animes" aria-pressed="true">Animes</button>
+          <button type="button" class="pill" data-mode="Songs" aria-pressed="false" disabled title="Bientôt">Songs</button>
+        </div>
+        <div class="opt-hint">Choisis le contenu à deviner.</div>
+      </div>
+      <div class="opt-value"></div>
+    </div>
 
     <!-- Popularité -->
     <div class="opt-row">
@@ -87,19 +100,19 @@
       <div class="opt-value"></div>
     </div>
 
-    <!-- Rounds (à droite, comme image 3) -->
-    <div class="opt-row">
+    <!-- ✅ Preview count (au-dessus des rounds, comme image 1) -->
+    <div id="previewCount" class="preview-count bad">
+      ⏳ Chargement de la base…
+    </div>
+
+    <!-- ✅ Rounds (SOUS titres disponibles + 1 à 100) -->
+    <div class="opt-row opt-row-rounds">
       <div class="opt-label">Rounds</div>
       <div class="opt-col"></div>
       <div class="opt-value opt-right">
-        <input id="roundCount" class="round-input" type="number" min="1" max="50" step="1" value="5" />
-        <span class="round-hint">(1 à 50)</span>
+        <input id="roundCount" class="round-input" type="number" min="1" max="100" step="1" value="5" />
+        <span class="round-hint">(1 à 100)</span>
       </div>
-    </div>
-
-    <!-- Preview count (barre large comme image 3) -->
-    <div id="previewCount" class="preview-count bad">
-      ⏳ Chargement de la base…
     </div>
 
     <div class="opt-actions">
@@ -111,7 +124,6 @@
 
   <!-- =========================
        ✅ JEU (CACHÉ AU DÉPART)
-       ✅ (INTACT)
   ========================== -->
   <div id="game-panel" style="display:none;">
     <div id="container">
