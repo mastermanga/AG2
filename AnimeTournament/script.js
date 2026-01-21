@@ -1,796 +1,1038 @@
-/* =========================
-   Anime Tournament — style.css (COMPLET)
-   - Volume bar (Songs only, shown by JS)
-   - Titles smaller + no overlap (overflow hidden + clamp lines)
-   ========================= */
-
-/* ====== BACKGROUND ====== */
-body {
-  background: radial-gradient(circle at 50% 25%, #263859 0%, #121212 100%);
-  background-color: #121212;
-  color: #eee;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 2rem 1rem;
-  margin: 0;
-  transition: background-color 0.3s, color 0.3s;
-  position: relative;
-  overflow-x: hidden;
-}
-
-body::before {
-  content: "";
-  position: fixed;
-  z-index: 0;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle, #00fff94d 2px, transparent 3px) 30vw 20vh/120px 120px repeat,
-    radial-gradient(circle, #42a5f577 1.5px, transparent 3px) 70vw 75vh/90px 90px repeat;
-  animation: moveParticles 18s linear infinite alternate;
-  opacity: 0.24;
-}
-@keyframes moveParticles {
-  0%   { background-position: 30vw 20vh, 70vw 75vh; }
-  100% { background-position: 33vw 22vh, 68vw 78vh; }
-}
-
-/* ====== HEADER ====== */
-header {
-  max-width: 1200px;
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.2rem;
-  margin-left: auto;
-  margin-right: auto;
-  padding: 0 1rem;
-  z-index: 2;
-  position: relative;
-}
-
-header h1 {
-  font-size: 2rem;
-  text-align: center;
-  flex-grow: 1;
-  margin: 0 1rem;
-  letter-spacing: 1px;
-  font-weight: 800;
-  text-shadow:
-    0 0 6px #00eaff,
-    0 0 18px #00eaff99,
-    0 2px 8px #00bcd477,
-    0 0 10px #fff1;
-}
-
-.header-right{
-  display:inline-flex;
-  align-items:center;
-  gap:10px;
-  flex-shrink:0;
-}
-
-/* ====== BUTTONS ====== */
-.menu-btn,
-.toggle-btn {
-  background: linear-gradient(120deg, #00bcd4 75%, #1e88e5 100%);
-  color: #fff;
-  border: none;
-  padding: 0.54rem 1.05rem;
-  border-radius: 10px;
-  cursor: pointer;
-  font-weight: bold;
-  font-size: 1.12rem;
-  box-shadow: 0 1px 7px #00bcd466;
-  transition:
-    background 0.21s,
-    color 0.16s,
-    box-shadow 0.18s,
-    border 0.16s,
-    transform 0.14s;
-  outline: none;
-}
-.menu-btn:hover, .menu-btn:focus,
-.toggle-btn:hover, .toggle-btn:focus {
-  background: linear-gradient(120deg, #1de9b6 80%, #1565c0 100%);
-  color: #fff;
-  text-shadow: 0 0 10px #fff9, 0 2px 6px #fff8;
-  box-shadow: 0 10px 34px #00eaffd7, 0 2.5px 14px #1976d277;
-  border: 2px solid #fff5;
-  transform: translateY(-2px);
-}
-
-/* ====== LIGHT MODE ====== */
-body.light {
-  background-color: #f5f5f5;
-  color: #222;
-}
-body.light .menu-btn,
-body.light .toggle-btn {
-  background: linear-gradient(120deg, #42a5f5 70%, #00bcd4 100%);
-  color: #f5f5f5;
-}
-body.light .menu-btn:hover,
-body.light .toggle-btn:hover {
-  background: linear-gradient(120deg, #81d4fa 70%, #1976d2 100%);
-  color: #fff;
-  text-shadow: 0 0 8px #fff9;
-  border: 2px solid #1976d277;
-}
-
-/* ====== GENERIC BLOCK ====== */
-.main-block {
-  max-width: 1500px;
-  width: 98vw;
-  background: #161e27ef;
-  border-radius: 20px;
-  box-shadow: 0 0 32px 5px #00bcd444;
-  border: 1.5px solid #00bcd455;
-  padding: 2rem 2.1rem 2.1rem 2.1rem;
-  margin-left: auto;
-  margin-right: auto;
-  margin-top: 0.5rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.3rem;
-  position: relative;
-  z-index: 2;
-  transition: background 0.25s;
-}
-
-body.light .main-block {
-  background: linear-gradient(120deg, #e0f7fa 90%, #1565c01a 100%);
-  box-shadow: 0 2px 14px #42a5f54b;
-  border: 1.5px solid #42a5f577;
-}
-
-/* =========================================
-   PERSONNALISATION
-   ========================================= */
-#custom-panel{
-  background: #161e27ee;
-  border-radius: 22px;
-  box-shadow: 0 0 32px 5px #00bcd466;
-  border: 1.5px solid rgba(0,188,212,0.25);
-
-  max-width: 1500px;
-  width: 98vw;
-  margin: 0 auto 1.2rem auto;
-  padding: 2.0rem 2.2rem;
-
-  position: relative;
-  z-index: 2;
-}
-
-#custom-panel h2{
-  margin: 0 0 1.2rem 0;
-  text-align: center;
-  font-size: 2.0rem;
-  font-weight: 900;
-  text-shadow: 0 0 10px #00eaff55;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: #fff;
-}
-
-#custom-panel .gear{
-  font-size: 1.4rem;
-  filter: drop-shadow(0 0 10px rgba(0,234,255,0.25));
-}
-
-.opt-row{
-  width: 100%;
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  margin-top: 14px;
-}
-
-.opt-label{
-  font-weight: 900;
-  min-width: 160px;
-  opacity: 0.95;
-}
-
-.opt-col{
-  flex: 1;
-  min-width: 280px;
-}
-
-.opt-value{
-  margin-top: 6px;
-  font-weight: 900;
-  opacity: 0.92;
-  text-align: right;
-}
-
-.opt-sub{
-  margin-top: 8px;
-  opacity: 0.85;
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-
-#custom-panel input[type="range"]{
-  width: 100%;
-  appearance: none;
-  height: 8px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #00bcd4 0%, #ffffff 75%);
-  outline: none;
-  box-shadow: 0 1px 10px rgba(0, 188, 212, 0.18);
-}
-#custom-panel input[type="range"]::-webkit-slider-thumb{
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: #0fbcd4;
-  border: 2px solid rgba(255,255,255,0.6);
-  box-shadow: 0 0 14px rgba(0, 234, 255, 0.55);
-  cursor: pointer;
-}
-#custom-panel input[type="range"]::-moz-range-thumb{
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: #0fbcd4;
-  border: 2px solid rgba(255,255,255,0.6);
-  box-shadow: 0 0 14px rgba(0, 234, 255, 0.55);
-  cursor: pointer;
-}
-
-.year-row{
-  display: flex;
-  gap: 14px;
-  align-items: center;
-}
-
-.opt-pill-group{
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.pill{
-  border: 1.5px solid rgba(0, 188, 212, 0.55);
-  background: rgba(0, 0, 0, 0.22);
-  color: #eaffff;
-  padding: 10px 16px;
-  border-radius: 999px;
-  font-weight: 900;
-  cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s, background 0.15s, border-color 0.15s, opacity 0.15s;
-  user-select: none;
-}
-.pill:hover{
-  transform: translateY(-1px);
-  box-shadow: 0 0 16px rgba(0, 234, 255, 0.22);
-}
-.pill.active{
-  background: linear-gradient(120deg, rgba(0,188,212,0.65), rgba(30,136,229,0.55));
-  border-color: rgba(0, 234, 255, 0.85);
-  box-shadow: 0 0 18px rgba(0, 234, 255, 0.35);
-}
-
-.preview-count{
-  margin-top: 16px;
-  width: 100%;
-  font-weight: 900;
-  text-align: center;
-  padding: 12px 12px;
-  border-radius: 14px;
-  border: 1px solid #00bcd455;
-  background: rgba(0,0,0,0.15);
-}
-.preview-count.good{
-  border-color: rgba(38, 255, 128, 0.35);
-  box-shadow: 0 0 16px rgba(38,255,128,0.12);
-}
-.preview-count.bad{
-  border-color: rgba(255, 80, 80, 0.35);
-  box-shadow: 0 0 16px rgba(255,80,80,0.10);
-}
-
-.rounds-col{
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.round-input{
-  width: 110px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1.5px solid rgba(0, 188, 212, 0.55);
-  background: rgba(0, 0, 0, 0.25);
-  color: #eaffff;
-  font-weight: 900;
-  outline: none;
-  box-shadow: 0 0 10px rgba(0, 188, 212, 0.12);
-}
-.round-hint{
-  opacity: 0.85;
-  font-weight: 700;
-  font-size: 0.95rem;
-  text-align: right;
-}
-
-.start-row{
-  display: flex;
-  justify-content: center;
-  margin-top: 16px;
-}
-.start-btn{
-  font-size: 1.08rem;
-  padding: 0.95rem 1.7rem;
-}
-#applyFiltersBtn:disabled{
-  opacity: 0.45 !important;
-  cursor: not-allowed !important;
-  filter: grayscale(0.2) brightness(0.9);
-  box-shadow: none !important;
-}
-
-/* Light mode for panel */
-body.light #custom-panel{
-  background: #fff;
-  box-shadow: 0 0 18px #42a5f555;
-  border: 1.5px solid rgba(66,165,245,0.45);
-}
-body.light #custom-panel h2 { color: #1976d2; }
-body.light .pill{
-  background: rgba(255,255,255,0.65);
-  color: #0b1a2a;
-  border-color: rgba(25,118,210,0.35);
-}
-body.light .pill.active{
-  background: linear-gradient(120deg, rgba(66,165,245,0.7), rgba(0,188,212,0.45));
-  border-color: rgba(25,118,210,0.55);
-}
-body.light .round-input{
-  background: #f8faff;
-  color: #0b1a2a;
-  border-color: rgba(25,118,210,0.35);
-}
-
-/* =========================================
-   PANEL vs GAME
-   ========================================= */
-#game-panel { display: none; width: 100%; }
-
-body.game-started #custom-panel { display: none !important; }
-body.game-started #game-panel  { display: block !important; }
-
-body:not(.game-started) #round-indicator,
-body:not(.game-started) #volumeBar,
-body:not(.game-started) #duel-container,
-body:not(.game-started) #next-match-btn,
-body:not(.game-started) #classement {
-  display: none !important;
-}
-
-/* =========================================
-   INDICATEUR DE ROUND
-   ========================================= */
-#round-indicator {
-  max-width: 520px;
-  width: min(92vw, 520px);
-  padding: 0.9rem 1.2rem;
-  margin: 0 auto 0.8rem auto;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  font-weight: 900;
-  font-size: 1.08rem;
-  letter-spacing: 0.6px;
-  text-align: center;
-
-  background: linear-gradient(120deg, rgba(22, 30, 39, 0.92) 70%, rgba(0, 188, 212, 0.10) 100%);
-  border: 1.5px solid #00bcd455;
-  box-shadow: 0 0 22px 3px #00bcd433;
-  border-radius: 16px;
-  user-select: none;
-  z-index: 2;
-  position: relative;
-}
-
-body.light #round-indicator {
-  background: linear-gradient(120deg, #e0f7fa 80%, #1565c01a 100%);
-  border: 1.5px solid #42a5f577;
-  box-shadow: 0 2px 14px #42a5f54b;
-}
-
-/* =========================================
-   VOLUME BAR (style image)
-   ========================================= */
-.volume-bar{
-  max-width: 920px;
-  width: min(92vw, 920px);
-  margin: 0 auto 0.8rem auto;
-  padding: 10px 14px;
-  border-radius: 14px;
-
-  display: flex;
-  align-items: center;
-  gap: 14px;
-
-  background: rgba(22, 30, 39, 0.88);
-  border: 1.5px solid rgba(0,188,212,0.28);
-  box-shadow: 0 0 22px 3px rgba(0,188,212,0.18);
-  position: relative;
-  z-index: 2;
-}
-
-.volume-left{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  font-weight: 900;
-  opacity: 0.95;
-  min-width: 120px;
-}
-
-.vol-icon{ font-size: 1.1rem; }
-.vol-text{ font-size: 1.05rem; }
-
-.volume-right{
-  font-weight: 900;
-  opacity: 0.95;
-  min-width: 60px;
-  text-align: right;
-}
-
-#volumeSlider{
-  flex: 1;
-  appearance: none;
-  height: 8px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #00bcd4 0%, #ffffff 75%);
-  outline: none;
-  box-shadow: 0 1px 10px rgba(0, 188, 212, 0.18);
-}
-#volumeSlider::-webkit-slider-thumb{
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: #0fbcd4;
-  border: 2px solid rgba(255,255,255,0.6);
-  box-shadow: 0 0 14px rgba(0, 234, 255, 0.55);
-  cursor: pointer;
-}
-#volumeSlider::-moz-range-thumb{
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: #0fbcd4;
-  border: 2px solid rgba(255,255,255,0.6);
-  box-shadow: 0 0 14px rgba(0, 234, 255, 0.55);
-  cursor: pointer;
-}
-
-body.light .volume-bar{
-  background: #ffffff;
-  border: 1.5px solid rgba(66,165,245,0.45);
-  box-shadow: 0 0 18px #42a5f555;
-}
-body.light .volume-left,
-body.light .volume-right { color: #0b1a2a; }
-
-/* =========================================
-   DUEL — 2 COLONNES
-   ========================================= */
-#duel-container {
-  width: min(1600px, 98vw);
-  margin: 0 auto 1.2rem auto;
-  z-index: 2;
-  position: relative;
-
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2.8rem; /* ✅ plus d'espace */
-  align-items: start;
-}
-
-/* cartes */
-#duel-container .anime,
-#duel-container .opening {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  align-items: stretch;
-  justify-content: flex-start;
-  min-width: 0;
-  padding: 0.6rem;
-  border-radius: 16px;
-  background: rgba(0,0,0,0.10);
-  border: 1px solid rgba(0,188,212,0.18);
-  box-shadow: 0 0 18px rgba(0, 188, 212, 0.10);
-
-  /* ✅ empêche les shadows/hover de déborder et de "toucher" l'autre carte */
-  overflow: hidden;
-}
-
-/* image */
-#duel-container .anime img {
-  width: 100%;
-  height: clamp(240px, 38vw, 460px);
-  object-fit: contain;
-  object-position: center;
-  border-radius: 12px;
-  background: #000;
-  box-shadow: 0 0 18px #1116;
-}
-
-/* vidéo */
-#duel-container .opening video {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  height: auto;
-  border-radius: 12px;
-  background: #000;
-  box-shadow: 0 0 18px #1116;
-}
-
-.videoStatus {
-  font-weight: 900;
-  opacity: 0.9;
-  font-size: 0.92rem;
-  padding: 2px 2px 0 2px;
-}
-
-/* ✅ TITRES plus petits + clamp 2 lignes + pas de débordement */
-#duel-container .vote-title {
-  cursor: pointer;
-  background: #00bcd4;
-  color: #121212;
-  border-radius: 10px;
-  margin: 0;
-  padding: 0.62em 0.85em;
-
-  /* plus petit */
-  font-size: clamp(0.86rem, 1.05vw, 0.98rem);
-  font-weight: 900;
-  letter-spacing: 0.01em;
-
-  transition: background 0.14s, color 0.14s, box-shadow 0.14s, transform 0.12s;
-  user-select: none;
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  text-align: center;
-  line-height: 1.22;
-
-  /* clamp */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-
-  /* shadow légère (ne déborde pas grâce overflow hidden sur la carte) */
-  box-shadow: 0 2px 10px rgba(0,188,212,0.18);
-}
-
-#duel-container .vote-title:hover,
-#duel-container .vote-title:focus {
-  background: #0097a7;
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(0,188,212,0.32);
-  text-decoration: underline;
-  outline: none;
-  transform: translateY(-1px);
-}
-
-#duel-container .vote-title:active {
-  background: #007888;
-  color: #fff;
-  box-shadow: 0 2px 10px rgba(0,188,212,0.25);
-  transform: translateY(0);
-}
-
-/* =========================================
-   BOUTON REJOUER
-   ========================================= */
-#next-match-btn {
-  display: none;
-  margin: 0 auto 2.0rem auto;
-  padding: 1rem 2.5rem;
-  font-size: 1.17rem;
-  border-radius: 10px;
-  background: #00bcd4;
-  color: #121212;
-  font-weight: bold;
-  border: none;
-  cursor: pointer;
-  box-shadow: 0 2px 16px #00bcd444;
-  transition: background 0.2s, color 0.2s, box-shadow 0.18s;
-  z-index: 2;
-  position: relative;
-}
-#next-match-btn:hover {
-  background: #0097a7;
-  color: #fff;
-  box-shadow: 0 6px 22px #00bcd480;
-}
-body.light #next-match-btn {
-  background: #1565c0;
-  color: #fff;
-}
-body.light #next-match-btn:hover {
-  background: #0d47a1;
-  color: #fff;
-}
-
-/* =========================================
-   CLASSEMENT
-   ========================================= */
-#classement {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 2.2rem 2rem;
-  justify-items: center;
-  align-items: start;
-  margin: 2rem 0 3rem 0;
-  width: 100%;
-  max-width: 1150px;
-  overflow-x: visible;
-  padding-top: 60px;
-  position: relative;
-  z-index: 2;
-}
-#classement:empty { display: none; }
-
-.classement-item {
-  position: relative;
-  background: none;
-  padding: 0.2rem 0 0.5rem 0;
-  border-radius: 12px;
-  transition: box-shadow 0.17s, transform 0.14s;
-  box-shadow: 0 0 0px #00bcd400;
-}
-
-.classement-item img,
-.classement-item video {
-  width: 100%;
-  height: 210px;
-  object-fit: contain;
-  background: #000;
-  border-radius: 8px;
-  margin-bottom: 0.8em;
-  box-shadow: 0 0 18px #1116;
-}
-
-.classement-item:hover {
-  transform: translateY(-5px) scale(1.04);
-  box-shadow: 0 6px 28px #00bcd4cc;
-}
-
-.classement-item .rank {
-  position: absolute;
-  left: 14px;
-  top: 14px;
-  background: #00bcd4;
-  color: #111;
-  border-radius: 9px;
-  font-weight: bold;
-  font-size: 1.12rem;
-  padding: 0.14em 1.2em;
-  box-shadow: 0 1px 6px #1113;
-  z-index: 4;
-  border: 2px solid #fff7;
-  min-width: 44px;
-  text-align: center;
-}
-
-.classement-item .title {
-  font-weight: 900;
-  text-align: center;
-  color: #fff;
-  margin-top: 0.1em;
-  font-size: 1.03rem;
-  min-height: 2.1em;
-}
-body.light .classement-item .title { color: #222; }
-
-/* =========================================
-   TITRE + TOOLTIP
-   ========================================= */
-.tournament-title {
-  padding: 0 0.5em;
-  white-space: nowrap;
-}
-
-/* Tooltip help */
-.info-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; }
-.info-icon {
-  width: 26px; height: 26px; border-radius: 999px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(18, 30, 39, 0.55);
-  border: 1.5px solid rgba(255, 255, 255, 0.35);
-  box-shadow: 0 0 10px rgba(0, 234, 255, 0.55), 0 0 24px rgba(0, 188, 212, 0.35), inset 0 0 0 1px rgba(0, 234, 255, 0.18);
-  color: #eaffff; cursor: help; user-select: none;
-  transition: transform 0.16s, box-shadow 0.16s, background 0.16s, border-color 0.16s;
-}
-.info-svg { width: 18px; height: 18px; display: block; }
-.info-wrap:hover .info-icon, .info-icon:focus {
-  transform: scale(1.08) rotate(-6deg);
-  background: rgba(10, 18, 26, 0.72);
-  border-color: rgba(255, 255, 255, 0.55);
-  box-shadow: 0 0 12px rgba(0, 234, 255, 0.9), 0 0 32px rgba(0, 234, 255, 0.55), inset 0 0 0 1px rgba(0, 234, 255, 0.25);
-  outline: none;
-}
-.info-tip {
-  position: absolute; top: calc(100% + 10px); right: 0;
-  transform: translateY(-6px) scale(0.98);
-  width: 340px; padding: 10px 12px; border-radius: 14px;
-  background: linear-gradient(120deg, #233554f3 80%, #00bcd422 100%);
-  border: 1.5px solid #00bcd455;
-  box-shadow: 0 10px 34px rgba(0, 234, 255, 0.32), 0 2.5px 14px rgba(25, 118, 210, 0.25);
-  color: #fff;
-  font-size: 0.95rem; font-weight: 600; line-height: 1.25; letter-spacing: 0.1px;
-  opacity: 0; visibility: hidden;
-  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
-  z-index: 9999; pointer-events: none;
-}
-.info-tip::after {
-  content: ""; position: absolute; top: -7px; right: 10px;
-  border-width: 0 7px 7px 7px; border-style: solid;
-  border-color: transparent transparent #233554f3 transparent;
-  filter: drop-shadow(0 2px 2px rgba(0, 234, 255, 0.18));
-}
-.info-wrap:hover .info-tip,
-.info-wrap:focus-within .info-tip,
-.info-wrap.open .info-tip {
-  opacity: 1; visibility: visible; transform: translateY(0) scale(1);
-}
-
-/* ====== FOOTER ====== */
-footer {
-  padding: 1.2rem 0 0.4rem 0;
-  color: #555;
-  font-size: 0.95rem;
-  text-align: center;
-  user-select: none;
-  width: 100%;
-  max-width: 370px;
-  margin-left: auto;
-  margin-right: auto;
-  transition: color 0.3s;
-  z-index: 2;
-  position: relative;
-}
-body.light footer { color: #888; }
-
-/* =========================================
-   RESPONSIVE
-   ========================================= */
-@media (max-width: 980px) {
-  #duel-container { gap: 1.6rem; }
-}
-
-@media (max-width: 820px) {
-  #duel-container { grid-template-columns: 1fr; }
-  header h1 { font-size: 1.55rem; }
-  .info-tip { width: min(340px, 86vw); right: 0; }
-  .volume-left{ min-width: 92px; }
-}
-
-@media (max-width: 500px) {
-  .main-block { padding: 1.1rem 0.8rem 1.4rem 0.8rem; }
-  #custom-panel { padding: 1.3rem 1rem; }
+// =======================
+// Anime Tournament — script.js (COMPLET)
+// - Volume global (Songs only) + pas de mute
+// - Fix boucle reload vidéos (ne retry plus sur waiting/stalled)
+// - Token anti-concurrence (LOAD_SESSION)
+// - Titres / UI robustes
+// =======================
+
+// =======================
+// CONFIG
+// =======================
+const DATA_URL = "../data/licenses_only.json";
+const TOTAL_MATCH_ITEMS = 32;
+
+const MIN_REQUIRED_TITLES = 64;
+const MIN_REQUIRED_SONGS = 64;
+
+// retries vidéos
+const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
+const LOAD_TIMEOUT_MS = 6000;
+
+// =======================
+// GLOBAL STATE
+// =======================
+let ALL_TITLES = [];
+let items = [];              // 32 items sélectionnés (animes OU songs)
+let mode = "anime";          // "anime" | "songs"
+
+let losses = [];
+let eliminationOrder = [];
+let aliveWB = [];
+let aliveLB = [];
+
+let roundNumber = 1;
+let roundMatches = [];
+let roundMatchIndex = 0;
+let currentMatch = null;
+
+// anti-concurrence chargements
+let LOAD_SESSION = 0;
+
+// volume global
+let GLOBAL_VOLUME = 0.5;
+
+// =======================
+// HELPERS DATA
+// =======================
+function getDisplayTitle(a) {
+  return (
+    a.title_english ||
+    a.title_mal_default ||
+    a.title_original ||
+    a.title ||
+    (a.animethemes && a.animethemes.name) ||
+    "Titre inconnu"
+  );
+}
+
+function getYearFromSeason(a) {
+  const s = String(a.season || "").trim();
+  if (!s) return 0;
+  const parts = s.split(/\s+/);
+  const y = parseInt(parts[1] || parts[0] || "0", 10);
+  return Number.isFinite(y) ? y : 0;
+}
+
+function clampYearSliders() {
+  const minEl = document.getElementById("yearMin");
+  const maxEl = document.getElementById("yearMax");
+  if (!minEl || !maxEl) return;
+
+  let a = parseInt(minEl.value, 10);
+  let b = parseInt(maxEl.value, 10);
+  if (!Number.isFinite(a)) a = 0;
+  if (!Number.isFinite(b)) b = 0;
+
+  if (a > b) {
+    [a, b] = [b, a];
+    minEl.value = String(a);
+    maxEl.value = String(b);
+  }
+}
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// =======================
+// BASIC UI
+// =======================
+document.getElementById("back-to-menu")?.addEventListener("click", () => {
+  window.location.href = "../index.html";
+});
+
+document.getElementById("themeToggle")?.addEventListener("click", () => {
+  document.body.classList.toggle("light");
+  localStorage.setItem(
+    "theme",
+    document.body.classList.contains("light") ? "light" : "dark"
+  );
+});
+
+window.addEventListener("DOMContentLoaded", () => {
+  if (localStorage.getItem("theme") === "light") {
+    document.body.classList.add("light");
+  }
+});
+
+// Tooltip aide (clic mobile)
+document.addEventListener("pointerdown", (e) => {
+  const wrap = e.target.closest(".info-wrap");
+
+  if (wrap && e.target.closest(".info-icon")) {
+    e.preventDefault();
+    e.stopPropagation();
+    wrap.classList.toggle("open");
+    return;
+  }
+
+  document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
+});
+
+// =======================
+// VOLUME (Songs only)
+// =======================
+function loadSavedVolume() {
+  const v = parseFloat(localStorage.getItem("tournament_volume") || "0.5");
+  GLOBAL_VOLUME = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5;
+}
+
+function saveVolume(v) {
+  localStorage.setItem("tournament_volume", String(v));
+}
+
+function applyGlobalVolumeToVideo(video) {
+  if (!video) return;
+  try {
+    video.muted = false; // ✅ pas de mute
+    video.volume = GLOBAL_VOLUME;
+  } catch {}
+}
+
+function applyGlobalVolumeToAllVideos() {
+  document.querySelectorAll("#duel-container video, #classement video").forEach((v) => {
+    applyGlobalVolumeToVideo(v);
+  });
+}
+
+function initVolumeUI() {
+  loadSavedVolume();
+
+  const bar = document.getElementById("volumeBar");
+  const slider = document.getElementById("volumeSlider");
+  const val = document.getElementById("volumeVal");
+
+  if (!bar || !slider || !val) return;
+
+  slider.value = String(Math.round(GLOBAL_VOLUME * 100));
+  val.textContent = String(Math.round(GLOBAL_VOLUME * 100));
+
+  slider.addEventListener("input", () => {
+    const p = parseInt(slider.value, 10);
+    const vv = (Number.isFinite(p) ? p : 50) / 100;
+    GLOBAL_VOLUME = Math.min(1, Math.max(0, vv));
+    val.textContent = String(Math.round(GLOBAL_VOLUME * 100));
+    saveVolume(GLOBAL_VOLUME);
+    applyGlobalVolumeToAllVideos();
+  });
+}
+
+function updateVolumeVisibility() {
+  const bar = document.getElementById("volumeBar");
+  if (!bar) return;
+
+  // ✅ uniquement en jeu + uniquement Songs
+  const shouldShow = document.body.classList.contains("game-started") && mode === "songs";
+  bar.style.display = shouldShow ? "flex" : "none";
+}
+
+// =======================
+// PANEL vs GAME
+// =======================
+function showCustomization() {
+  document.body.classList.remove("game-started");
+
+  const custom = document.getElementById("custom-panel");
+  if (custom) custom.style.display = "";
+
+  const gameEls = [
+    document.getElementById("round-indicator"),
+    document.getElementById("volumeBar"),
+    document.getElementById("duel-container"),
+    document.getElementById("next-match-btn"),
+    document.getElementById("classement"),
+  ];
+  gameEls.forEach((el) => {
+    if (el) el.style.display = "none";
+  });
+}
+
+function showGame() {
+  document.body.classList.add("game-started");
+
+  const custom = document.getElementById("custom-panel");
+  if (custom) custom.style.display = "none";
+
+  const duel = document.getElementById("duel-container");
+  if (duel) duel.style.display = "";
+
+  const roundBox = document.getElementById("round-indicator");
+  if (roundBox) roundBox.style.display = "";
+
+  const classement = document.getElementById("classement");
+  if (classement) classement.style.display = "none";
+
+  const replay = document.getElementById("next-match-btn");
+  if (replay) replay.style.display = "none";
+
+  updateVolumeVisibility();
+}
+
+// =======================
+// MODE (pills #modePills)
+// =======================
+function syncModeButtons() {
+  document.querySelectorAll("#modePills .pill[data-mode]").forEach((btn) => {
+    const m = btn.dataset.mode;
+    const on = m === mode;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+
+function initModePillsIfAny() {
+  const pills = Array.from(document.querySelectorAll("#modePills .pill[data-mode]"));
+  if (!pills.length) return;
+
+  pills.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const m = btn.dataset.mode;
+      if (!m || m === mode) return;
+      switchMode(m);
+    });
+  });
+
+  syncModeButtons();
+}
+
+function switchMode(m) {
+  mode = m; // "anime" | "songs"
+  syncModeButtons();
+  resetTournament();
+  refreshPreview();
+  updateVolumeVisibility();
+}
+
+// =======================
+// DEFAULT UI VALUES
+// =======================
+function setDefaultUI() {
+  const pop = document.getElementById("popPercent");
+  const score = document.getElementById("scorePercent");
+  const yMin = document.getElementById("yearMin");
+  const yMax = document.getElementById("yearMax");
+
+  if (pop) pop.value = "25";
+  if (score) score.value = "25";
+  if (yMin) yMin.value = "2000";
+  if (yMax) yMax.value = "2026";
+
+  // défaut types: TV + Movie
+  const typePills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
+  if (typePills.length) {
+    typePills.forEach((b) => {
+      const t = b.dataset.type;
+      const on = t === "TV" || t === "Movie";
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // défaut songs: Opening
+  const songPills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
+  if (songPills.length) {
+    songPills.forEach((b) => {
+      const s = b.dataset.song;
+      const on = s === "opening";
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+}
+
+function ensureDefaultTypes() {
+  const pills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
+  if (!pills.length) return;
+
+  const active = pills.filter((b) => b.classList.contains("active"));
+  if (active.length > 0) return;
+
+  pills.forEach((b) => {
+    const t = b.dataset.type;
+    const on = t === "TV" || t === "Movie";
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+
+function ensureDefaultSongs() {
+  const pills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
+  if (!pills.length) return;
+
+  const active = pills.filter((b) => b.classList.contains("active"));
+  if (active.length > 0) return;
+
+  pills.forEach((b) => {
+    const s = b.dataset.song;
+    const on = s === "opening";
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+
+// =======================
+// UI READ
+// =======================
+function readOptions() {
+  clampYearSliders();
+  ensureDefaultTypes();
+  ensureDefaultSongs();
+
+  const popEl = document.getElementById("popPercent");
+  const scoreEl = document.getElementById("scorePercent");
+  const yMinEl = document.getElementById("yearMin");
+  const yMaxEl = document.getElementById("yearMax");
+
+  const pop = (parseInt(popEl?.value || "25", 10) || 25) / 100;
+  const score = (parseInt(scoreEl?.value || "25", 10) || 25) / 100;
+  const yMin = parseInt(yMinEl?.value || "2000", 10) || 0;
+  const yMax = parseInt(yMaxEl?.value || "2026", 10) || 9999;
+
+  // affichage valeurs
+  const popVal = document.getElementById("popPercentVal");
+  const scoreVal = document.getElementById("scorePercentVal");
+  const yMinVal = document.getElementById("yearMinVal");
+  const yMaxVal = document.getElementById("yearMaxVal");
+
+  if (popVal) popVal.textContent = String(Math.round(pop * 100));
+  if (scoreVal) scoreVal.textContent = String(Math.round(score * 100));
+  if (yMinVal) yMinVal.textContent = String(yMin);
+  if (yMaxVal) yMaxVal.textContent = String(yMax);
+
+  const types = new Set(
+    [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type)
+  );
+
+  const songKinds = new Set(
+    [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song)
+  );
+
+  return {
+    pop,
+    score,
+    yMin,
+    yMax,
+    types,
+    incOP: songKinds.has("opening"),
+    incED: songKinds.has("ending"),
+    incIN: songKinds.has("insert"),
+  };
+}
+
+// =======================
+// FILTER TITLES
+// =======================
+function filterTitles(data, o) {
+  let arr = [...data];
+
+  arr.sort((a, b) => b._members - a._members);
+  arr = arr.slice(0, Math.ceil(arr.length * o.pop));
+
+  arr.sort((a, b) => b._score - a._score);
+  arr = arr.slice(0, Math.ceil(arr.length * o.score));
+
+  arr = arr.filter((a) => o.types.has(a._type) && a._year >= o.yMin && a._year <= o.yMax);
+
+  return arr;
+}
+
+// =======================
+// BUILD SONGS
+// =======================
+function buildSongs(titles, o) {
+  const tracks = [];
+
+  const addList = (baseTitle, list, kind) => {
+    (list || []).forEach((s) => {
+      if (!s?.video) return;
+      tracks.push({
+        video: s.video,
+        label: `${baseTitle} ${kind} ${s.number ?? ""} : ${s.name ?? ""}${
+          s.artists?.length ? " by " + s.artists.join(", ") : ""
+        }`.replace(/\s+/g, " ").trim(),
+      });
+    });
+  };
+
+  titles.forEach((t) => {
+    const baseTitle = t._title || getDisplayTitle(t);
+
+    if (o.incOP) addList(baseTitle, t.song?.openings, "Opening");
+    if (o.incED) addList(baseTitle, t.song?.endings, "Ending");
+    if (o.incIN) addList(baseTitle, t.song?.inserts, "Insert");
+  });
+
+  return tracks;
+}
+
+// =======================
+// PREVIEW COUNT
+// =======================
+function refreshPreview() {
+  if (!ALL_TITLES.length) return;
+
+  const o = readOptions();
+  const titles = filterTitles(ALL_TITLES, o);
+
+  const box = document.getElementById("previewCount");
+  const btn = document.getElementById("applyFiltersBtn");
+
+  const minTitlesNeeded = Math.max(MIN_REQUIRED_TITLES, TOTAL_MATCH_ITEMS);
+  const minSongsNeeded = Math.max(MIN_REQUIRED_SONGS, TOTAL_MATCH_ITEMS);
+
+  if (mode === "anime") {
+    const ok = titles.length >= minTitlesNeeded;
+    if (box) {
+      box.textContent = `${titles.length} titres disponibles${ok ? " (OK)" : ` (Min ${minTitlesNeeded})`}`;
+      box.classList.toggle("good", ok);
+      box.classList.toggle("bad", !ok);
+    }
+    if (btn) btn.disabled = !ok;
+  } else {
+    const songs = buildSongs(titles, o);
+    const ok = songs.length >= minSongsNeeded;
+
+    if (box) {
+      box.textContent = `${songs.length} songs disponibles${ok ? " (OK)" : ` (Min ${minSongsNeeded})`}`;
+      box.classList.toggle("good", ok);
+      box.classList.toggle("bad", !ok);
+    }
+    if (btn) btn.disabled = !ok;
+  }
+}
+
+// =======================
+// UI EVENTS
+// =======================
+function wireCustomizationUI() {
+  document.querySelectorAll("#custom-panel input").forEach((e) => {
+    e.addEventListener("input", refreshPreview);
+  });
+
+  // types pills: au moins 1
+  document.getElementById("typePills")?.addEventListener("click", (e) => {
+    const b = e.target.closest(".pill[data-type]");
+    if (!b) return;
+
+    const pills = [...document.querySelectorAll("#typePills .pill[data-type]")];
+
+    if (b.classList.contains("active")) {
+      const actives = pills.filter((x) => x.classList.contains("active"));
+      if (actives.length === 1) return;
+    }
+
+    b.classList.toggle("active");
+    b.setAttribute("aria-pressed", b.classList.contains("active") ? "true" : "false");
+
+    ensureDefaultTypes();
+    refreshPreview();
+  });
+
+  // songs pills: au moins 1
+  document.getElementById("songPills")?.addEventListener("click", (e) => {
+    const b = e.target.closest(".pill[data-song]");
+    if (!b) return;
+
+    const pills = [...document.querySelectorAll("#songPills .pill[data-song]")];
+
+    if (b.classList.contains("active")) {
+      const actives = pills.filter((x) => x.classList.contains("active"));
+      if (actives.length === 1) return;
+    }
+
+    b.classList.toggle("active");
+    b.setAttribute("aria-pressed", b.classList.contains("active") ? "true" : "false");
+
+    ensureDefaultSongs();
+    refreshPreview();
+  });
+
+  document.getElementById("applyFiltersBtn")?.addEventListener("click", startGame);
+}
+
+// =======================
+// LOAD DATA
+// =======================
+fetch(DATA_URL)
+  .then((r) => r.json())
+  .then((json) => {
+    const arr = Array.isArray(json) ? json : [];
+
+    ALL_TITLES = arr.map((a) => {
+      const title = getDisplayTitle(a);
+      return {
+        ...a,
+        _title: title,
+        _year: getYearFromSeason(a),
+        _members: Number.isFinite(+a.members) ? +a.members : 0,
+        _score: Number.isFinite(+a.score) ? +a.score : 0,
+        _type: a.type || "Unknown",
+      };
+    });
+
+    initVolumeUI();
+    setDefaultUI();
+    initModePillsIfAny();
+    syncModeButtons();
+    wireCustomizationUI();
+    refreshPreview();
+    showCustomization();
+    updateVolumeVisibility();
+  })
+  .catch((e) => {
+    alert("Erreur chargement dataset: " + e.message);
+  });
+
+// =======================
+// START GAME
+// =======================
+function startGame() {
+  if (!ALL_TITLES.length) return;
+
+  resetTournament();
+
+  const o = readOptions();
+  const titles = filterTitles(ALL_TITLES, o);
+
+  const minTitlesNeeded = Math.max(MIN_REQUIRED_TITLES, TOTAL_MATCH_ITEMS);
+
+  if (mode === "anime") {
+    if (titles.length < minTitlesNeeded) {
+      alert(`Pas assez de titres (${titles.length}/${minTitlesNeeded}).`);
+      return;
+    }
+
+    const pool = shuffle([...titles]);
+    items = pool.slice(0, TOTAL_MATCH_ITEMS).map((t) => ({
+      image: t.image,
+      title: t._title,
+    }));
+  } else {
+    const songs = buildSongs(titles, o);
+    const minSongsNeeded = Math.max(MIN_REQUIRED_SONGS, TOTAL_MATCH_ITEMS);
+
+    if (songs.length < minSongsNeeded) {
+      alert(`Pas assez de songs (${songs.length}/${minSongsNeeded}).`);
+      return;
+    }
+
+    const pool = shuffle([...songs]);
+    items = pool.slice(0, TOTAL_MATCH_ITEMS);
+  }
+
+  showGame();
+  initTournament();
+}
+
+// =======================
+// TOURNAMENT CORE
+// =======================
+function initTournament() {
+  if (!items || items.length < 2) {
+    const roundBox = document.getElementById("round-indicator");
+    if (roundBox) roundBox.textContent = "❌ Pas assez d'items pour démarrer.";
+    showCustomization();
+    return;
+  }
+
+  losses = items.map(() => 0);
+  eliminationOrder = [];
+
+  roundNumber = 1;
+  recomputePools();
+  buildNextRound();
+  showNextMatch();
+}
+
+function recomputePools() {
+  aliveWB = [];
+  aliveLB = [];
+  losses.forEach((l, i) => {
+    if (l < 2) {
+      if (l === 0) aliveWB.push(i);
+      else aliveLB.push(i);
+    }
+  });
+}
+
+function getAliveAll() {
+  const all = [];
+  losses.forEach((l, i) => {
+    if (l < 2) all.push(i);
+  });
+  return all;
+}
+
+function isTournamentOver() {
+  return getAliveAll().length <= 1;
+}
+
+function buildNextRound() {
+  const m = [];
+  pair(aliveWB).forEach((p) => m.push(p));
+  pair(aliveLB).forEach((p) => m.push(p));
+
+  if (m.length === 0) {
+    const all = getAliveAll();
+    pair(all).forEach((p) => m.push(p));
+  }
+
+  roundMatches = shuffle(m);
+  roundMatchIndex = 0;
+}
+
+function pair(pool) {
+  const p = shuffle([...pool]);
+  const r = [];
+  while (p.length >= 2) r.push({ a: p.pop(), b: p.pop() });
+  return r;
+}
+
+function updateRoundIndicator() {
+  const box = document.getElementById("round-indicator");
+  if (!box) return;
+
+  const totalThisRound = roundMatches.length || 0;
+  const currentIndex = Math.min(roundMatchIndex, totalThisRound);
+
+  box.textContent = `Round ${roundNumber} — Match ${currentIndex}/${totalThisRound} — Mode: ${mode === "anime" ? "Animes" : "Songs"}`;
+}
+
+function showNextMatch() {
+  if (isTournamentOver()) {
+    finishTournament();
+    return;
+  }
+
+  if (roundMatchIndex >= roundMatches.length) {
+    roundNumber++;
+    buildNextRound();
+
+    if (roundMatches.length === 0 && !isTournamentOver()) {
+      const all = getAliveAll();
+      roundMatches = pair(all);
+      roundMatchIndex = 0;
+    }
+  }
+
+  if (!roundMatches.length) {
+    finishTournament();
+    return;
+  }
+
+  currentMatch = roundMatches[roundMatchIndex++];
+  updateRoundIndicator();
+  renderMatch();
+}
+
+// =======================
+// CLEANUP MEDIA
+// =======================
+function cleanupCurrentMedia() {
+  const box = document.getElementById("duel-container");
+  if (!box) return;
+
+  box.querySelectorAll("video").forEach((v) => {
+    try {
+      v.pause();
+      v.removeAttribute("src");
+      v.load();
+    } catch {}
+  });
+}
+
+// =======================
+// VIDEO LOAD (no waiting/stalled as fail) + token
+// =======================
+function waitEventOrTimeout(target, events, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+
+    const onOk = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(true);
+    };
+
+    const onFail = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error("video error"));
+    };
+
+    const t = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error("timeout"));
+    }, timeoutMs);
+
+    function cleanup() {
+      clearTimeout(t);
+      events.ok.forEach((ev) => target.removeEventListener(ev, onOk));
+      events.fail.forEach((ev) => target.removeEventListener(ev, onFail));
+    }
+
+    events.ok.forEach((ev) => target.addEventListener(ev, onOk, { once: true }));
+    events.fail.forEach((ev) => target.addEventListener(ev, onFail, { once: true }));
+  });
+}
+
+function getOrCreateStatusEl(video) {
+  const parent = video.parentElement;
+  if (!parent) return null;
+
+  let st = parent.querySelector(".videoStatus");
+  if (!st) {
+    st = document.createElement("div");
+    st.className = "videoStatus";
+    parent.insertBefore(st, video.nextSibling);
+  }
+  return st;
+}
+
+async function loadVideoWithRetry(video, url, { autoplay = false, session = 0 } = {}) {
+  video.preload = "metadata";
+  video.playsInline = true;
+  video.controls = true;
+
+  applyGlobalVolumeToVideo(video);
+
+  const status = getOrCreateStatusEl(video);
+
+  for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+    if (session !== LOAD_SESSION) return false;
+
+    const delay = RETRY_DELAYS[attempt];
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+
+    if (session !== LOAD_SESSION) return false;
+
+    try {
+      if (status) status.textContent = `Chargement… (essai ${attempt + 1}/${RETRY_DELAYS.length})`;
+
+      try {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      } catch {}
+
+      video.src = url;
+      video.load();
+
+      // ✅ on attend des états "OK"
+      await waitEventOrTimeout(
+        video,
+        { ok: ["loadedmetadata", "loadeddata", "canplay"], fail: ["error", "abort"] },
+        LOAD_TIMEOUT_MS
+      );
+
+      if (session !== LOAD_SESSION) return false;
+
+      // ✅ Buffering = normal (pas un fail)
+      const onWaiting = () => { if (status) status.textContent = "⏳ Buffering…"; };
+      const onPlaying = () => { if (status) status.textContent = "✅ Lecture"; };
+      video.addEventListener("waiting", onWaiting);
+      video.addEventListener("stalled", onWaiting);
+      video.addEventListener("playing", onPlaying);
+
+      if (autoplay) {
+        try {
+          await video.play(); // peut être bloqué sans mute → OK
+          if (status) status.textContent = "✅ Lecture";
+        } catch {
+          if (status) status.textContent = "▶️ Clique sur la vidéo pour lancer";
+        }
+      } else {
+        if (status) status.textContent = "✅ Prêt";
+      }
+
+      setTimeout(() => {
+        video.removeEventListener("waiting", onWaiting);
+        video.removeEventListener("stalled", onWaiting);
+        video.removeEventListener("playing", onPlaying);
+      }, 1500);
+
+      return true;
+    } catch {
+      // retry seulement sur error/abort/timeout
+    }
+  }
+
+  if (status) status.textContent = "❌ Vidéo indisponible";
+  const fallback = document.createElement("div");
+  fallback.textContent = "❌ Vidéo indisponible";
+  fallback.style.fontWeight = "900";
+  fallback.style.opacity = "0.9";
+  video.replaceWith(fallback);
+  return false;
+}
+
+// =======================
+// RENDER MATCH
+// =======================
+async function renderMatch() {
+  const box = document.getElementById("duel-container");
+  if (!box) return;
+
+  cleanupCurrentMedia();
+  box.innerHTML = "";
+
+  const session = ++LOAD_SESSION; // ✅ nouveau token à chaque match
+
+  const indices = [currentMatch.a, currentMatch.b];
+  const cardEls = [];
+
+  for (const idx of indices) {
+    const item = items[idx];
+
+    const div = document.createElement("div");
+    div.className = mode === "anime" ? "anime" : "opening";
+
+    if (mode === "anime") {
+      const img = document.createElement("img");
+      img.src = item.image;
+      img.alt = item.title || "anime";
+      img.loading = "eager";
+
+      const title = document.createElement("div");
+      title.className = "vote-title";
+      title.textContent = item.title || "Titre";
+      title.addEventListener("click", () => vote(idx));
+
+      div.appendChild(img);
+      div.appendChild(title);
+      box.appendChild(div);
+      cardEls.push({ idx });
+    } else {
+      const video = document.createElement("video");
+
+      const title = document.createElement("div");
+      title.className = "vote-title";
+      title.textContent = item.label || "Song";
+      title.addEventListener("click", () => vote(idx));
+
+      div.appendChild(video);
+      div.appendChild(title);
+      box.appendChild(div);
+      cardEls.push({ idx, video, url: item.video });
+    }
+  }
+
+  updateVolumeVisibility();
+
+  if (mode === "songs") {
+    const left = cardEls.find((c) => c.idx === currentMatch.a);
+    if (left?.video && left?.url) {
+      await loadVideoWithRetry(left.video, left.url, { autoplay: true, session });
+      applyGlobalVolumeToVideo(left.video);
+    }
+
+    const right = cardEls.find((c) => c.idx === currentMatch.b);
+    if (right?.video && right?.url) {
+      await loadVideoWithRetry(right.video, right.url, { autoplay: false, session });
+      applyGlobalVolumeToVideo(right.video);
+    }
+
+    applyGlobalVolumeToAllVideos();
+  }
+}
+
+// =======================
+// VOTE
+// =======================
+function vote(winner) {
+  if (!currentMatch) return;
+
+  const loser = winner === currentMatch.a ? currentMatch.b : currentMatch.a;
+  losses[loser]++;
+
+  if (losses[loser] === 2) eliminationOrder.push(loser);
+
+  recomputePools();
+
+  if (isTournamentOver()) {
+    finishTournament();
+    return;
+  }
+
+  showNextMatch();
+}
+
+// =======================
+// FIN + CLASSEMENT
+// =======================
+function finishTournament() {
+  LOAD_SESSION++; // stop chargements en cours
+  cleanupCurrentMedia();
+
+  const alive = getAliveAll();
+  const winner = alive.length ? alive[0] : null;
+
+  const ranking = [];
+  if (winner !== null) ranking.push(winner);
+  ranking.push(...eliminationOrder.slice().reverse());
+
+  renderClassement(ranking);
+
+  const replay = document.getElementById("next-match-btn");
+  if (replay) {
+    replay.style.display = "";
+    replay.textContent = "Rejouer";
+    replay.onclick = () => {
+      resetTournament();
+      showCustomization();
+      refreshPreview();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+  }
+
+  const duel = document.getElementById("duel-container");
+  if (duel) duel.innerHTML = "";
+
+  const roundBox = document.getElementById("round-indicator");
+  if (roundBox) roundBox.textContent = "🏁 Tournoi terminé !";
+
+  updateVolumeVisibility();
+}
+
+function renderClassement(rankingIdx) {
+  const box = document.getElementById("classement");
+  if (!box) return;
+
+  box.innerHTML = "";
+  box.style.display = "";
+
+  rankingIdx.forEach((idx, i) => {
+    const item = items[idx];
+    const rank = i + 1;
+
+    const card = document.createElement("div");
+    card.className = "classement-item";
+
+    const badge = document.createElement("div");
+    badge.className = "rank";
+    badge.textContent = `#${rank}`;
+    card.appendChild(badge);
+
+    if (mode === "anime") {
+      const img = document.createElement("img");
+      img.src = item.image;
+      img.alt = item.title || "anime";
+      img.loading = "lazy";
+      card.appendChild(img);
+
+      const t = document.createElement("div");
+      t.className = "title";
+      t.textContent = item.title || "Titre";
+      card.appendChild(t);
+    } else {
+      const v = document.createElement("video");
+      v.controls = true;
+      v.preload = "metadata";
+      v.src = item.video;
+      applyGlobalVolumeToVideo(v);
+      card.appendChild(v);
+
+      const t = document.createElement("div");
+      t.className = "title";
+      t.textContent = item.label || "Song";
+      card.appendChild(t);
+    }
+
+    box.appendChild(card);
+  });
+
+  applyGlobalVolumeToAllVideos();
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// =======================
+// RESET
+// =======================
+function resetTournament() {
+  LOAD_SESSION++; // stop chargements en cours
+  cleanupCurrentMedia();
+
+  const duel = document.getElementById("duel-container");
+  const classement = document.getElementById("classement");
+  const replay = document.getElementById("next-match-btn");
+  const roundBox = document.getElementById("round-indicator");
+
+  if (duel) duel.innerHTML = "";
+  if (classement) {
+    classement.innerHTML = "";
+    classement.style.display = "none";
+  }
+  if (replay) replay.style.display = "none";
+  if (roundBox) roundBox.textContent = "";
+
+  items = [];
+  losses = [];
+  eliminationOrder = [];
+  aliveWB = [];
+  aliveLB = [];
+  roundNumber = 1;
+  roundMatches = [];
+  roundMatchIndex = 0;
+  currentMatch = null;
+
+  updateVolumeVisibility();
 }
