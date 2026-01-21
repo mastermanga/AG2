@@ -1,18 +1,29 @@
 // =======================
-// CONFIG
+// Anime Tournament — script.js (mis à jour)
+// - Fix year (season -> year)
+// - Personnalisation identique Anidle
+// - Pills pour Mode/Types/Songs
+// - Preview OK/bad + start disabled
+// - Vote anime cliquable
+// - Chargement vidéo robuste (sans play())
+// - Fin de tournoi simple + Rejouer
 // =======================
+
 const DATA_URL = "../data/licenses_only.json";
 const TOTAL_MATCH_ITEMS = 32;
-const MIN_REQUIRED = 62;
+const MIN_REQUIRED = 64;
+
+const ROUNDS_MIN = 1;
+const ROUNDS_MAX = 100;
 
 // =======================
 // GLOBAL STATE
 // =======================
 let ALL_TITLES = [];
 let items = [];
-let mode = "anime";
+let mode = "anime"; // "anime" | "songs"
+
 let losses = [];
-let played = [];
 let aliveWB = [];
 let aliveLB = [];
 let eliminationOrder = [];
@@ -40,197 +51,375 @@ if (localStorage.getItem("theme") === "light") {
   document.body.classList.add("light");
 }
 
-// =======================
-// MODE SWITCH
-// =======================
-document.getElementById("mode-anime").onclick = () => switchMode("anime");
-document.getElementById("mode-opening").onclick = () => switchMode("opening");
+// Tooltip (clic) — comme Anidle (optionnel mais pratique)
+document.addEventListener("pointerdown", (e) => {
+  const wrap = e.target.closest(".info-wrap");
+  if (wrap && e.target.closest(".info-icon")) {
+    e.preventDefault();
+    e.stopPropagation();
+    wrap.classList.toggle("open");
+    return;
+  }
+  document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
+});
 
-function switchMode(m) {
-  if (mode === m) return;
-  mode = m;
-  document.getElementById("mode-anime").classList.toggle("active", m === "anime");
-  document.getElementById("mode-opening").classList.toggle("active", m === "opening");
-  resetTournament();
-  refreshPreview();
+// =======================
+// HELPERS (normalisation)
+// =======================
+function getDisplayTitle(a) {
+  return (
+    a.title_english ||
+    a.title_mal_default ||
+    a.title_original ||
+    a.title ||
+    (a.animethemes && a.animethemes.name) ||
+    "Titre inconnu"
+  );
+}
+
+function parseYearFromSeason(seasonStr) {
+  const s = String(seasonStr || "").trim();
+  if (!s) return 0;
+  const m = s.match(/(19\d{2}|20\d{2})/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+function getYear(a) {
+  // 1) season principal
+  let y = parseYearFromSeason(a.season);
+  if (y) return y;
+
+  // 2) fallback sur seasons des songs
+  const lists = [
+    ...(a.song?.openings || []),
+    ...(a.song?.endings || []),
+    ...(a.song?.inserts || []),
+  ];
+  for (const s of lists) {
+    const yy = parseYearFromSeason(s?.season);
+    if (yy) return yy;
+  }
+
+  return 0;
+}
+
+function clampYearSliders() {
+  const minEl = document.getElementById("yearMin");
+  const maxEl = document.getElementById("yearMax");
+  if (!minEl || !maxEl) return;
+
+  let a = parseInt(minEl.value, 10);
+  let b = parseInt(maxEl.value, 10);
+  if (!Number.isFinite(a)) a = 0;
+  if (!Number.isFinite(b)) b = 0;
+
+  if (a > b) {
+    [a, b] = [b, a];
+    minEl.value = String(a);
+    maxEl.value = String(b);
+  }
+}
+
+function clampRoundsValue() {
+  const el = document.getElementById("roundCount");
+  if (!el) return 1;
+  let v = parseInt(el.value, 10);
+  if (!Number.isFinite(v) || v < ROUNDS_MIN) v = ROUNDS_MIN;
+  if (v > ROUNDS_MAX) v = ROUNDS_MAX;
+  el.value = String(v);
+  return v;
+}
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function setPillActive(btn, isActive) {
+  btn.classList.toggle("active", !!isActive);
+  btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+}
+
+function ensureDefaultTypes() {
+  const pills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
+  if (!pills.length) return;
+
+  const active = pills.filter((b) => b.classList.contains("active"));
+  if (active.length > 0) return;
+
+  pills.forEach((b) => {
+    const t = b.dataset.type;
+    const should = t === "TV" || t === "Movie";
+    setPillActive(b, should);
+  });
+}
+
+function ensureDefaultSongKinds() {
+  const pills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
+  if (!pills.length) return;
+
+  const active = pills.filter((b) => b.classList.contains("active"));
+  if (active.length > 0) return;
+
+  pills.forEach((b) => setPillActive(b, b.dataset.song === "opening"));
 }
 
 // =======================
 // LOAD DATA
 // =======================
 fetch(DATA_URL)
-  .then(r => r.json())
-  .then(json => {
-    ALL_TITLES = json;
-    setDefaultUI();
-    wireCustomizationUI();
-    refreshPreview();
+  .then((r) => r.json())
+  .then((json) => {
+    const arr = Array.isArray(json) ? json : [];
+    ALL_TITLES = arr.map((a) => {
+      const title = getDisplayTitle(a);
+      const year = getYear(a);
+      return {
+        ...a,
+        _title: title,
+        _year: year,
+        _members: Number.isFinite(+a.members) ? +a.members : 0,
+        _score: Number.isFinite(+a.score) ? +a.score : 0,
+        _type: a.type || "Unknown",
+      };
+    });
+
+    initPersonalisationUI();
+    updatePreview();
+    setRoundIndicatorIdle();
+  })
+  .catch((e) => {
+    alert("Erreur chargement dataset: " + e.message);
   });
 
 // =======================
-// DEFAULT UI VALUES
+// PERSONALISATION UI
 // =======================
-function setDefaultUI() {
-  document.getElementById("popPercent").value = 25;
-  document.getElementById("scorePercent").value = 25;
-  document.getElementById("yearMin").value = 2013;
-  document.getElementById("yearMax").value = 2026;
-  document.getElementById("incOpenings").checked = true;
-  document.getElementById("incEndings").checked = false;
-  document.getElementById("incInserts").checked = false;
+function initPersonalisationUI() {
+  // Mode pills
+  document.querySelectorAll("#modePills .pill[data-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const next = btn.dataset.mode;
+      if (!next || next === mode) return;
+      mode = next;
 
-  document.querySelectorAll("#typePills .pill").forEach(b => {
-    const on = b.dataset.type === "TV";
-    b.classList.toggle("active", on);
-    b.setAttribute("aria-pressed", on);
+      document.querySelectorAll("#modePills .pill[data-mode]").forEach((b) => {
+        setPillActive(b, b.dataset.mode === mode);
+      });
+
+      resetTournamentUI();
+      updatePreview();
+    });
   });
+
+  // Range labels + clamp
+  const pop = document.getElementById("popPercent");
+  const score = document.getElementById("scorePercent");
+  const yMin = document.getElementById("yearMin");
+  const yMax = document.getElementById("yearMax");
+
+  const popVal = document.getElementById("popPercentVal");
+  const scoreVal = document.getElementById("scorePercentVal");
+  const yMinVal = document.getElementById("yearMinVal");
+  const yMaxVal = document.getElementById("yearMaxVal");
+
+  function syncLabels() {
+    clampYearSliders();
+    if (popVal && pop) popVal.textContent = pop.value;
+    if (scoreVal && score) scoreVal.textContent = score.value;
+    if (yMinVal && yMin) yMinVal.textContent = yMin.value;
+    if (yMaxVal && yMax) yMaxVal.textContent = yMax.value;
+    updatePreview();
+  }
+
+  [pop, score, yMin, yMax].forEach((el) => el && el.addEventListener("input", syncLabels));
+
+  // Types pills
+  document.querySelectorAll("#typePills .pill[data-type]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setPillActive(btn, !btn.classList.contains("active"));
+      ensureDefaultTypes();
+      updatePreview();
+    });
+  });
+  ensureDefaultTypes();
+
+  // Songs pills
+  document.querySelectorAll("#songPills .pill[data-song]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setPillActive(btn, !btn.classList.contains("active"));
+      ensureDefaultSongKinds();
+      updatePreview();
+    });
+  });
+  ensureDefaultSongKinds();
+
+  // Rounds clamp
+  const roundInput = document.getElementById("roundCount");
+  if (roundInput) {
+    roundInput.addEventListener("input", () => {
+      clampRoundsValue();
+    });
+    clampRoundsValue();
+  }
+
+  // Start
+  document.getElementById("applyFiltersBtn").addEventListener("click", startGame);
+
+  syncLabels();
 }
 
 // =======================
-// UI READ
+// READ OPTIONS + FILTERS
 // =======================
 function readOptions() {
-  const pop = +document.getElementById("popPercent").value / 100;
-  const score = +document.getElementById("scorePercent").value / 100;
-  const yMin = +document.getElementById("yearMin").value;
-  const yMax = +document.getElementById("yearMax").value;
+  clampYearSliders();
+  clampRoundsValue();
+  ensureDefaultTypes();
+  ensureDefaultSongKinds();
 
-  document.getElementById("popPercentVal").textContent = pop * 100;
-  document.getElementById("scorePercentVal").textContent = score * 100;
-  document.getElementById("yearMinVal").textContent = yMin;
-  document.getElementById("yearMaxVal").textContent = yMax;
+  const popPercent = parseInt(document.getElementById("popPercent").value, 10);
+  const scorePercent = parseInt(document.getElementById("scorePercent").value, 10);
+  const yMin = parseInt(document.getElementById("yearMin").value, 10);
+  const yMax = parseInt(document.getElementById("yearMax").value, 10);
 
   const types = new Set(
-    [...document.querySelectorAll("#typePills .pill.active")]
-      .map(b => b.dataset.type)
+    [...document.querySelectorAll("#typePills .pill.active[data-type]")].map((b) => b.dataset.type)
+  );
+
+  const songKinds = new Set(
+    [...document.querySelectorAll("#songPills .pill.active[data-song]")].map((b) => b.dataset.song)
   );
 
   return {
-    pop,
-    score,
+    popRatio: popPercent / 100,
+    scoreRatio: scorePercent / 100,
+    popPercent,
+    scorePercent,
     yMin,
     yMax,
     types,
-    incOP: document.getElementById("incOpenings").checked,
-    incED: document.getElementById("incEndings").checked,
-    incIN: document.getElementById("incInserts").checked,
+    songKinds,
+    rounds: clampRoundsValue(),
   };
 }
 
-// =======================
-// FILTER TITLES
-// =======================
 function filterTitles(data, o) {
-  let arr = [...data];
+  let arr = data
+    .filter((a) => o.types.has(a._type))
+    .filter((a) => a._year >= o.yMin && a._year <= o.yMax);
 
-  arr.sort((a, b) => b.members - a.members);
-  arr = arr.slice(0, Math.ceil(arr.length * o.pop));
+  // popularité top %
+  arr.sort((a, b) => b._members - a._members);
+  arr = arr.slice(0, Math.ceil(arr.length * o.popRatio));
 
-  arr.sort((a, b) => b.score - a.score);
-  arr = arr.slice(0, Math.ceil(arr.length * o.score));
-
-  arr = arr.filter(a =>
-    o.types.has(a.type) &&
-    a.year >= o.yMin &&
-    a.year <= o.yMax
-  );
+  // score top %
+  arr.sort((a, b) => b._score - a._score);
+  arr = arr.slice(0, Math.ceil(arr.length * o.scoreRatio));
 
   return arr;
 }
 
-// =======================
-// BUILD SONGS
-// =======================
 function buildSongs(titles, o) {
   const tracks = [];
-  titles.forEach(t => {
-    const baseTitle = t.title_english || t.title_original || t.title_mal_default;
+  const wantOP = o.songKinds.has("opening");
+  const wantED = o.songKinds.has("ending");
+  const wantIN = o.songKinds.has("insert");
 
-    const add = (list, kind) => {
-      (list || []).forEach(s => {
-        tracks.push({
-          video: s.video,
-          label: `${baseTitle} ${kind} ${s.number} : ${s.name}${s.artists?.length ? " by " + s.artists.join(", ") : ""}`
-        });
+  const add = (baseTitle, list, kindLabel) => {
+    (list || []).forEach((s) => {
+      if (!s?.video) return;
+      const artists = Array.isArray(s.artists) && s.artists.length ? " by " + s.artists.join(", ") : "";
+      tracks.push({
+        video: s.video,
+        label: `${baseTitle} ${kindLabel} ${s.number ?? ""} : ${s.name ?? "Song"}${artists}`.replace(/\s+/g, " ").trim(),
       });
-    };
+    });
+  };
 
-    if (o.incOP) add(t.song?.openings, "opening");
-    if (o.incED) add(t.song?.endings, "ending");
-    if (o.incIN) add(t.song?.inserts, "insert");
+  titles.forEach((t) => {
+    const baseTitle = t._title || "Titre inconnu";
+    if (wantOP) add(baseTitle, t.song?.openings, "Opening");
+    if (wantED) add(baseTitle, t.song?.endings, "Ending");
+    if (wantIN) add(baseTitle, t.song?.inserts, "Insert");
   });
+
   return tracks;
 }
 
 // =======================
-// PREVIEW COUNT
+// PREVIEW
 // =======================
-function refreshPreview() {
+function updatePreview() {
   if (!ALL_TITLES.length) return;
+
   const o = readOptions();
   const titles = filterTitles(ALL_TITLES, o);
+
   const box = document.getElementById("previewCount");
   const btn = document.getElementById("applyFiltersBtn");
 
   if (mode === "anime") {
-    box.textContent = `${titles.length} titres disponibles`;
-    btn.disabled = titles.length < MIN_REQUIRED;
-  } else {
-    const songs = buildSongs(titles, o);
-    box.textContent = `${songs.length} songs disponibles`;
-    btn.disabled = songs.length < MIN_REQUIRED;
+    const ok = titles.length >= MIN_REQUIRED;
+    box.textContent = `📚 Titres disponibles : ${titles.length} ${ok ? "(OK)" : "(Min 64)"}`;
+    box.classList.toggle("good", ok);
+    box.classList.toggle("bad", !ok);
+    btn.disabled = !ok;
+    return;
   }
-}
 
-// =======================
-// UI EVENTS
-// =======================
-function wireCustomizationUI() {
-  document.querySelectorAll("#custom-panel input, #custom-panel select")
-    .forEach(e => e.addEventListener("input", refreshPreview));
-
-  document.getElementById("typePills").onclick = e => {
-    const b = e.target.closest(".pill");
-    if (!b) return;
-    b.classList.toggle("active");
-    b.setAttribute("aria-pressed", b.classList.contains("active"));
-    if (!document.querySelector("#typePills .pill.active")) {
-      b.classList.add("active");
-    }
-    refreshPreview();
-  };
-
-  document.getElementById("applyFiltersBtn").onclick = startGame;
+  const songs = buildSongs(titles, o);
+  const ok = songs.length >= MIN_REQUIRED;
+  box.textContent = `🎵 Songs disponibles : ${songs.length} ${ok ? "(OK)" : "(Min 64)"}`;
+  box.classList.toggle("good", ok);
+  box.classList.toggle("bad", !ok);
+  btn.disabled = !ok;
 }
 
 // =======================
 // START GAME
 // =======================
 function startGame() {
+  resetTournamentUI();
+
   const o = readOptions();
   const titles = filterTitles(ALL_TITLES, o);
 
   if (mode === "anime") {
-    shuffle(titles);
-    items = titles.slice(0, TOTAL_MATCH_ITEMS);
+    if (titles.length < MIN_REQUIRED) {
+      alert(`Pas assez de titres pour lancer (${titles.length}/${MIN_REQUIRED}).`);
+      return;
+    }
+    const pool = shuffle([...titles]);
+    items = pool.slice(0, TOTAL_MATCH_ITEMS).map((t) => ({
+      image: t.image,
+      title: t._title,
+      mal_id: t.mal_id,
+    }));
   } else {
     const songs = buildSongs(titles, o);
-    shuffle(songs);
-    items = songs.slice(0, TOTAL_MATCH_ITEMS);
+    if (songs.length < MIN_REQUIRED) {
+      alert(`Pas assez de songs pour lancer (${songs.length}/${MIN_REQUIRED}).`);
+      return;
+    }
+    const pool = shuffle([...songs]);
+    items = pool.slice(0, TOTAL_MATCH_ITEMS);
   }
 
   initTournament();
 }
 
 // =======================
-// TOURNAMENT CORE (double elim)
+// TOURNAMENT CORE (double elim simplifié)
 // =======================
 function initTournament() {
   losses = items.map(() => 0);
-  played = items.map(() => new Set());
   eliminationOrder = [];
-  recomputePools();
   roundNumber = 1;
+  recomputePools();
   buildNextRound();
   showNextMatch();
 }
@@ -244,12 +433,12 @@ function recomputePools() {
   });
 }
 
-function buildNextRound() {
-  const m = [];
-  pair(aliveWB).forEach(p => m.push(p));
-  pair(aliveLB).forEach(p => m.push(p));
-  roundMatches = shuffle(m);
-  roundMatchIndex = 0;
+function getAliveIndices() {
+  const alive = [];
+  losses.forEach((l, i) => {
+    if (l < 2) alive.push(i);
+  });
+  return alive;
 }
 
 function pair(pool) {
@@ -259,12 +448,34 @@ function pair(pool) {
   return r;
 }
 
+function buildNextRound() {
+  const m = [];
+  pair(aliveWB).forEach((p) => m.push(p));
+  pair(aliveLB).forEach((p) => m.push(p));
+  roundMatches = shuffle(m);
+  roundMatchIndex = 0;
+}
+
 function showNextMatch() {
+  const alive = getAliveIndices();
+  if (alive.length <= 1) {
+    finishTournament(alive[0]);
+    return;
+  }
+
   if (roundMatchIndex >= roundMatches.length) {
     roundNumber++;
     buildNextRound();
   }
+
+  // Si malgré tout aucun match possible (cas rare), on termine proprement
+  if (!roundMatches.length) {
+    finishTournament(alive[0]);
+    return;
+  }
+
   currentMatch = roundMatches[roundMatchIndex++];
+  updateRoundIndicator();
   renderMatch();
 }
 
@@ -281,65 +492,179 @@ async function renderMatch() {
     div.className = mode === "anime" ? "anime" : "opening";
 
     if (mode === "anime") {
-      div.innerHTML = `<img src="${item.image}"><div class="vote-title">${item.title}</div>`;
+      const img = document.createElement("img");
+      img.src = item.image;
+      img.alt = item.title || "Anime";
+
+      const title = document.createElement("div");
+      title.className = "vote-title";
+      title.textContent = item.title || "Titre";
+      title.onclick = () => vote(idx);
+
+      div.append(img, title);
     } else {
       const video = document.createElement("video");
       video.controls = true;
       await loadVideoWithRetry(video, item.video);
+
       const title = document.createElement("div");
       title.className = "vote-title";
       title.textContent = item.label;
       title.onclick = () => vote(idx);
+
       div.append(video, title);
     }
+
     box.appendChild(div);
   }
 }
 
 // =======================
-// VIDEO LOAD WITH RETRY
+// VIDEO LOAD WITH RETRY (sans autoplay)
 // =======================
-function loadVideoWithRetry(video, url) {
-  return new Promise(async resolve => {
-    for (const delay of [0, 3000, 10000]) {
-      if (delay) await new Promise(r => setTimeout(r, delay));
-      video.src = url;
-      try {
-        await video.play();
-        video.pause();
-        return resolve();
-      } catch {}
+function waitVideoEvent(video, timeoutMs = 6000) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const onOk = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve();
+    };
+    const onErr = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error("video error"));
+    };
+    const t = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error("timeout"));
+    }, timeoutMs);
+
+    function cleanup() {
+      clearTimeout(t);
+      video.removeEventListener("loadeddata", onOk);
+      video.removeEventListener("canplay", onOk);
+      video.removeEventListener("error", onErr);
     }
-    const s = document.createElement("div");
-    s.textContent = "❌ Vidéo indisponible";
-    video.replaceWith(s);
-    resolve();
+
+    video.addEventListener("loadeddata", onOk, { once: true });
+    video.addEventListener("canplay", onOk, { once: true });
+    video.addEventListener("error", onErr, { once: true });
   });
+}
+
+async function loadVideoWithRetry(video, url) {
+  const delays = [0, 2000, 6000];
+
+  for (const delay of delays) {
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+
+    try {
+      video.src = url;
+      video.load();
+      await waitVideoEvent(video, 6500);
+      return;
+    } catch (e) {
+      // retry
+    }
+  }
+
+  const s = document.createElement("div");
+  s.textContent = "❌ Vidéo indisponible";
+  s.style.fontWeight = "900";
+  s.style.opacity = "0.9";
+  s.style.padding = "8px 2px";
+  video.replaceWith(s);
 }
 
 // =======================
 // VOTE
 // =======================
 function vote(winner) {
+  if (!currentMatch) return;
+
   const loser = winner === currentMatch.a ? currentMatch.b : currentMatch.a;
   losses[loser]++;
+
   if (losses[loser] === 2) eliminationOrder.push(loser);
+
   recomputePools();
   showNextMatch();
 }
 
 // =======================
-// UTILS
+// FIN + UI
 // =======================
-function shuffle(a) {
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
+function setRoundIndicatorIdle() {
+  const el = document.getElementById("round-indicator");
+  el.textContent = "Prêt : choisis tes réglages puis lance une partie ✅";
 }
 
-function resetTournament() {
+function updateRoundIndicator() {
+  const el = document.getElementById("round-indicator");
+  const total = roundMatches.length || 0;
+  const idx = Math.min(roundMatchIndex, total);
+  el.textContent = `Round ${roundNumber} — Match ${idx}/${Math.max(1, total)} — Mode: ${mode === "anime" ? "Animes" : "Songs"}`;
+}
+
+function finishTournament(winnerIndex) {
+  const duel = document.getElementById("duel-container");
+  const replay = document.getElementById("next-match-btn");
+
+  let winnerLabel = "—";
+  if (typeof winnerIndex === "number" && items[winnerIndex]) {
+    winnerLabel = mode === "anime" ? items[winnerIndex].title : items[winnerIndex].label;
+  } else {
+    const alive = getAliveIndices();
+    if (alive.length && items[alive[0]]) {
+      winnerLabel = mode === "anime" ? items[alive[0]].title : items[alive[0]].label;
+    }
+  }
+
+  duel.innerHTML = `
+    <div style="width:100%; text-align:center; font-weight:900; font-size:1.35rem;">
+      🏆 Tournoi terminé !<br>
+      <div style="margin-top:10px; font-size:1.05rem; opacity:0.92;">
+        Gagnant : <span style="text-decoration:underline;">${escapeHtml(winnerLabel)}</span>
+      </div>
+    </div>
+  `;
+
+  replay.style.display = "inline-flex";
+  replay.onclick = () => {
+    resetTournamentUI(true);
+    setRoundIndicatorIdle();
+  };
+}
+
+function resetTournamentUI(clearOnly = false) {
   document.getElementById("duel-container").innerHTML = "";
   document.getElementById("classement").innerHTML = "";
+  document.getElementById("next-match-btn").style.display = "none";
+
+  // reset state
+  items = [];
+  losses = [];
+  aliveWB = [];
+  aliveLB = [];
+  eliminationOrder = [];
+  roundNumber = 1;
+  roundMatches = [];
+  roundMatchIndex = 0;
+  currentMatch = null;
+
+  if (!clearOnly) setRoundIndicatorIdle();
+}
+
+function escapeHtml(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
