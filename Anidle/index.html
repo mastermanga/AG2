@@ -16,128 +16,150 @@
 
     <h1>🕵️‍♂️ Guess the Anime 🕵️‍♂️</h1>
 
-    <!-- Zone droite : thème + aide -->
     <div class="header-right">
-      <button id="themeToggle" class="toggle-btn">🌓</button>
+      <button id="themeToggle" class="toggle-btn" aria-label="Changer le thème">🌓</button>
 
       <span class="info-wrap header-help">
-        <span class="info-icon" tabindex="0" aria-label="Aide">
+        <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-anidle">
           <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor"
-              d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
+              d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 00 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
           </svg>
         </span>
 
-        <span class="info-tip" role="tooltip">
-          Devine l’anime mystère grâce aux indices. Tu commences avec 3000 points : chaque tentative enlève 150 points et chaque indice coûte 300 points. Les indices utilisent un code couleur (vert = correct, orange = proche, rouge = faux). L’indice d’année est orange si l’année est correcte mais pas la saison, et l’indice de score est orange s’il est à ±0,3. En utilisant un indice, les suggestions se filtrent pour t’aider à trouver la bonne réponse.
+        <span class="info-tip" id="help-anidle" role="tooltip">
+          Devine l’anime mystère grâce aux indices. Tu commences avec 3000 points : chaque tentative enlève 150 points
+          et chaque indice coûte 300 points. Les indices utilisent un code couleur (vert = correct, orange = proche,
+          rouge = faux). L’indice d’année est orange si l’année est correcte mais pas la saison, et l’indice de score
+          est orange s’il est à ±0,3. En utilisant un indice, les suggestions se filtrent pour t’aider à trouver la bonne réponse.
         </span>
       </span>
     </div>
   </header>
 
-  <!-- ✅ PERSONNALISATION (affichée au chargement) -->
-  <div id="custom-panel" class="main-container" style="max-width: 1400px; width: 98vw; padding: 1.7rem 1.8rem; margin: 0 auto 1.2rem auto;">
-    <h2 style="margin:0 0 1.0rem 0; text-align:center;">⚙️ Personnalisation</h2>
+  <!-- =========================
+       PERSONNALISATION (MENU)
+       ========================= -->
+  <section id="custom-panel" class="settings-card">
+    <div class="settings-title">
+      <span class="settings-gear">⚙️</span>
+      <h2>Personnalisation</h2>
+    </div>
 
-    <!-- ✅ Nombre de rounds -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Nombre de rounds</div>
-      <div class="opt-col" style="flex:1; min-width:280px; display:flex; align-items:center; gap:12px; justify-content:flex-end;">
-        <input
-          id="roundCount"
-          type="number"
-          min="1"
-          max="50"
-          step="1"
-          value="1"
-          style="width:110px; padding:10px 12px; border-radius:10px; border:none; outline:none; background:#222; color:#eee; box-shadow:0 0 8px #00bcd466;"
-        />
-        <div style="opacity:0.85; font-weight:700; font-size:0.95rem; text-align:right;">
-          Enchaîne plusieurs parties avec les mêmes réglages.
+    <!-- Mode (même si 1 seul choix pour l’instant) -->
+    <div class="set-row">
+      <div class="set-label">Mode</div>
+
+      <div class="set-main">
+        <div id="modePills" class="pill-group">
+          <button type="button" class="pill active" data-mode="anime" aria-pressed="true">Animes</button>
         </div>
+        <div class="set-hint">Choisis le contenu à deviner.</div>
       </div>
+
+      <div class="set-right"></div>
     </div>
 
     <!-- Popularité -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Popularité</div>
-      <div class="opt-col" style="flex:1; min-width:280px;">
-        <input id="popPercent" type="range" min="5" max="100" step="5" value="25" />
-        <div class="opt-value" style="margin-top:6px; font-weight:900; opacity:0.92; text-align:right;">
-          Top <span id="popPercentVal">25</span>%
-        </div>
+    <div class="set-row">
+      <div class="set-label">Popularité</div>
+
+      <div class="set-main">
+        <input id="popPercent" class="range" type="range" min="5" max="100" step="5" value="25" />
+      </div>
+
+      <div class="set-right">
+        <div class="set-right-text">Top <span id="popPercentVal">25</span>%</div>
       </div>
     </div>
 
     <!-- Score -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Score</div>
-      <div class="opt-col" style="flex:1; min-width:280px;">
-        <input id="scorePercent" type="range" min="5" max="100" step="5" value="25" />
-        <div class="opt-value" style="margin-top:6px; font-weight:900; opacity:0.92; text-align:right;">
-          Top <span id="scorePercentVal">25</span>%
-        </div>
+    <div class="set-row">
+      <div class="set-label">Score</div>
+
+      <div class="set-main">
+        <input id="scorePercent" class="range" type="range" min="5" max="100" step="5" value="25" />
+      </div>
+
+      <div class="set-right">
+        <div class="set-right-text">Top <span id="scorePercentVal">25</span>%</div>
       </div>
     </div>
 
-    <!-- Années (double slider comme Anime Tournament) -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Années</div>
-      <div class="opt-col" style="flex:1; min-width:280px;">
-        <div style="display:flex; flex-direction:column; gap:8px;">
-          <div style="display:flex; gap:12px; align-items:center;">
-            <input id="yearMin" type="range" min="1950" max="2026" step="1" value="2000" style="flex:1;">
-            <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026" style="flex:1;">
-          </div>
-          <div class="opt-value" style="font-weight:900; opacity:0.92; text-align:right;">
-            <span id="yearMinVal">2000</span> → <span id="yearMaxVal">2026</span>
-          </div>
+    <!-- Années -->
+    <div class="set-row">
+      <div class="set-label">Années</div>
+
+      <div class="set-main">
+        <div class="years-dual">
+          <input id="yearMin" class="range" type="range" min="1950" max="2026" step="1" value="2000" />
+          <input id="yearMax" class="range" type="range" min="1950" max="2026" step="1" value="2026" />
+        </div>
+      </div>
+
+      <div class="set-right">
+        <div class="set-right-text">
+          <span id="yearMinVal">2000</span> → <span id="yearMaxVal">2026</span>
         </div>
       </div>
     </div>
 
     <!-- Types -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Types</div>
-      <div class="opt-col" style="flex:1; min-width:280px;">
-        <div id="typePills" class="opt-pill-group" style="display:flex; gap:10px; flex-wrap:wrap;">
+    <div class="set-row">
+      <div class="set-label">Types</div>
+
+      <div class="set-main">
+        <div id="typePills" class="pill-group">
           <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
-
-          <!-- ✅ Movie désactivé par défaut -->
           <button type="button" class="pill" data-type="Movie" aria-pressed="false">Movie</button>
-
           <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
           <button type="button" class="pill" data-type="ONA" aria-pressed="false">ONA</button>
           <button type="button" class="pill" data-type="Special" aria-pressed="false">Special</button>
         </div>
-        <div style="margin-top:8px; opacity:0.85; font-weight:700; font-size:0.95rem;">
-          Choisis au moins 1 type.
+        <div class="set-hint">Choisis au moins 1 type.</div>
+      </div>
+
+      <div class="set-right"></div>
+    </div>
+
+    <!-- Titres disponibles (barre) -->
+    <div class="set-bar-row">
+      <div class="set-label"></div>
+      <div id="previewCount" class="available-bar bad">⏳ Chargement de la base…</div>
+    </div>
+
+    <!-- Rounds (DERNIER) -->
+    <div class="set-row">
+      <div class="set-label">Rounds</div>
+
+      <div class="set-main set-main-right">
+        <input id="roundCount" class="round-input" type="number" min="1" max="100" step="1" value="1" />
+      </div>
+
+      <div class="set-right">
+        <div class="set-right-text">
+          (1 à 100) — Enchaîne plusieurs parties avec la même config.
         </div>
       </div>
     </div>
 
-    <!-- Preview + Start -->
-    <div id="previewCount" class="preview-count bad" style="margin-top:14px; width:100%; font-weight:900; text-align:center; padding:10px 12px; border-radius:14px; border:1px solid #00bcd455; background: rgba(0,0,0,0.15);">
-      ⏳ Chargement de la base…
-    </div>
-
-    <div style="display:flex; justify-content:center; margin-top:12px;">
-      <button id="applyFiltersBtn" class="menu-btn" style="font-size:1.05rem; padding:0.85rem 1.6rem;">
+    <!-- Bouton -->
+    <div class="set-action">
+      <button id="applyFiltersBtn" class="big-start" disabled>
         ✅ Lancer avec ces réglages
       </button>
     </div>
-  </div>
+  </section>
 
-  <!-- ✅ JEU (caché au départ, affiché après lancement) -->
+  <!-- =========================
+           JEU (HIDDEN)
+       ========================= -->
   <div id="game-panel">
     <div id="container" class="main-container">
-      <div style="display:flex; gap:20px; justify-content:center; width:100%;">
+      <div class="game-layout">
+        <aside id="aideContainer" aria-label="Suggestions"></aside>
 
-        <!-- Suggestions / aide latérale -->
-        <div id="aideContainer" style="width:300px;"></div>
-
-        <!-- Jeu -->
-        <div style="flex:1;">
+        <main class="game-main">
           <div id="successContainer" style="display:none;"></div>
 
           <div class="input-container">
@@ -147,7 +169,6 @@
               placeholder="Entrez le nom d'un anime..."
               autocomplete="off"
             />
-
             <div id="suggestions" class="suggestions"></div>
 
             <div id="counter">Tentatives : 0 (-150)</div>
@@ -158,38 +179,23 @@
               </div>
             </div>
 
-            <!-- INDICES -->
-            <div
-              id="indices-bar"
-              style="display:flex; gap:10px; margin:16px 0; flex-wrap:wrap; justify-content:center;"
-            >
-              <button id="btnIndiceStudio" class="indice-btn" disabled>
-                Indice Studio (-300)
-              </button>
-              <button id="btnIndiceSaison" class="indice-btn" disabled>
-                Indice Année (-300)
-              </button>
-              <button id="btnIndiceGenres" class="indice-btn" disabled>
-                Indice Genres/Thèmes (-300)
-              </button>
-              <button id="btnIndiceScore" class="indice-btn" disabled>
-                Indice Score (-300)
-              </button>
+            <div id="indices-bar">
+              <button id="btnIndiceStudio" class="indice-btn" disabled>Indice Studio (-300)</button>
+              <button id="btnIndiceSaison" class="indice-btn" disabled>Indice Année (-300)</button>
+              <button id="btnIndiceGenres" class="indice-btn" disabled>Indice Genres/Thèmes (-300)</button>
+              <button id="btnIndiceScore" class="indice-btn" disabled>Indice Score (-300)</button>
             </div>
           </div>
 
           <div id="results"></div>
-        </div>
+        </main>
       </div>
 
       <canvas id="fireworks"></canvas>
     </div>
   </div>
 
-  <!-- FOOTER -->
-  <footer>
-    © 2025 mastermanga
-  </footer>
+  <footer>© 2025 mastermanga</footer>
 
   <script src="script.js"></script>
 </body>
