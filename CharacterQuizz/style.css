@@ -71,7 +71,7 @@ header h1 {
   font-size: 1.13rem;
   cursor: pointer;
   padding: 0.6rem 1.3rem;
-  transition: 
+  transition:
     background 0.21s,
     color 0.16s,
     box-shadow 0.18s,
@@ -702,8 +702,7 @@ body.light .info-icon{
 }
 
 /* =========================================================
-   ✅ PATCH GAME — remet l'affichage de la partie jeu (image 2)
-   Scope strict: uniquement #game-panel (ne touche pas aux autres pages)
+   ✅ PATCH GAME — corrigé: container centré + barre qui se vide droite->gauche
 ========================================================= */
 
 #game-panel{
@@ -723,42 +722,56 @@ body.light .info-icon{
   box-shadow: 0 0 42px 6px #00bcd444;
   border: 1.5px solid #00bcd455;
   padding: 46px 44px 40px;
+
+  /* ✅ centré quoi qu'il arrive */
+  margin: 0 auto;
+
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 18px;
+  box-sizing: border-box;
 }
 
-/* Score bar */
+/* Score bar (✅ fill ancré à gauche, label centré sur toute la barre) */
 #game-panel #score-bar-container{
   width: 100%;
   max-width: 600px;
-  display: flex;
-  justify-content: center;
-  margin: 6px 0 10px;
-}
-
-#game-panel #score-bar-container{
   height: 36px;
+
+  /* ✅ pas de flex centré => sinon le fill se centre et "rétrécit au milieu" */
+  display: block;
+  position: relative;
+
+  margin: 6px auto 10px;
   background: rgba(255,255,255,0.10);
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 999px;
   overflow: hidden;
 }
 
+/* Le fill reste collé à gauche */
 #game-panel #score-bar{
   height: 100%;
   border-radius: 999px;
+
+  /* ✅ on annule le inline "position:relative" (sinon le label se centre dans le fill) */
+  position: static !important;
+  margin: 0;
 }
 
+/* Label centré sur la barre complète (pas dans le fill) */
 #game-panel #score-bar-label{
   position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+
+  text-align: center;
   font-weight: 900;
   text-shadow: 0 2px 10px rgba(0,0,0,0.45);
+  pointer-events: none;
 }
 
 /* Round */
@@ -905,7 +918,7 @@ body.light .info-icon{
   z-index: 999;
 }
 
-/* Light mode (optionnel mais propre) */
+/* Light mode */
 body.light #game-panel #container{
   background: #fff;
   border: 1.5px solid rgba(66, 165, 245, 0.45);
@@ -938,4 +951,3 @@ body.light #game-panel #timer{
     height: 210px;
   }
 }
-
