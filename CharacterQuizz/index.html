@@ -12,55 +12,130 @@
     <div class="header-group">
       <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
       <h1>👤 Character Quizz 👤</h1>
+
       <div class="header-right">
         <button id="themeToggle" class="toggle-btn">🌓</button>
-    
+
         <span class="info-wrap header-help">
-          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-blind">
+          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-character">
             <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor"
-                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
             </svg>
           </span>
-    
-          <span class="info-tip" id="help-blind" role="tooltip">
-            Six personnages à découvrir progressivement pour deviner l’anime. Un nouveau apparaît toutes les 8 secondes ou après un essai.
+
+          <span class="info-tip" id="help-character" role="tooltip">
+            Six personnages à découvrir progressivement pour deviner l’anime.
+            Un nouveau apparaît toutes les 7 secondes ou après un essai.
           </span>
         </span>
       </div>
     </div>
   </header>
 
-  <!-- Bandeau daily -->
-  <div id="daily-banner">
-    <span id="daily-status"></span>
-    <span id="daily-score"></span>
-    <button id="switch-mode-btn" class="toggle-btn" style="margin-left:14px;">Passer en mode Classique</button>
+  <!-- ✅ PERSONNALISATION -->
+  <div id="custom-panel">
+    <div class="main-container" style="max-width:650px;width:98vw;min-height:auto;">
+      <h2 style="margin:0 0 1.0rem 0; text-align:center;">⚙️ Personnalisation</h2>
+
+      <!-- Popularité -->
+      <div class="opt-row">
+        <div class="opt-label">Popularité</div>
+        <div class="opt-col">
+          <input id="popPercent" type="range" min="5" max="100" step="5" value="25" />
+          <div class="opt-value">Top <span id="popPercentVal">25</span>%</div>
+        </div>
+      </div>
+
+      <!-- Score -->
+      <div class="opt-row">
+        <div class="opt-label">Score</div>
+        <div class="opt-col">
+          <input id="scorePercent" type="range" min="5" max="100" step="5" value="25" />
+          <div class="opt-value">Top <span id="scorePercentVal">25</span>%</div>
+        </div>
+      </div>
+
+      <!-- Années -->
+      <div class="opt-row">
+        <div class="opt-label">Années</div>
+        <div class="opt-col">
+          <div class="year-row">
+            <input id="yearMin" type="range" min="1950" max="2026" step="1" value="2000">
+            <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026">
+          </div>
+          <div class="opt-value">
+            <span id="yearMinVal">2000</span> → <span id="yearMaxVal">2026</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Types -->
+      <div class="opt-row">
+        <div class="opt-label">Types</div>
+        <div class="opt-col">
+          <div id="typePills" class="opt-pill-group">
+            <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
+            <!-- ✅ Movie OFF par défaut -->
+            <button type="button" class="pill" data-type="Movie" aria-pressed="false">Movie</button>
+            <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
+            <button type="button" class="pill" data-type="ONA" aria-pressed="false">ONA</button>
+            <button type="button" class="pill" data-type="Special" aria-pressed="false">Special</button>
+          </div>
+          <div class="opt-hint">Choisis au moins 1 type.</div>
+        </div>
+      </div>
+
+      <!-- ✅ Nombre de rounds -->
+      <div class="opt-row">
+        <div class="opt-label">Rounds</div>
+        <div class="opt-col">
+          <input id="roundsCount" type="number" min="1" max="50" value="5" />
+          <div class="opt-hint">Enchaîne X parties avec les mêmes réglages.</div>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div id="previewCount" class="preview-count bad">⏳ Chargement…</div>
+
+      <div style="display:flex; justify-content:center; margin-top:12px;">
+        <button id="applyFiltersBtn" class="menu-btn" style="font-size:1.05rem; padding:0.85rem 1.6rem;">
+          ✅ Lancer avec ces réglages
+        </button>
+      </div>
+    </div>
   </div>
 
-  <!-- Container principal, inclut la score bar -->
-  <div id="container">
-    <div id="score-bar-container">
-      <div id="score-bar">
-        <span id="score-bar-label">3000 / 3000</span>
+  <!-- ✅ JEU -->
+  <div id="game-panel" style="display:none;">
+    <div id="container">
+      <div id="score-bar-container">
+        <div id="score-bar">
+          <span id="score-bar-label">3000 / 3000</span>
+        </div>
       </div>
-    </div>
-    <div id="character-container"></div>
-    <div id="controls">
-      <div class="input-container">
-        <input type="text" id="characterInput" placeholder="Entrez le nom de l'anime..." autocomplete="off" />
-        <div id="suggestions" class="suggestions"></div>
+
+      <div id="character-container"></div>
+
+      <div id="controls">
+        <div class="input-container">
+          <input type="text" id="characterInput" placeholder="Entrez le nom de l'anime..." autocomplete="off" />
+          <div id="suggestions" class="suggestions"></div>
+        </div>
+
+        <button id="submit-btn" disabled>Valider</button>
+        <button id="restart-btn" style="display:none;">Rejouer</button>
       </div>
-      <button id="submit-btn" disabled>Valider</button>
-      <button id="restart-btn" style="display:none;">Rejouer</button>
+
+      <p id="timer">Chargement...</p>
+      <p id="feedback"></p>
     </div>
-    <p id="timer">Chargement...</p>
-    <p id="feedback"></p>
   </div>
 
   <footer>
     © 2025 mastermanga
   </footer>
+
   <canvas id="fireworks"></canvas>
   <script src="script.js"></script>
 </body>
