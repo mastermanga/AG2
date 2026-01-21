@@ -7,6 +7,7 @@
   <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
   <!-- HEADER -->
   <header id="main-header">
@@ -21,7 +22,7 @@
           <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-blind">
             <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor"
-                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 0 0 1 1-1h.2a1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
             </svg>
           </span>
 
@@ -36,12 +37,12 @@
   </header>
 
   <!-- =========================
-       ✅ PERSONNALISATION (AU DÉPART)
+       PERSONNALISATION (AU DÉPART)
   ========================== -->
   <div id="custom-panel" class="main-container" style="max-width: 1400px; width: 98vw; padding: 1.7rem 1.8rem; margin: 0 auto 1.2rem auto;">
     <h2 style="margin:0 0 1.0rem 0; text-align:center;">⚙️ Personnalisation</h2>
 
-    <!-- ✅ Mode (présent, mais 1 seul choix pour l'instant) -->
+    <!-- ✅ Mode (Songs uniquement pour l’instant) -->
     <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
       <div class="opt-label" style="font-weight:900; min-width:160px;">Mode</div>
       <div class="opt-col" style="flex:1; min-width:280px;">
@@ -49,7 +50,7 @@
           <button type="button" class="pill active" data-mode="songs" aria-pressed="true">Songs</button>
         </div>
         <div class="opt-help" style="margin-top:8px; opacity:0.85; font-weight:700; font-size:0.95rem;">
-          Choisis le contenu à classer.
+          Choisis le contenu à deviner.
         </div>
       </div>
     </div>
@@ -124,12 +125,12 @@
       </div>
     </div>
 
-    <!-- Preview -->
+    <!-- ✅ Preview -->
     <div id="previewCount" class="preview-count bad" style="margin-top:14px; width:100%; font-weight:900; text-align:center; padding:10px 12px; border-radius:14px; border:1px solid #00bcd455; background: rgba(0,0,0,0.15);">
-      ⌛ Chargement de la base…
+      ⏳ Chargement de la base…
     </div>
 
-    <!-- Rounds (sous preview, 1..100, default 1) -->
+    <!-- ✅ Rounds sous preview -->
     <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:14px;">
       <div class="opt-label" style="font-weight:900; min-width:160px;">Rounds</div>
       <div class="opt-col" style="flex:1; min-width:280px; display:flex; gap:12px; align-items:center; justify-content:flex-end; flex-wrap:wrap;">
@@ -143,7 +144,7 @@
           style="width:120px; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,188,212,0.35); background:rgba(0,0,0,0.18); color:inherit; font-weight:900; outline:none;"
         />
         <div style="opacity:0.85; font-weight:700; font-size:0.95rem;">
-          (1 à 100) — Enchaîne plusieurs parties avec la même config.
+          (1 à 100 — enchaîne plusieurs parties avec la même config.)
         </div>
       </div>
     </div>
@@ -157,10 +158,11 @@
   </div>
 
   <!-- =========================
-       ✅ JEU (CACHÉ AU DÉPART)
+       JEU (CACHÉ AU DÉPART)
   ========================== -->
   <div id="game-panel" style="display:none;">
     <div id="container">
+      <!-- BARRE DE SCORE -->
       <div id="score-bar-container" style="margin-bottom:12px;">
         <div id="score-bar" style="width:100%;position:relative;">
           <span id="score-bar-label" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-weight:bold;">3000 / 3000</span>
@@ -169,6 +171,7 @@
 
       <div id="successContainer" style="display:none;"></div>
 
+      <!-- Round label -->
       <div id="roundLabel" style="margin:0 0 8px 0; font-weight:900; opacity:0.9; text-align:center;"></div>
 
       <div class="input-container">
@@ -176,6 +179,7 @@
         <div id="suggestions" class="suggestions"></div>
       </div>
 
+      <!-- Volume -->
       <div id="volumeRow" style="width:100%; max-width:520px; margin:10px auto 12px auto; display:flex; align-items:center; gap:12px; justify-content:center;">
         <div style="font-weight:900; opacity:0.9;">🔊 Volume</div>
         <input id="volumeSlider" type="range" min="0" max="100" value="50" style="flex:1; max-width:320px;">
@@ -188,6 +192,7 @@
         <button id="playTry3" disabled>Complet</button>
       </div>
 
+      <!-- INDICES ÉCOUTE 3 -->
       <div id="indice-buttons" style="display:none;justify-content:center;gap:14px;margin-bottom:12px;">
         <button id="btnIndice6" class="indice-btn" style="min-width:120px;">Indice 6 choix</button>
         <button id="btnIndice3" class="indice-btn" style="min-width:120px;">Indice 3 choix</button>
@@ -200,13 +205,20 @@
 
       <canvas id="fireworks"></canvas>
 
+      <!-- ✅ Player/VIDEO (CACHÉ, REVEAL À LA FIN) -->
       <div id="playerWrapper" style="display:none; width:100%; max-width:520px; margin:14px auto 0 auto;">
-        <audio id="audioPlayer" controls style="width:100%;"></audio>
+        <video
+          id="audioPlayer"
+          playsinline
+          preload="metadata"
+          style="width:100%;"
+        ></video>
       </div>
     </div>
   </div>
 
   <footer>© 2025 mastermanga</footer>
+
   <script src="script.js"></script>
 </body>
 </html>
