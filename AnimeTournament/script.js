@@ -1,14 +1,16 @@
 // =======================
-// Anime Tournament — script.js (COMPLET + MODIFIÉ)
-// - Fix "0 titres dispo" (le JSON n'a pas "year" => on le calcule depuis season)
-// - Personnalisation robuste (types sécurisés TV+Movie si rien)
+// Anime Tournament — script.js (COMPLET + FIX FINAL)
+// - Fix "tournoi terminé direct" (resetTournament vidait items)
+// - Fix "0 songs" (lecture via #songPills, pas via checkboxes inexistantes)
+// - Mode = "anime" | "songs" (aligné avec ton HTML data-mode="songs")
+// - Songs pills: au moins 1 toujours actif (bloque la désactivation du dernier)
+// - Types pills: au moins 1 toujours actif (bloque la désactivation du dernier)
 // - Preview fiable + bouton disabled si pool insuffisant
-// - Affiche soit personnalisation soit jeu (classe body.game-started)
-// - Matchs en 2 colonnes (CSS) + vote sur le TITRE uniquement
-// - Vidéos: loadVideoWithRetry amélioré (6 essais 0/2/4/6/8/10), anti-timeout, anti-stall,
-//          + autoplay uniquement sur la vidéo de gauche (muted pour passer les restrictions)
-// - Nettoyage des vidéos pour éviter le lag réseau quand on change de match
-// - Fin de tournoi + classement simple (winner + éliminations)
+// - Panel vs Game via body.game-started
+// - Duel en 2 colonnes (géré par CSS)
+// - Vidéos: loadVideoWithRetry 6 essais (0/2/4/6/8/10) + timeout + mini anti-stall
+// - Autoplay uniquement sur la vidéo de gauche (muted)
+// - Nettoyage vidéos pour limiter lag réseau
 // =======================
 
 // =======================
@@ -17,9 +19,8 @@
 const DATA_URL = "../data/licenses_only.json";
 const TOTAL_MATCH_ITEMS = 32;
 
-// Min de base pour être "confortable" (et éviter les pools trop petits)
-const MIN_REQUIRED_TITLES = 64; // pour le mode Anime
-const MIN_REQUIRED_SONGS = 64;  // pour le mode Openings (base avant buildSongs)
+const MIN_REQUIRED_TITLES = 64;
+const MIN_REQUIRED_SONGS = 64;
 
 // retries vidéos
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
@@ -30,10 +31,10 @@ const LOAD_TIMEOUT_MS = 6000;
 // =======================
 let ALL_TITLES = [];
 let items = [];              // 32 items sélectionnés (animes OU songs)
-let mode = "anime";          // "anime" | "opening"
+let mode = "anime";          // "anime" | "songs"
 
 let losses = [];
-let eliminationOrder = [];   // indices (dans items) éliminés à la 2e défaite
+let eliminationOrder = [];
 let aliveWB = [];
 let aliveLB = [];
 
@@ -57,11 +58,9 @@ function getDisplayTitle(a) {
 }
 
 function getYearFromSeason(a) {
-  // season: "spring 2013"
   const s = String(a.season || "").trim();
   if (!s) return 0;
   const parts = s.split(/\s+/);
-  // si "spring 2013" => parts[1] = 2013
   const y = parseInt(parts[1] || parts[0] || "0", 10);
   return Number.isFinite(y) ? y : 0;
 }
@@ -132,7 +131,6 @@ document.addEventListener("pointerdown", (e) => {
 function showCustomization() {
   document.body.classList.remove("game-started");
 
-  // fallback si ton HTML n’a pas #game-panel
   const custom = document.getElementById("custom-panel");
   if (custom) custom.style.display = "";
 
@@ -150,7 +148,6 @@ function showCustomization() {
 function showGame() {
   document.body.classList.add("game-started");
 
-  // fallback si ton HTML n’a pas #game-panel
   const custom = document.getElementById("custom-panel");
   if (custom) custom.style.display = "none";
 
@@ -168,26 +165,9 @@ function showGame() {
 }
 
 // =======================
-// MODE SWITCH (boutons existants)
-/// + support optionnel d’un mode pills (#modePills comme Anidle)
+// MODE (pills #modePills)
 // =======================
-document.getElementById("mode-anime")?.addEventListener("click", () => switchMode("anime"));
-document.getElementById("mode-opening")?.addEventListener("click", () => switchMode("opening"));
-
 function syncModeButtons() {
-  const bAnime = document.getElementById("mode-anime");
-  const bOpen = document.getElementById("mode-opening");
-
-  if (bAnime) {
-    bAnime.classList.toggle("active", mode === "anime");
-    bAnime.setAttribute("aria-pressed", mode === "anime" ? "true" : "false");
-  }
-  if (bOpen) {
-    bOpen.classList.toggle("active", mode === "opening");
-    bOpen.setAttribute("aria-pressed", mode === "opening" ? "true" : "false");
-  }
-
-  // format data-mode (si tu ajoutes le visuel comme Anidle)
   document.querySelectorAll("#modePills .pill[data-mode]").forEach((btn) => {
     const m = btn.dataset.mode;
     const on = m === mode;
@@ -202,7 +182,6 @@ function initModePillsIfAny() {
 
   pills.forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (btn.disabled) return;
       const m = btn.dataset.mode;
       if (!m || m === mode) return;
       switchMode(m);
@@ -213,11 +192,10 @@ function initModePillsIfAny() {
 }
 
 function switchMode(m) {
-  if (mode === m) return;
-  mode = m;
+  mode = m; // "anime" | "songs"
   syncModeButtons();
-  resetTournament();
-  refreshPreview();
+  resetTournament();     // reset UI/state
+  refreshPreview();      // refresh compteur
 }
 
 // =======================
@@ -234,19 +212,23 @@ function setDefaultUI() {
   if (yMin) yMin.value = "2000";
   if (yMax) yMax.value = "2026";
 
-  const o = document.getElementById("incOpenings");
-  const e = document.getElementById("incEndings");
-  const i = document.getElementById("incInserts");
-  if (o) o.checked = true;
-  if (e) e.checked = false;
-  if (i) i.checked = false;
-
-  // ✅ défaut: TV + Movie (comme Anidle)
-  const pills = Array.from(document.querySelectorAll("#typePills .pill"));
-  if (pills.length) {
-    pills.forEach((b) => {
+  // ✅ défaut: TV + Movie
+  const typePills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
+  if (typePills.length) {
+    typePills.forEach((b) => {
       const t = b.dataset.type;
       const on = t === "TV" || t === "Movie";
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // ✅ défaut songs: Opening uniquement
+  const songPills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
+  if (songPills.length) {
+    songPills.forEach((b) => {
+      const s = b.dataset.song;
+      const on = s === "opening";
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", on ? "true" : "false");
     });
@@ -269,12 +251,29 @@ function ensureDefaultTypes() {
   });
 }
 
+function ensureDefaultSongs() {
+  const pills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
+  if (!pills.length) return;
+
+  const active = pills.filter((b) => b.classList.contains("active"));
+  if (active.length > 0) return;
+
+  // sécurité: si rien => Opening
+  pills.forEach((b) => {
+    const s = b.dataset.song;
+    const on = s === "opening";
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+
 // =======================
 // UI READ
 // =======================
 function readOptions() {
   clampYearSliders();
   ensureDefaultTypes();
+  ensureDefaultSongs();
 
   const popEl = document.getElementById("popPercent");
   const scoreEl = document.getElementById("scorePercent");
@@ -286,6 +285,7 @@ function readOptions() {
   const yMin = parseInt(yMinEl?.value || "2000", 10) || 0;
   const yMax = parseInt(yMaxEl?.value || "2026", 10) || 9999;
 
+  // affichage des valeurs
   const popVal = document.getElementById("popPercentVal");
   const scoreVal = document.getElementById("scorePercentVal");
   const yMinVal = document.getElementById("yearMinVal");
@@ -300,15 +300,19 @@ function readOptions() {
     [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type)
   );
 
+  const songKinds = new Set(
+    [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song)
+  );
+
   return {
     pop,
     score,
     yMin,
     yMax,
     types,
-    incOP: !!document.getElementById("incOpenings")?.checked,
-    incED: !!document.getElementById("incEndings")?.checked,
-    incIN: !!document.getElementById("incInserts")?.checked,
+    incOP: songKinds.has("opening"),
+    incED: songKinds.has("ending"),
+    incIN: songKinds.has("insert"),
   };
 }
 
@@ -373,7 +377,6 @@ function refreshPreview() {
   const box = document.getElementById("previewCount");
   const btn = document.getElementById("applyFiltersBtn");
 
-  // conditions min pour pouvoir tirer 32 items
   const minTitlesNeeded = Math.max(MIN_REQUIRED_TITLES, TOTAL_MATCH_ITEMS);
   const minSongsNeeded = Math.max(MIN_REQUIRED_SONGS, TOTAL_MATCH_ITEMS);
 
@@ -402,24 +405,48 @@ function refreshPreview() {
 // UI EVENTS
 // =======================
 function wireCustomizationUI() {
-  // inputs
-  document.querySelectorAll("#custom-panel input")
-    .forEach((e) => e.addEventListener("input", refreshPreview));
+  // sliders + inputs => preview
+  document.querySelectorAll("#custom-panel input").forEach((e) => {
+    e.addEventListener("input", refreshPreview);
+  });
 
-  // type pills
-  const typeWrap = document.getElementById("typePills");
-  if (typeWrap) {
-    typeWrap.addEventListener("click", (e) => {
-      const b = e.target.closest(".pill");
-      if (!b) return;
+  // types pills: AU MOINS 1 (bloque la désactivation du dernier)
+  document.getElementById("typePills")?.addEventListener("click", (e) => {
+    const b = e.target.closest(".pill[data-type]");
+    if (!b) return;
 
-      b.classList.toggle("active");
-      b.setAttribute("aria-pressed", b.classList.contains("active") ? "true" : "false");
+    const pills = [...document.querySelectorAll("#typePills .pill[data-type]")];
 
-      ensureDefaultTypes();
-      refreshPreview();
-    });
-  }
+    if (b.classList.contains("active")) {
+      const actives = pills.filter((x) => x.classList.contains("active"));
+      if (actives.length === 1) return; // garde au moins 1
+    }
+
+    b.classList.toggle("active");
+    b.setAttribute("aria-pressed", b.classList.contains("active") ? "true" : "false");
+
+    ensureDefaultTypes();
+    refreshPreview();
+  });
+
+  // songs pills: AU MOINS 1 (bloque la désactivation du dernier)
+  document.getElementById("songPills")?.addEventListener("click", (e) => {
+    const b = e.target.closest(".pill[data-song]");
+    if (!b) return;
+
+    const pills = [...document.querySelectorAll("#songPills .pill[data-song]")];
+
+    if (b.classList.contains("active")) {
+      const actives = pills.filter((x) => x.classList.contains("active"));
+      if (actives.length === 1) return; // garde au moins 1
+    }
+
+    b.classList.toggle("active");
+    b.setAttribute("aria-pressed", b.classList.contains("active") ? "true" : "false");
+
+    ensureDefaultSongs();
+    refreshPreview();
+  });
 
   document.getElementById("applyFiltersBtn")?.addEventListener("click", startGame);
 }
@@ -432,7 +459,6 @@ fetch(DATA_URL)
   .then((json) => {
     const arr = Array.isArray(json) ? json : [];
 
-    // normalise dataset (year/type/members/score + title)
     ALL_TITLES = arr.map((a) => {
       const title = getDisplayTitle(a);
       return {
@@ -462,16 +488,20 @@ fetch(DATA_URL)
 function startGame() {
   if (!ALL_TITLES.length) return;
 
+  // ✅ IMPORTANT: reset AVANT de remplir items (sinon items se fait vider)
+  resetTournament();
+
   const o = readOptions();
   const titles = filterTitles(ALL_TITLES, o);
 
   const minTitlesNeeded = Math.max(MIN_REQUIRED_TITLES, TOTAL_MATCH_ITEMS);
-  if (mode === "anime" && titles.length < minTitlesNeeded) {
-    alert(`Pas assez de titres (${titles.length}/${minTitlesNeeded}).`);
-    return;
-  }
 
   if (mode === "anime") {
+    if (titles.length < minTitlesNeeded) {
+      alert(`Pas assez de titres (${titles.length}/${minTitlesNeeded}).`);
+      return;
+    }
+
     const pool = shuffle([...titles]);
     items = pool.slice(0, TOTAL_MATCH_ITEMS).map((t) => ({
       image: t.image,
@@ -480,6 +510,7 @@ function startGame() {
   } else {
     const songs = buildSongs(titles, o);
     const minSongsNeeded = Math.max(MIN_REQUIRED_SONGS, TOTAL_MATCH_ITEMS);
+
     if (songs.length < minSongsNeeded) {
       alert(`Pas assez de songs (${songs.length}/${minSongsNeeded}).`);
       return;
@@ -489,7 +520,6 @@ function startGame() {
     items = pool.slice(0, TOTAL_MATCH_ITEMS);
   }
 
-  resetTournament();
   showGame();
   initTournament();
 }
@@ -498,6 +528,13 @@ function startGame() {
 // TOURNAMENT CORE (double elim "simple")
 // =======================
 function initTournament() {
+  if (!items || items.length < 2) {
+    const roundBox = document.getElementById("round-indicator");
+    if (roundBox) roundBox.textContent = "❌ Pas assez d'items pour démarrer.";
+    showCustomization();
+    return;
+  }
+
   losses = items.map(() => 0);
   eliminationOrder = [];
 
@@ -533,11 +570,9 @@ function isTournamentOver() {
 function buildNextRound() {
   const m = [];
 
-  // pair dans WB puis LB
   pair(aliveWB).forEach((p) => m.push(p));
   pair(aliveLB).forEach((p) => m.push(p));
 
-  // ✅ cas bloquant: 1 WB + 1 LB => aucun match généré
   if (m.length === 0) {
     const all = getAliveAll();
     pair(all).forEach((p) => m.push(p));
@@ -561,7 +596,7 @@ function updateRoundIndicator() {
   const totalThisRound = roundMatches.length || 0;
   const currentIndex = Math.min(roundMatchIndex, totalThisRound);
 
-  box.textContent = `Round ${roundNumber} — Match ${currentIndex}/${totalThisRound} — Mode: ${mode === "anime" ? "Animes" : "Openings"}`;
+  box.textContent = `Round ${roundNumber} — Match ${currentIndex}/${totalThisRound} — Mode: ${mode === "anime" ? "Animes" : "Songs"}`;
 }
 
 function showNextMatch() {
@@ -574,7 +609,6 @@ function showNextMatch() {
     roundNumber++;
     buildNextRound();
 
-    // si toujours vide mais pas over => on force un pairing global
     if (roundMatches.length === 0 && !isTournamentOver()) {
       const all = getAliveAll();
       roundMatches = pair(all);
@@ -582,7 +616,6 @@ function showNextMatch() {
     }
   }
 
-  // sécurité
   if (!roundMatches.length) {
     finishTournament();
     return;
@@ -600,7 +633,6 @@ function cleanupCurrentMedia() {
   const box = document.getElementById("duel-container");
   if (!box) return;
 
-  // stop vidéos en cours
   box.querySelectorAll("video").forEach((v) => {
     try {
       v.pause();
@@ -611,7 +643,7 @@ function cleanupCurrentMedia() {
 }
 
 // =======================
-// VIDEO LOAD (AMÉLIORÉ) — 6 essais + timeout + mini anti-stall
+// VIDEO LOAD (6 essais + timeout + mini anti-stall)
 // =======================
 function waitEventOrTimeout(target, events, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -679,7 +711,6 @@ async function loadVideoWithRetry(video, url, { autoplay = false } = {}) {
     try {
       if (status) status.textContent = `Chargement… (essai ${attempt + 1}/${RETRY_DELAYS.length})`;
 
-      // reset propre
       try {
         video.pause();
         video.removeAttribute("src");
@@ -689,26 +720,21 @@ async function loadVideoWithRetry(video, url, { autoplay = false } = {}) {
       video.src = url;
       video.load();
 
-      // attendre prêt léger
       await waitEventOrTimeout(
         video,
         { ok: ["loadeddata", "canplay"], fail: ["error", "abort"] },
         LOAD_TIMEOUT_MS
       );
 
-      // autoplay si demandé (muted pour éviter blocage)
       if (autoplay) {
         video.muted = true;
         try {
           await video.play();
         } catch {
-          // si bloqué: on reste prêt sans planter
           try { video.pause(); } catch {}
         }
       }
 
-      // mini anti-stall au moment du chargement (facultatif)
-      // si "waiting/stalled" direct après => retry
       await waitEventOrTimeout(
         video,
         { ok: ["canplay", "playing"], fail: ["stalled", "waiting", "error"] },
@@ -742,8 +768,6 @@ async function renderMatch() {
   box.innerHTML = "";
 
   const indices = [currentMatch.a, currentMatch.b];
-
-  // on crée d'abord les 2 cartes (layout stable), puis on charge séquentiel
   const cardEls = [];
 
   for (const idx of indices) {
@@ -761,13 +785,12 @@ async function renderMatch() {
       const title = document.createElement("div");
       title.className = "vote-title";
       title.textContent = item.title || "Titre";
-      // ✅ vote uniquement sur le titre
       title.addEventListener("click", () => vote(idx));
 
       div.appendChild(img);
       div.appendChild(title);
       box.appendChild(div);
-      cardEls.push({ div, idx, kind: "anime" });
+      cardEls.push({ idx });
     } else {
       const video = document.createElement("video");
       video.controls = true;
@@ -775,30 +798,22 @@ async function renderMatch() {
       const title = document.createElement("div");
       title.className = "vote-title";
       title.textContent = item.label || "Song";
-      // ✅ vote uniquement sur le titre
       title.addEventListener("click", () => vote(idx));
 
       div.appendChild(video);
       div.appendChild(title);
       box.appendChild(div);
-      cardEls.push({ div, idx, kind: "video", video, url: item.video });
+      cardEls.push({ idx, video, url: item.video });
     }
   }
 
-  // Chargement vidéo séquentiel:
-  // gauche = currentMatch.a => autoplay
-  if (mode === "opening") {
-    // left
+  // Chargement vidéo séquentiel : gauche autoplay
+  if (mode === "songs") {
     const left = cardEls.find((c) => c.idx === currentMatch.a);
-    if (left?.video && left?.url) {
-      await loadVideoWithRetry(left.video, left.url, { autoplay: true });
-    }
+    if (left?.video && left?.url) await loadVideoWithRetry(left.video, left.url, { autoplay: true });
 
-    // right
     const right = cardEls.find((c) => c.idx === currentMatch.b);
-    if (right?.video && right?.url) {
-      await loadVideoWithRetry(right.video, right.url, { autoplay: false });
-    }
+    if (right?.video && right?.url) await loadVideoWithRetry(right.video, right.url, { autoplay: false });
   }
 }
 
@@ -832,7 +847,6 @@ function finishTournament() {
   const alive = getAliveAll();
   const winner = alive.length ? alive[0] : null;
 
-  // ranking: winner + (dernière élimination = #2, etc.)
   const ranking = [];
   if (winner !== null) ranking.push(winner);
   ranking.push(...eliminationOrder.slice().reverse());
@@ -871,14 +885,10 @@ function renderClassement(rankingIdx) {
 
     const card = document.createElement("div");
     card.className = "classement-item";
-    if (rank === 1) card.classList.add("top1");
-    else if (rank === 2) card.classList.add("top2");
-    else if (rank === 3) card.classList.add("top3");
 
     const badge = document.createElement("div");
     badge.className = "rank";
     badge.textContent = `#${rank}`;
-
     card.appendChild(badge);
 
     if (mode === "anime") {
@@ -930,6 +940,7 @@ function resetTournament() {
   if (replay) replay.style.display = "none";
   if (roundBox) roundBox.textContent = "";
 
+  // ✅ reset state
   items = [];
   losses = [];
   eliminationOrder = [];
