@@ -95,7 +95,7 @@ header h1 {
   opacity: 0.89;
 }
 
-/* ==== PERSONNALISATION PANEL (LE CONTAINER SOMBRE MANQUANT) ==== */
+/* ==== PERSONNALISATION PANEL (LE CONTAINER SOMBRE) ==== */
 #custom-panel{
   background: #161e27ee;
   border-radius: 22px;
@@ -415,43 +415,69 @@ header h1 {
 .danger-pulse { animation: pulse 0.9s infinite; }
 
 /* ==== INPUT + SUGGESTIONS ==== */
+/* ✅ FIX: la dropdown était trop basse car top:100% se basait sur TOUT le bloc .input-container.
+   On fixe une hauteur d'input et on ancre la dropdown juste sous l'input. */
 .input-container {
   margin-bottom: 18px;
   text-align: center;
   position: relative;
+
+  /* largeur stable pour centrer input + dropdown */
+  width: min(520px, 92vw);
+  margin-left: auto;
+  margin-right: auto;
+
+  /* variable pour ancrer la dropdown */
+  --input-height: 48px;
 }
 
-input[type="text"] {
+#animeInput {
   padding: 12px;
   font-size: 1.11rem;
-  width: 320px;
-  border-radius: 7px;
+  width: 100%;
+  height: var(--input-height);
+  box-sizing: border-box;
+
+  border-radius: 10px;
   border: none;
   outline: none;
   background: #222;
   color: #eee;
-  margin-bottom: 8px;
+
+  /* IMPORTANT: pas de margin-bottom, sinon l'ancrage paraît "bas" */
+  margin-bottom: 0;
+
   box-shadow: 0 0 8px #00bcd466;
   transition: box-shadow 0.22s;
 }
 
-input[type="text"]:focus {
+#animeInput:focus {
   box-shadow: 0 0 16px #00eaffb9;
 }
 
 .suggestions {
   background: #182c36ee;
   border: 1.5px solid #00bcd4cc;
-  max-width: 330px;
-  margin: 0 auto 10px;
   text-align: left;
-  border-radius: 0 0 8px 8px;
+
+  border-radius: 12px;
   box-shadow: 0 6px 18px #00bcd433;
+
   position: absolute;
-  z-index: 5;
   left: 0;
   right: 0;
-  top: 100%;
+
+  /* ✅ collé sous l'input */
+  top: calc(var(--input-height) + 10px);
+
+  z-index: 9999;
+
+  /* taille + scroll */
+  max-height: 260px;
+  overflow-y: auto;
+
+  /* plus de margin auto/bas */
+  margin: 0;
 }
 
 .suggestions div {
@@ -728,6 +754,17 @@ body.light .round-input{
   background: #f8faff;
   color: #0b1a2a;
   border-color: rgba(25,118,210,0.35);
+}
+
+body.light #animeInput{
+  background: #f8faff;
+  color: #0b1a2a;
+}
+
+body.light .suggestions{
+  background: rgba(227, 246, 252, 0.96);
+  border-color: rgba(66,165,245,0.55);
+  box-shadow: 0 10px 26px rgba(66,165,245,0.22);
 }
 
 body.light footer { color: #888; }
