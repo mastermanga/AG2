@@ -1,15 +1,20 @@
 // =======================
-// Anime Tournament — script.js (COMPLET + FIX FINAL V2)
-// - FIX: titres ok (CSS box-sizing)
-// - FIX: Songs vidéos reload en boucle (ne plus considérer waiting/stalled comme fail)
+// Anime Tournament — script.js (COMPLET)
+// - Plus de mute automatique
+// - Barre volume global (toutes les vidéos) + % + localStorage
+// - Si l'utilisateur change le volume via un player, ça devient le volume global
 // =======================
 
+// =======================
+// CONFIG
+// =======================
 const DATA_URL = "../data/licenses_only.json";
 const TOTAL_MATCH_ITEMS = 32;
 
 const MIN_REQUIRED_TITLES = 64;
 const MIN_REQUIRED_SONGS = 64;
 
+// retries vidéos
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const LOAD_TIMEOUT_MS = 6000;
 
@@ -29,6 +34,87 @@ let roundNumber = 1;
 let roundMatches = [];
 let roundMatchIndex = 0;
 let currentMatch = null;
+
+// =======================
+// ✅ GLOBAL VOLUME
+// =======================
+const VOLUME_KEY = "globalVideoVolume";
+let GLOBAL_VOLUME = 0.5;
+let __settingGlobalVolume = false;
+
+function clamp01(v){ return Math.max(0, Math.min(1, v)); }
+
+function loadGlobalVolume() {
+  const raw = localStorage.getItem(VOLUME_KEY);
+  const v = raw !== null ? parseFloat(raw) : NaN;
+  if (Number.isFinite(v)) GLOBAL_VOLUME = clamp01(v);
+  else GLOBAL_VOLUME = 0.5;
+}
+
+function saveGlobalVolume() {
+  localStorage.setItem(VOLUME_KEY, String(GLOBAL_VOLUME));
+}
+
+function applyGlobalVolumeToVideo(video) {
+  if (!video) return;
+  try {
+    video.muted = false;     // ✅ demandé
+    video.volume = GLOBAL_VOLUME;
+  } catch {}
+}
+
+function applyGlobalVolumeToAllVideos() {
+  document.querySelectorAll("video").forEach(applyGlobalVolumeToVideo);
+}
+
+function setGlobalVolumeFromSlider(pct) {
+  const p = Math.max(0, Math.min(100, pct));
+  GLOBAL_VOLUME = clamp01(p / 100);
+  saveGlobalVolume();
+  applyGlobalVolumeToAllVideos();
+
+  const pctEl = document.getElementById("globalVolumePct");
+  if (pctEl) pctEl.textContent = String(Math.round(GLOBAL_VOLUME * 100));
+}
+
+function initGlobalVolumeUI() {
+  loadGlobalVolume();
+
+  const slider = document.getElementById("globalVolume");
+  const pctEl = document.getElementById("globalVolumePct");
+  if (!slider || !pctEl) return;
+
+  slider.value = String(Math.round(GLOBAL_VOLUME * 100));
+  pctEl.textContent = String(Math.round(GLOBAL_VOLUME * 100));
+
+  slider.addEventListener("input", () => {
+    __settingGlobalVolume = true;
+    setGlobalVolumeFromSlider(parseInt(slider.value || "50", 10) || 50);
+    __settingGlobalVolume = false;
+  });
+
+  // ✅ si l'utilisateur change le volume sur un player -> on sync global
+  document.addEventListener("volumechange", (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLVideoElement)) return;
+    if (__settingGlobalVolume) return;
+
+    // si quelqu'un change un player => ça devient le volume global
+    const v = Number.isFinite(t.volume) ? t.volume : GLOBAL_VOLUME;
+    GLOBAL_VOLUME = clamp01(v);
+    saveGlobalVolume();
+
+    const newPct = Math.round(GLOBAL_VOLUME * 100);
+    slider.value = String(newPct);
+    pctEl.textContent = String(newPct);
+
+    __settingGlobalVolume = true;
+    applyGlobalVolumeToAllVideos();
+    __settingGlobalVolume = false;
+  }, true);
+
+  applyGlobalVolumeToAllVideos();
+}
 
 // =======================
 // HELPERS DATA
@@ -96,6 +182,9 @@ window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") {
     document.body.classList.add("light");
   }
+
+  // ✅ init volume UI dès que possible
+  initGlobalVolumeUI();
 });
 
 // Tooltip aide (clic mobile)
@@ -138,8 +227,11 @@ function showGame() {
   const custom = document.getElementById("custom-panel");
   if (custom) custom.style.display = "none";
 
-  document.getElementById("duel-container")?.style.removeProperty("display");
-  document.getElementById("round-indicator")?.style.removeProperty("display");
+  const duel = document.getElementById("duel-container");
+  if (duel) duel.style.display = "";
+
+  const roundBox = document.getElementById("round-indicator");
+  if (roundBox) roundBox.style.display = "";
 
   const classement = document.getElementById("classement");
   if (classement) classement.style.display = "none";
@@ -267,10 +359,16 @@ function readOptions() {
   const yMin = parseInt(yMinEl?.value || "2000", 10) || 0;
   const yMax = parseInt(yMaxEl?.value || "2026", 10) || 9999;
 
-  document.getElementById("popPercentVal") && (document.getElementById("popPercentVal").textContent = String(Math.round(pop * 100)));
-  document.getElementById("scorePercentVal") && (document.getElementById("scorePercentVal").textContent = String(Math.round(score * 100)));
-  document.getElementById("yearMinVal") && (document.getElementById("yearMinVal").textContent = String(yMin));
-  document.getElementById("yearMaxVal") && (document.getElementById("yearMaxVal").textContent = String(yMax));
+  // affichage des valeurs
+  const popVal = document.getElementById("popPercentVal");
+  const scoreVal = document.getElementById("scorePercentVal");
+  const yMinVal = document.getElementById("yearMinVal");
+  const yMaxVal = document.getElementById("yearMaxVal");
+
+  if (popVal) popVal.textContent = String(Math.round(pop * 100));
+  if (scoreVal) scoreVal.textContent = String(Math.round(score * 100));
+  if (yMinVal) yMinVal.textContent = String(yMin);
+  if (yMaxVal) yMaxVal.textContent = String(yMax);
 
   const types = new Set(
     [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type)
@@ -298,13 +396,17 @@ function readOptions() {
 function filterTitles(data, o) {
   let arr = [...data];
 
+  // 1) Top popularité
   arr.sort((a, b) => b._members - a._members);
   arr = arr.slice(0, Math.ceil(arr.length * o.pop));
 
+  // 2) Top score
   arr.sort((a, b) => b._score - a._score);
   arr = arr.slice(0, Math.ceil(arr.length * o.score));
 
+  // 3) type + années
   arr = arr.filter((a) => o.types.has(a._type) && a._year >= o.yMin && a._year <= o.yMax);
+
   return arr;
 }
 
@@ -328,6 +430,7 @@ function buildSongs(titles, o) {
 
   titles.forEach((t) => {
     const baseTitle = t._title || getDisplayTitle(t);
+
     if (o.incOP) addList(baseTitle, t.song?.openings, "Opening");
     if (o.incED) addList(baseTitle, t.song?.endings, "Ending");
     if (o.incIN) addList(baseTitle, t.song?.inserts, "Insert");
@@ -386,6 +489,7 @@ function wireCustomizationUI() {
     if (!b) return;
 
     const pills = [...document.querySelectorAll("#typePills .pill[data-type]")];
+
     if (b.classList.contains("active")) {
       const actives = pills.filter((x) => x.classList.contains("active"));
       if (actives.length === 1) return;
@@ -393,6 +497,7 @@ function wireCustomizationUI() {
 
     b.classList.toggle("active");
     b.setAttribute("aria-pressed", b.classList.contains("active") ? "true" : "false");
+
     ensureDefaultTypes();
     refreshPreview();
   });
@@ -403,6 +508,7 @@ function wireCustomizationUI() {
     if (!b) return;
 
     const pills = [...document.querySelectorAll("#songPills .pill[data-song]")];
+
     if (b.classList.contains("active")) {
       const actives = pills.filter((x) => x.classList.contains("active"));
       if (actives.length === 1) return;
@@ -410,6 +516,7 @@ function wireCustomizationUI() {
 
     b.classList.toggle("active");
     b.setAttribute("aria-pressed", b.classList.contains("active") ? "true" : "false");
+
     ensureDefaultSongs();
     refreshPreview();
   });
@@ -466,6 +573,7 @@ function startGame() {
       alert(`Pas assez de titres (${titles.length}/${minTitlesNeeded}).`);
       return;
     }
+
     const pool = shuffle([...titles]);
     items = pool.slice(0, TOTAL_MATCH_ITEMS).map((t) => ({
       image: t.image,
@@ -479,6 +587,7 @@ function startGame() {
       alert(`Pas assez de songs (${songs.length}/${minSongsNeeded}).`);
       return;
     }
+
     const pool = shuffle([...songs]);
     items = pool.slice(0, TOTAL_MATCH_ITEMS);
   }
@@ -532,6 +641,7 @@ function isTournamentOver() {
 
 function buildNextRound() {
   const m = [];
+
   pair(aliveWB).forEach((p) => m.push(p));
   pair(aliveLB).forEach((p) => m.push(p));
 
@@ -605,7 +715,7 @@ function cleanupCurrentMedia() {
 }
 
 // =======================
-// VIDEO LOAD (FIX: plus de boucle)
+// VIDEO LOAD (sans mute)
 // =======================
 function waitEventOrTimeout(target, events, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -661,6 +771,9 @@ async function loadVideoWithRetry(video, url, { autoplay = false } = {}) {
   video.playsInline = true;
   video.controls = true;
 
+  // ✅ volume global + pas de mute
+  applyGlobalVolumeToVideo(video);
+
   const status = getOrCreateStatusEl(video);
 
   for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
@@ -679,26 +792,36 @@ async function loadVideoWithRetry(video, url, { autoplay = false } = {}) {
       video.src = url;
       video.load();
 
-      // ✅ on attend un vrai état "prêt", mais on ne considère PAS waiting/stalled comme erreur
       await waitEventOrTimeout(
         video,
         { ok: ["loadeddata", "canplay"], fail: ["error", "abort"] },
         LOAD_TIMEOUT_MS
       );
 
+      // ✅ autoplay demandé, mais SANS mute (peut être bloqué -> on laisse l'utilisateur lancer)
       if (autoplay) {
-        video.muted = true;
         try {
           await video.play();
-          if (status) status.textContent = "▶️ Lecture";
         } catch {
-          // autoplay bloqué => on laisse l’utilisateur lancer, sans retry en boucle
-          if (status) status.textContent = "✅ Prêt (clique Play)";
+          if (status) status.textContent = "▶️ Clique sur la vidéo pour lancer";
+          // on ne considère pas ça comme un échec réseau : la vidéo est chargée
+          return true;
         }
-      } else {
-        if (status) status.textContent = "✅ Prêt";
       }
 
+      // mini anti-stall
+      try {
+        await waitEventOrTimeout(
+          video,
+          { ok: ["canplay", "playing"], fail: ["stalled", "waiting", "error"] },
+          1500
+        );
+      } catch {
+        // si ça stall, on retente
+        throw new Error("stall");
+      }
+
+      if (status) status.textContent = "✅ Prêt";
       return true;
     } catch {
       // retry
@@ -729,6 +852,7 @@ async function renderMatch() {
 
   for (const idx of indices) {
     const item = items[idx];
+
     const div = document.createElement("div");
     div.className = mode === "anime" ? "anime" : "opening";
 
@@ -749,7 +873,7 @@ async function renderMatch() {
       cardEls.push({ idx });
     } else {
       const video = document.createElement("video");
-      video.controls = true;
+      applyGlobalVolumeToVideo(video); // ✅ volume global + pas mute
 
       const title = document.createElement("div");
       title.className = "vote-title";
@@ -769,6 +893,9 @@ async function renderMatch() {
 
     const right = cardEls.find((c) => c.idx === currentMatch.b);
     if (right?.video && right?.url) await loadVideoWithRetry(right.video, right.url, { autoplay: false });
+
+    // ✅ s'assure que tout est au volume global (au cas où)
+    applyGlobalVolumeToAllVideos();
   }
 }
 
@@ -862,6 +989,7 @@ function renderClassement(rankingIdx) {
       v.controls = true;
       v.preload = "metadata";
       v.src = item.video;
+      applyGlobalVolumeToVideo(v); // ✅ volume global + pas mute
       card.appendChild(v);
 
       const t = document.createElement("div");
@@ -873,6 +1001,7 @@ function renderClassement(rankingIdx) {
     box.appendChild(card);
   });
 
+  applyGlobalVolumeToAllVideos();
   box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -904,4 +1033,7 @@ function resetTournament() {
   roundMatches = [];
   roundMatchIndex = 0;
   currentMatch = null;
+
+  // ✅ remet volume sur tout ce qui resterait
+  applyGlobalVolumeToAllVideos();
 }
