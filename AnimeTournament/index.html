@@ -10,7 +10,7 @@
 
 <body>
   <header>
-    <button id="back-to-menu" class="toggle-btn back-btn">⬅️ Menu</button>
+    <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
 
     <h1><span class="tournament-title">🏆 Anime Tournament 🏆</span></h1>
 
@@ -21,12 +21,12 @@
         <span class="info-icon" tabindex="0" aria-label="Aide">
           <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor"
-              d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+              d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
           </svg>
         </span>
 
         <span class="info-tip" role="tooltip">
-          Enchaîner des duels 1v1 entre 16 animes ou songs (openings/endings/inserts) pour établir un classement.
+          Enchaîner des duels 1v1 entre 32 animes ou songs (openings/endings/inserts) pour établir un classement.
           <br><br>
           ✅ Vote en cliquant sur le titre (pas sur la vidéo).
         </span>
@@ -37,78 +37,107 @@
   <!-- Indicateur de round -->
   <div id="round-indicator" class="main-block"></div>
 
-  <!-- Choix mode -->
-  <div id="mode-select" class="menu mode-select">
-    <button id="mode-anime" class="game-card active" aria-pressed="true">Animes</button>
-    <button id="mode-opening" class="game-card" aria-pressed="false">Openings</button>
-  </div>
+  <!-- ✅ PERSONNALISATION (identique Anidle) -->
+  <div id="custom-panel">
+    <h2><span class="gear">⚙️</span> Personnalisation</h2>
 
-  <!-- Personnalisation (sans champs texte) -->
-  <div id="custom-panel" class="main-block">
-    <h2 class="section-title">Personnalisation</h2>
-
-    <!-- Tri / filtres séparés -->
+    <!-- Mode -->
     <div class="opt-row">
-      <span class="opt-label">Popularité</span>
+      <div class="opt-label">Mode</div>
       <div class="opt-col">
-        <input id="popPercent" type="range" min="5" max="100" step="5" value="25" aria-label="Top popularité (%)" />
+        <div class="opt-pill-group" id="modePills">
+          <button type="button" class="pill active" data-mode="anime" aria-pressed="true">Animes</button>
+          <button type="button" class="pill" data-mode="songs" aria-pressed="false">Songs</button>
+        </div>
+        <div class="opt-sub">Choisis le contenu à classer.</div>
+      </div>
+    </div>
+
+    <!-- Popularité -->
+    <div class="opt-row">
+      <div class="opt-label">Popularité</div>
+      <div class="opt-col">
+        <input id="popPercent" type="range" min="5" max="100" step="5" value="25" />
         <div class="opt-value">Top <span id="popPercentVal">25</span>%</div>
       </div>
     </div>
 
+    <!-- Score -->
     <div class="opt-row">
-      <span class="opt-label">Score</span>
+      <div class="opt-label">Score</div>
       <div class="opt-col">
-        <input id="scorePercent" type="range" min="5" max="100" step="5" value="25" aria-label="Top score (%)" />
+        <input id="scorePercent" type="range" min="5" max="100" step="5" value="25" />
         <div class="opt-value">Top <span id="scorePercentVal">25</span>%</div>
-      </div>
-    </div>
-
-    <!-- Types -->
-    <div class="opt-row">
-      <span class="opt-label">Type</span>
-      <div class="opt-pill-group" id="typePills" aria-label="Types">
-        <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
-        <button type="button" class="pill" data-type="Movie" aria-pressed="false">Movie</button>
-        <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
-        <button type="button" class="pill" data-type="ONA" aria-pressed="false">ONA</button>
-      </div>
-    </div>
-
-    <!-- Songs -->
-    <div class="opt-row">
-      <span class="opt-label">Songs</span>
-      <div class="opt-checks" aria-label="Catégories">
-        <label><input id="incOpenings" type="checkbox" checked /> Openings</label>
-        <label><input id="incEndings" type="checkbox" /> Endings</label>
-        <label><input id="incInserts" type="checkbox" /> Inserts</label>
       </div>
     </div>
 
     <!-- Années -->
     <div class="opt-row">
-      <span class="opt-label">Années</span>
+      <div class="opt-label">Années</div>
       <div class="opt-col">
-        <div class="year-row" aria-label="Fourchette d'années">
-          <input id="yearMin" type="range" min="1980" max="2026" step="1" value="2013" aria-label="Année min" />
-          <input id="yearMax" type="range" min="1980" max="2026" step="1" value="2026" aria-label="Année max" />
+        <div class="year-row">
+          <input id="yearMin" type="range" min="1950" max="2026" step="1" value="2000">
+          <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026">
         </div>
-        <div class="opt-value"><span id="yearMinVal">2013</span> → <span id="yearMaxVal">2026</span></div>
+        <div class="opt-value">
+          <span id="yearMinVal">2000</span> → <span id="yearMaxVal">2026</span>
+        </div>
       </div>
     </div>
 
-    <!-- Compteur live -->
-    <div id="previewCount" class="preview-count" aria-live="polite"></div>
+    <!-- Types -->
+    <div class="opt-row">
+      <div class="opt-label">Types</div>
+      <div class="opt-col">
+        <div id="typePills" class="opt-pill-group">
+          <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
+          <button type="button" class="pill active" data-type="Movie" aria-pressed="true">Movie</button>
+          <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
+          <button type="button" class="pill" data-type="ONA" aria-pressed="false">ONA</button>
+          <button type="button" class="pill" data-type="Special" aria-pressed="false">Special</button>
+        </div>
+        <div class="opt-sub">Choisis au moins 1 type.</div>
+      </div>
+    </div>
 
-    <!-- Lancer -->
-    <button id="applyFiltersBtn" class="game-card">Lancer avec ces réglages</button>
+    <!-- Songs -->
+    <div class="opt-row">
+      <div class="opt-label">Songs</div>
+      <div class="opt-col">
+        <div id="songPills" class="opt-pill-group">
+          <button type="button" class="pill active" data-song="opening" aria-pressed="true">Opening</button>
+          <button type="button" class="pill" data-song="ending" aria-pressed="false">Ending</button>
+          <button type="button" class="pill" data-song="insert" aria-pressed="false">Insert</button>
+        </div>
+        <div class="opt-sub">Choisis au moins 1 type de song. (Par défaut : Opening)</div>
+      </div>
+    </div>
+
+    <!-- Preview -->
+    <div id="previewCount" class="preview-count bad">⏳ Chargement de la base…</div>
+
+    <!-- Rounds -->
+    <div class="opt-row rounds-row">
+      <div class="opt-label">Rounds</div>
+      <div class="opt-col rounds-col">
+        <input id="roundCount" type="number" min="1" max="100" step="1" value="1" class="round-input" />
+        <div class="round-hint">(1 à 100) — Enchaîne plusieurs parties avec la même config.</div>
+      </div>
+    </div>
+
+    <!-- Start -->
+    <div class="start-row">
+      <button id="applyFiltersBtn" class="menu-btn start-btn" disabled>
+        ✅ Lancer avec ces réglages
+      </button>
+    </div>
   </div>
 
   <!-- Duel -->
   <div id="duel-container" class="main-block"></div>
 
   <!-- Bouton rejouer -->
-  <button id="next-match-btn" class="game-card" style="display:none;">Rejouer</button>
+  <button id="next-match-btn" class="menu-btn" style="display:none;">Rejouer</button>
 
   <!-- Classement -->
   <div id="classement" class="main-block"></div>
