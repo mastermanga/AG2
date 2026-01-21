@@ -1,28 +1,15 @@
 // =======================
-// Anime Tournament — script.js (COMPLET + FIX FINAL)
-// - Fix "tournoi terminé direct" (resetTournament vidait items)
-// - Fix "0 songs" (lecture via #songPills, pas via checkboxes inexistantes)
-// - Mode = "anime" | "songs" (aligné avec ton HTML data-mode="songs")
-// - Songs pills: au moins 1 toujours actif (bloque la désactivation du dernier)
-// - Types pills: au moins 1 toujours actif (bloque la désactivation du dernier)
-// - Preview fiable + bouton disabled si pool insuffisant
-// - Panel vs Game via body.game-started
-// - Duel en 2 colonnes (géré par CSS)
-// - Vidéos: loadVideoWithRetry 6 essais (0/2/4/6/8/10) + timeout + mini anti-stall
-// - Autoplay uniquement sur la vidéo de gauche (muted)
-// - Nettoyage vidéos pour limiter lag réseau
+// Anime Tournament — script.js (COMPLET + FIX FINAL V2)
+// - FIX: titres ok (CSS box-sizing)
+// - FIX: Songs vidéos reload en boucle (ne plus considérer waiting/stalled comme fail)
 // =======================
 
-// =======================
-// CONFIG
-// =======================
 const DATA_URL = "../data/licenses_only.json";
 const TOTAL_MATCH_ITEMS = 32;
 
 const MIN_REQUIRED_TITLES = 64;
 const MIN_REQUIRED_SONGS = 64;
 
-// retries vidéos
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const LOAD_TIMEOUT_MS = 6000;
 
@@ -30,8 +17,8 @@ const LOAD_TIMEOUT_MS = 6000;
 // GLOBAL STATE
 // =======================
 let ALL_TITLES = [];
-let items = [];              // 32 items sélectionnés (animes OU songs)
-let mode = "anime";          // "anime" | "songs"
+let items = [];
+let mode = "anime"; // "anime" | "songs"
 
 let losses = [];
 let eliminationOrder = [];
@@ -151,11 +138,8 @@ function showGame() {
   const custom = document.getElementById("custom-panel");
   if (custom) custom.style.display = "none";
 
-  const duel = document.getElementById("duel-container");
-  if (duel) duel.style.display = "";
-
-  const roundBox = document.getElementById("round-indicator");
-  if (roundBox) roundBox.style.display = "";
+  document.getElementById("duel-container")?.style.removeProperty("display");
+  document.getElementById("round-indicator")?.style.removeProperty("display");
 
   const classement = document.getElementById("classement");
   if (classement) classement.style.display = "none";
@@ -194,8 +178,8 @@ function initModePillsIfAny() {
 function switchMode(m) {
   mode = m; // "anime" | "songs"
   syncModeButtons();
-  resetTournament();     // reset UI/state
-  refreshPreview();      // refresh compteur
+  resetTournament();
+  refreshPreview();
 }
 
 // =======================
@@ -212,7 +196,7 @@ function setDefaultUI() {
   if (yMin) yMin.value = "2000";
   if (yMax) yMax.value = "2026";
 
-  // ✅ défaut: TV + Movie
+  // défaut: TV + Movie
   const typePills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
   if (typePills.length) {
     typePills.forEach((b) => {
@@ -223,7 +207,7 @@ function setDefaultUI() {
     });
   }
 
-  // ✅ défaut songs: Opening uniquement
+  // défaut songs: Opening uniquement
   const songPills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
   if (songPills.length) {
     songPills.forEach((b) => {
@@ -242,7 +226,6 @@ function ensureDefaultTypes() {
   const active = pills.filter((b) => b.classList.contains("active"));
   if (active.length > 0) return;
 
-  // sécurité: si rien => TV + Movie
   pills.forEach((b) => {
     const t = b.dataset.type;
     const on = t === "TV" || t === "Movie";
@@ -258,7 +241,6 @@ function ensureDefaultSongs() {
   const active = pills.filter((b) => b.classList.contains("active"));
   if (active.length > 0) return;
 
-  // sécurité: si rien => Opening
   pills.forEach((b) => {
     const s = b.dataset.song;
     const on = s === "opening";
@@ -285,16 +267,10 @@ function readOptions() {
   const yMin = parseInt(yMinEl?.value || "2000", 10) || 0;
   const yMax = parseInt(yMaxEl?.value || "2026", 10) || 9999;
 
-  // affichage des valeurs
-  const popVal = document.getElementById("popPercentVal");
-  const scoreVal = document.getElementById("scorePercentVal");
-  const yMinVal = document.getElementById("yearMinVal");
-  const yMaxVal = document.getElementById("yearMaxVal");
-
-  if (popVal) popVal.textContent = String(Math.round(pop * 100));
-  if (scoreVal) scoreVal.textContent = String(Math.round(score * 100));
-  if (yMinVal) yMinVal.textContent = String(yMin);
-  if (yMaxVal) yMaxVal.textContent = String(yMax);
+  document.getElementById("popPercentVal") && (document.getElementById("popPercentVal").textContent = String(Math.round(pop * 100)));
+  document.getElementById("scorePercentVal") && (document.getElementById("scorePercentVal").textContent = String(Math.round(score * 100)));
+  document.getElementById("yearMinVal") && (document.getElementById("yearMinVal").textContent = String(yMin));
+  document.getElementById("yearMaxVal") && (document.getElementById("yearMaxVal").textContent = String(yMax));
 
   const types = new Set(
     [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type)
@@ -322,17 +298,13 @@ function readOptions() {
 function filterTitles(data, o) {
   let arr = [...data];
 
-  // 1) Top popularité
   arr.sort((a, b) => b._members - a._members);
   arr = arr.slice(0, Math.ceil(arr.length * o.pop));
 
-  // 2) Top score
   arr.sort((a, b) => b._score - a._score);
   arr = arr.slice(0, Math.ceil(arr.length * o.score));
 
-  // 3) type + années
   arr = arr.filter((a) => o.types.has(a._type) && a._year >= o.yMin && a._year <= o.yMax);
-
   return arr;
 }
 
@@ -356,7 +328,6 @@ function buildSongs(titles, o) {
 
   titles.forEach((t) => {
     const baseTitle = t._title || getDisplayTitle(t);
-
     if (o.incOP) addList(baseTitle, t.song?.openings, "Opening");
     if (o.incED) addList(baseTitle, t.song?.endings, "Ending");
     if (o.incIN) addList(baseTitle, t.song?.inserts, "Insert");
@@ -405,45 +376,40 @@ function refreshPreview() {
 // UI EVENTS
 // =======================
 function wireCustomizationUI() {
-  // sliders + inputs => preview
   document.querySelectorAll("#custom-panel input").forEach((e) => {
     e.addEventListener("input", refreshPreview);
   });
 
-  // types pills: AU MOINS 1 (bloque la désactivation du dernier)
+  // types pills: au moins 1
   document.getElementById("typePills")?.addEventListener("click", (e) => {
     const b = e.target.closest(".pill[data-type]");
     if (!b) return;
 
     const pills = [...document.querySelectorAll("#typePills .pill[data-type]")];
-
     if (b.classList.contains("active")) {
       const actives = pills.filter((x) => x.classList.contains("active"));
-      if (actives.length === 1) return; // garde au moins 1
+      if (actives.length === 1) return;
     }
 
     b.classList.toggle("active");
     b.setAttribute("aria-pressed", b.classList.contains("active") ? "true" : "false");
-
     ensureDefaultTypes();
     refreshPreview();
   });
 
-  // songs pills: AU MOINS 1 (bloque la désactivation du dernier)
+  // songs pills: au moins 1
   document.getElementById("songPills")?.addEventListener("click", (e) => {
     const b = e.target.closest(".pill[data-song]");
     if (!b) return;
 
     const pills = [...document.querySelectorAll("#songPills .pill[data-song]")];
-
     if (b.classList.contains("active")) {
       const actives = pills.filter((x) => x.classList.contains("active"));
-      if (actives.length === 1) return; // garde au moins 1
+      if (actives.length === 1) return;
     }
 
     b.classList.toggle("active");
     b.setAttribute("aria-pressed", b.classList.contains("active") ? "true" : "false");
-
     ensureDefaultSongs();
     refreshPreview();
   });
@@ -488,7 +454,6 @@ fetch(DATA_URL)
 function startGame() {
   if (!ALL_TITLES.length) return;
 
-  // ✅ IMPORTANT: reset AVANT de remplir items (sinon items se fait vider)
   resetTournament();
 
   const o = readOptions();
@@ -501,7 +466,6 @@ function startGame() {
       alert(`Pas assez de titres (${titles.length}/${minTitlesNeeded}).`);
       return;
     }
-
     const pool = shuffle([...titles]);
     items = pool.slice(0, TOTAL_MATCH_ITEMS).map((t) => ({
       image: t.image,
@@ -515,7 +479,6 @@ function startGame() {
       alert(`Pas assez de songs (${songs.length}/${minSongsNeeded}).`);
       return;
     }
-
     const pool = shuffle([...songs]);
     items = pool.slice(0, TOTAL_MATCH_ITEMS);
   }
@@ -525,7 +488,7 @@ function startGame() {
 }
 
 // =======================
-// TOURNAMENT CORE (double elim "simple")
+// TOURNAMENT CORE
 // =======================
 function initTournament() {
   if (!items || items.length < 2) {
@@ -569,7 +532,6 @@ function isTournamentOver() {
 
 function buildNextRound() {
   const m = [];
-
   pair(aliveWB).forEach((p) => m.push(p));
   pair(aliveLB).forEach((p) => m.push(p));
 
@@ -627,7 +589,7 @@ function showNextMatch() {
 }
 
 // =======================
-// CLEANUP MEDIA (anti-lag réseau)
+// CLEANUP MEDIA
 // =======================
 function cleanupCurrentMedia() {
   const box = document.getElementById("duel-container");
@@ -643,7 +605,7 @@ function cleanupCurrentMedia() {
 }
 
 // =======================
-// VIDEO LOAD (6 essais + timeout + mini anti-stall)
+// VIDEO LOAD (FIX: plus de boucle)
 // =======================
 function waitEventOrTimeout(target, events, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -689,9 +651,6 @@ function getOrCreateStatusEl(video) {
   if (!st) {
     st = document.createElement("div");
     st.className = "videoStatus";
-    st.style.fontWeight = "900";
-    st.style.opacity = "0.9";
-    st.style.fontSize = "0.95rem";
     parent.insertBefore(st, video.nextSibling);
   }
   return st;
@@ -720,6 +679,7 @@ async function loadVideoWithRetry(video, url, { autoplay = false } = {}) {
       video.src = url;
       video.load();
 
+      // ✅ on attend un vrai état "prêt", mais on ne considère PAS waiting/stalled comme erreur
       await waitEventOrTimeout(
         video,
         { ok: ["loadeddata", "canplay"], fail: ["error", "abort"] },
@@ -730,18 +690,15 @@ async function loadVideoWithRetry(video, url, { autoplay = false } = {}) {
         video.muted = true;
         try {
           await video.play();
+          if (status) status.textContent = "▶️ Lecture";
         } catch {
-          try { video.pause(); } catch {}
+          // autoplay bloqué => on laisse l’utilisateur lancer, sans retry en boucle
+          if (status) status.textContent = "✅ Prêt (clique Play)";
         }
+      } else {
+        if (status) status.textContent = "✅ Prêt";
       }
 
-      await waitEventOrTimeout(
-        video,
-        { ok: ["canplay", "playing"], fail: ["stalled", "waiting", "error"] },
-        1500
-      );
-
-      if (status) status.textContent = "✅ Prêt";
       return true;
     } catch {
       // retry
@@ -772,7 +729,6 @@ async function renderMatch() {
 
   for (const idx of indices) {
     const item = items[idx];
-
     const div = document.createElement("div");
     div.className = mode === "anime" ? "anime" : "opening";
 
@@ -807,7 +763,6 @@ async function renderMatch() {
     }
   }
 
-  // Chargement vidéo séquentiel : gauche autoplay
   if (mode === "songs") {
     const left = cardEls.find((c) => c.idx === currentMatch.a);
     if (left?.video && left?.url) await loadVideoWithRetry(left.video, left.url, { autoplay: true });
@@ -940,7 +895,6 @@ function resetTournament() {
   if (replay) replay.style.display = "none";
   if (roundBox) roundBox.textContent = "";
 
-  // ✅ reset state
   items = [];
   losses = [];
   eliminationOrder = [];
