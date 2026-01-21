@@ -426,12 +426,10 @@ body::before{
   gap: 14px;
   min-height: 260px;
 }
-#character-container.grid-2{
-  grid-template-columns: repeat(2, 240px);
-}
-#character-container.grid-3{
+#character-container{
   grid-template-columns: repeat(3, 190px);
 }
+
 
 .character-img{
   width: 100%;
