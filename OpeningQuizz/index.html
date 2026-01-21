@@ -41,16 +41,17 @@
   <div id="custom-panel" class="main-container" style="max-width: 1400px; width: 98vw; padding: 1.7rem 1.8rem; margin: 0 auto 1.2rem auto;">
     <h2 style="margin:0 0 1.0rem 0; text-align:center;">⚙️ Personnalisation</h2>
 
-    <!-- ✅ Mode (ajouté) -->
+    <!-- ✅ Mode (présent pour futur) -->
     <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
       <div class="opt-label" style="font-weight:900; min-width:160px;">Mode</div>
       <div class="opt-col" style="flex:1; min-width:280px;">
         <div id="modePills" class="opt-pill-group" style="display:flex; gap:10px; flex-wrap:wrap;">
+          <!-- Animes affiché pour futur (désactivé pour l'instant) -->
           <button type="button" class="pill" data-mode="anime" aria-pressed="false" disabled>Animes</button>
           <button type="button" class="pill active" data-mode="songs" aria-pressed="true">Songs</button>
         </div>
         <div class="opt-help" style="margin-top:8px; opacity:0.85; font-weight:700; font-size:0.95rem;">
-          Choisis le contenu à deviner.
+          Choisis le contenu à classer.
         </div>
       </div>
     </div>
@@ -130,7 +131,7 @@
       ⏳ Chargement de la base…
     </div>
 
-    <!-- ✅ Rounds (déplacé SOUS preview + max 100 + default 1 + texte exact) -->
+    <!-- ✅ Rounds (SOUS preview + max 100 + default 1 + texte exact) -->
     <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:14px;">
       <div class="opt-label" style="font-weight:900; min-width:160px;">Rounds</div>
       <div class="opt-col" style="flex:1; min-width:280px; display:flex; gap:12px; align-items:center; justify-content:flex-end; flex-wrap:wrap;">
@@ -144,7 +145,7 @@
           style="width:120px; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,188,212,0.35); background:rgba(0,0,0,0.18); color:inherit; font-weight:900; outline:none;"
         />
         <div style="opacity:0.85; font-weight:700; font-size:0.95rem;">
-          (1 à 100 — enchaîne plusieurs parties avec la même config.)
+          (1 à 100) — Enchaîne plusieurs parties avec la même config.
         </div>
       </div>
     </div>
