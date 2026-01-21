@@ -39,8 +39,27 @@
   <div id="custom-panel" class="main-container" style="max-width: 1400px; width: 98vw; padding: 1.7rem 1.8rem; margin: 0 auto 1.2rem auto;">
     <h2 style="margin:0 0 1.0rem 0; text-align:center;">⚙️ Personnalisation</h2>
 
-    <!-- Popularité -->
+    <!-- ✅ Nombre de rounds -->
     <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Nombre de rounds</div>
+      <div class="opt-col" style="flex:1; min-width:280px; display:flex; align-items:center; gap:12px; justify-content:flex-end;">
+        <input
+          id="roundCount"
+          type="number"
+          min="1"
+          max="50"
+          step="1"
+          value="1"
+          style="width:110px; padding:10px 12px; border-radius:10px; border:none; outline:none; background:#222; color:#eee; box-shadow:0 0 8px #00bcd466;"
+        />
+        <div style="opacity:0.85; font-weight:700; font-size:0.95rem; text-align:right;">
+          Enchaîne plusieurs parties avec les mêmes réglages.
+        </div>
+      </div>
+    </div>
+
+    <!-- Popularité -->
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
       <div class="opt-label" style="font-weight:900; min-width:160px;">Popularité</div>
       <div class="opt-col" style="flex:1; min-width:280px;">
         <input id="popPercent" type="range" min="5" max="100" step="5" value="25" />
@@ -83,7 +102,10 @@
       <div class="opt-col" style="flex:1; min-width:280px;">
         <div id="typePills" class="opt-pill-group" style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
-          <button type="button" class="pill active" data-type="Movie" aria-pressed="true">Movie</button>
+
+          <!-- ✅ Movie désactivé par défaut -->
+          <button type="button" class="pill" data-type="Movie" aria-pressed="false">Movie</button>
+
           <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
           <button type="button" class="pill" data-type="ONA" aria-pressed="false">ONA</button>
           <button type="button" class="pill" data-type="Special" aria-pressed="false">Special</button>
