@@ -34,10 +34,7 @@
     </div>
   </header>
 
-  <!-- Indicateur de round -->
-  <div id="round-indicator" class="main-block"></div>
-
-  <!-- ✅ PERSONNALISATION (identique Anidle) -->
+  <!-- ✅ PERSONNALISATION -->
   <div id="custom-panel">
     <h2><span class="gear">⚙️</span> Personnalisation</h2>
 
@@ -133,14 +130,20 @@
     </div>
   </div>
 
-  <!-- Duel -->
-  <div id="duel-container" class="main-block"></div>
+  <!-- ✅ JEU (caché au départ) -->
+  <div id="game-panel">
+    <!-- Indicateur de round (uniquement en jeu) -->
+    <div id="round-indicator" class="main-block"></div>
 
-  <!-- Bouton rejouer -->
-  <button id="next-match-btn" class="menu-btn" style="display:none;">Rejouer</button>
+    <!-- Duel -->
+    <div id="duel-container" class="main-block"></div>
 
-  <!-- Classement -->
-  <div id="classement" class="main-block"></div>
+    <!-- Bouton rejouer (fin de tournoi) -->
+    <button id="next-match-btn" class="menu-btn" style="display:none;">Rejouer</button>
+
+    <!-- Classement (si tu veux l’utiliser plus tard) -->
+    <div id="classement" class="main-block"></div>
+  </div>
 
   <footer>© 2025 mastermanga</footer>
 
