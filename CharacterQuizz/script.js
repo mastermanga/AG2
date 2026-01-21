@@ -6,6 +6,11 @@
  * - Utilise uniquement "characters" (pas top_characters)
  * - 6 persos révélés progressivement (timer + essai)
  * - Score: 3000 puis -500 par perso révélé (min 0)
+ *
+ * ✅ NOUVELLE LOGIQUE PERSOS :
+ * Le tableau `characters` est considéré trié du moins connu -> plus connu.
+ * On le découpe en 6 catégories (tranches) et on pick 1 perso random dans chaque catégorie,
+ * dans l'ordre Cat1 -> Cat6.
  **********************/
 
 const MAX_SCORE = 3000;
@@ -71,24 +76,76 @@ function clampInt(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-// --- Selection personnages
-function pick6CharactersBalanced(characters) {
+// ✅ Validateur perso (image + nom)
+function isValidCharacter(c) {
+  return !!(
+    c &&
+    typeof c.name === "string" &&
+    c.name.trim() &&
+    typeof c.image === "string" &&
+    c.image.trim()
+  );
+}
+
+function countValidCharacters(chars) {
+  if (!Array.isArray(chars)) return 0;
+  let n = 0;
+  for (const c of chars) if (isValidCharacter(c)) n++;
+  return n;
+}
+
+/**
+ * ✅ Sélection 6 persos par catégories (Cat1 -> Cat6)
+ * Le tableau `characters` est supposé trié du moins connu -> plus connu.
+ * On découpe en 6 tranches "équilibrées", puis on prend 1 perso random dans chaque tranche,
+ * dans l'ordre.
+ */
+function pick6CharactersByCategories(characters) {
   if (!Array.isArray(characters) || characters.length === 0) return [];
-  const clean = characters.filter(c => c && typeof c.image === "string" && c.image && typeof c.name === "string");
+
+  // 1) Clean en gardant l'ordre d'origine (IMPORTANT)
+  const clean = characters.filter(isValidCharacter);
   if (clean.length === 0) return [];
 
-  const pool = [...clean];
-  shuffleInPlace(pool);
-  const picked = pool.slice(0, Math.min(MAX_REVEALS, pool.length));
+  // Si on n'a pas assez de persos, on renvoie tout (le jeu révèlera moins)
+  if (clean.length <= MAX_REVEALS) return clean.slice(0, clean.length);
 
-  const scoreName = (name) => {
-    const n = (name || "").trim();
-    const len = n.length;
-    const words = n.split(/\s+/).filter(Boolean).length;
-    return (len * 2) + (words * 6);
-  };
+  // 2) Découpe en 6 tranches réparties le plus équitablement possible
+  // base = taille minimale de chaque catégorie, rem = catégories qui ont +1
+  const total = clean.length;
+  const tiers = MAX_REVEALS; // 6
+  const base = Math.floor(total / tiers);
+  const rem = total % tiers;
 
-  picked.sort((a, b) => scoreName(b.name) - scoreName(a.name));
+  const buckets = [];
+  let idx = 0;
+  for (let i = 0; i < tiers; i++) {
+    const size = base + (i < rem ? 1 : 0);
+    buckets.push(clean.slice(idx, idx + size));
+    idx += size;
+  }
+
+  // 3) Pick 1 random par catégorie, dans l'ordre Cat1 -> Cat6
+  const picked = [];
+  for (let i = 0; i < buckets.length; i++) {
+    const bucket = buckets[i];
+    if (!bucket || bucket.length === 0) continue;
+    const choice = bucket[Math.floor(Math.random() * bucket.length)];
+    picked.push(choice);
+    if (picked.length >= MAX_REVEALS) break;
+  }
+
+  // Sécurité: si pour une raison quelconque on a moins de 6, on complète avec le reste
+  if (picked.length < MAX_REVEALS) {
+    const used = new Set(picked.map(p => p.image));
+    const rest = clean.filter(c => !used.has(c.image));
+    while (picked.length < MAX_REVEALS && rest.length) {
+      const k = Math.floor(Math.random() * rest.length);
+      picked.push(rest.splice(k, 1)[0]);
+    }
+  }
+
+  // On garde l'ordre des catégories (déjà bon), pas de shuffle ici
   return picked;
 }
 
@@ -170,6 +227,7 @@ function setScoreBar(score) {
 }
 
 function currentPotentialScore() {
+  // revealedCount inclut le perso déjà affiché : score = 3000 - (revealedCount-1)*500
   const malus = Math.max(0, (revealedCount - 1) * REVEAL_STEP);
   return Math.max(MAX_SCORE - malus, 0);
 }
@@ -221,14 +279,14 @@ function applyFilters() {
   const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
-  // 1) base filter
+  // 1) base filter (year/type + doit avoir AU MOINS 6 persos valides)
   let pool = allAnimes.filter((a) => {
     return (
       a._year >= yearMin &&
       a._year <= yearMax &&
       allowedTypes.includes(a._type) &&
       Array.isArray(a.characters) &&
-      a.characters.length > 0
+      countValidCharacters(a.characters) >= MAX_REVEALS
     );
   });
 
@@ -242,11 +300,8 @@ function applyFilters() {
   pool.sort((a, b) => b._score - a._score);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  // Nettoyage final
-  pool = pool.filter(a => {
-    const chars = Array.isArray(a.characters) ? a.characters : [];
-    return chars.some(c => c && c.image && typeof c.image === "string");
-  });
+  // (sécurité) conserver seulement ceux qui ont bien >=6 persos valides
+  pool = pool.filter(a => countValidCharacters(a.characters) >= MAX_REVEALS);
 
   return pool;
 }
@@ -298,7 +353,9 @@ function startNewRound() {
   resetRoundUI();
 
   currentAnime = filteredAnimes[Math.floor(Math.random() * filteredAnimes.length)];
-  visibleCharacters = pick6CharactersBalanced(currentAnime.characters);
+
+  // ✅ nouvelle sélection par catégories (Cat1 -> Cat6)
+  visibleCharacters = pick6CharactersByCategories(currentAnime.characters);
 
   // crée les images (cachées)
   visibleCharacters.forEach((char, i) => {
@@ -326,7 +383,7 @@ function revealNextCharacter() {
     setScoreBar(currentPotentialScore());
     resetTimer();
   } else {
-    resetTimer();
+    resetTimer(); // garde le timer, mais on gère à 0
   }
 }
 
@@ -361,22 +418,27 @@ function endRound(roundScore, won, messageHtml) {
   clearInterval(countdownInterval);
   countdownInterval = null;
 
+  // afficher tous les persos restants
   for (let i = 0; i < visibleCharacters.length; i++) {
     const img = document.getElementById("char-" + i);
     if (img) img.style.display = "block";
   }
 
+  // bloc input
   input.disabled = true;
   submitBtn.disabled = true;
   suggestions.innerHTML = "";
 
   setScoreBar(roundScore);
 
+  // message
   feedback.innerHTML = messageHtml;
   feedback.className = won ? "success" : "error";
 
+  // score total
   totalScore += roundScore;
 
+  // bouton next / end
   restartBtn.style.display = "inline-block";
   restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
 
@@ -443,6 +505,7 @@ function checkGuess() {
     return;
   }
 
+  // mauvais: révèle 1 perso (si possible)
   feedback.textContent = "❌ Mauvaise réponse.";
   feedback.className = "error";
 
@@ -472,6 +535,7 @@ input.addEventListener("input", function () {
 
   if (!val) return;
 
+  // titres uniques sur base filtrée
   const titles = [...new Set(filteredAnimes.map(a => a._title))];
   const matches = titles.filter(t => t.toLowerCase().includes(val)).slice(0, 7);
 
@@ -488,6 +552,7 @@ input.addEventListener("input", function () {
     suggestions.appendChild(div);
   });
 
+  // enable si match exact
   submitBtn.disabled = !titles.map(t => t.toLowerCase()).includes(val);
 });
 
@@ -499,7 +564,7 @@ input.addEventListener("keydown", (e) => {
 
 submitBtn.addEventListener("click", checkGuess);
 
-// ====== Tooltip ======
+// ====== Tooltip (icône info) ======
 document.addEventListener("click", (e) => {
   const icon = e.target.closest(".info-icon");
   if (!icon) return;
