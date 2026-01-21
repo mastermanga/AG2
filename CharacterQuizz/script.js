@@ -2,20 +2,18 @@
  * Character Quizz
  * - Dataset: ../data/licenses_only.json
  * - Personnalisation: popularité/score/années/types + rounds
- * - Pas de daily
- * - Utilise uniquement "characters" (pas top_characters)
+ * - Utilise uniquement "characters"
  * - 6 persos révélés progressivement (timer + essai)
  * - Score: 3000 puis -500 par perso révélé (min 0)
  *
- * ✅ NOUVELLE LOGIQUE PERSOS :
- * Le tableau `characters` est considéré trié du moins connu -> plus connu.
- * On le découpe en 6 catégories (tranches) et on pick 1 perso random dans chaque catégorie,
- * dans l'ordre Cat1 -> Cat6.
+ * ✅ Sélection persos:
+ * `characters` est supposé trié du moins connu -> plus connu.
+ * On découpe en 6 catégories et on pick 1 perso random par catégorie (Cat1 -> Cat6).
  **********************/
 
 const MAX_SCORE = 3000;
-const REVEAL_STEP = 500;          // -500 par reveal
-const REVEAL_INTERVAL_SEC = 8;    // reveal auto toutes les 8s
+const REVEAL_STEP = 500;
+const REVEAL_INTERVAL_SEC = 8;
 const MAX_REVEALS = 6;
 
 // ====== UI: menu + theme ======
@@ -45,7 +43,7 @@ function getDisplayTitle(a) {
 }
 
 function getYear(a) {
-  const s = (a.season || "").trim(); // ex: "spring 2013"
+  const s = (a.season || "").trim();
   const parts = s.split(/\s+/);
   const y = parseInt(parts[1] || parts[0] || "0", 10);
   return Number.isFinite(y) ? y : 0;
@@ -63,20 +61,11 @@ function clampYearSliders() {
   }
 }
 
-function shuffleInPlace(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
 function clampInt(n, a, b) {
   n = Number.isFinite(n) ? n : a;
   return Math.max(a, Math.min(b, n));
 }
 
-// ✅ Validateur perso (image + nom)
 function isValidCharacter(c) {
   return !!(
     c &&
@@ -94,26 +83,18 @@ function countValidCharacters(chars) {
   return n;
 }
 
-/**
- * ✅ Sélection 6 persos par catégories (Cat1 -> Cat6)
- * Le tableau `characters` est supposé trié du moins connu -> plus connu.
- * On découpe en 6 tranches "équilibrées", puis on prend 1 perso random dans chaque tranche,
- * dans l'ordre.
- */
+// ✅ 6 catégories (du moins connu -> plus connu), 1 random par catégorie dans l’ordre
 function pick6CharactersByCategories(characters) {
   if (!Array.isArray(characters) || characters.length === 0) return [];
 
-  // 1) Clean en gardant l'ordre d'origine (IMPORTANT)
   const clean = characters.filter(isValidCharacter);
   if (clean.length === 0) return [];
 
-  // Si on n'a pas assez de persos, on renvoie tout (le jeu révèlera moins)
   if (clean.length <= MAX_REVEALS) return clean.slice(0, clean.length);
 
-  // 2) Découpe en 6 tranches réparties le plus équitablement possible
-  // base = taille minimale de chaque catégorie, rem = catégories qui ont +1
   const total = clean.length;
-  const tiers = MAX_REVEALS; // 6
+  const tiers = MAX_REVEALS;
+
   const base = Math.floor(total / tiers);
   const rem = total % tiers;
 
@@ -125,7 +106,6 @@ function pick6CharactersByCategories(characters) {
     idx += size;
   }
 
-  // 3) Pick 1 random par catégorie, dans l'ordre Cat1 -> Cat6
   const picked = [];
   for (let i = 0; i < buckets.length; i++) {
     const bucket = buckets[i];
@@ -135,7 +115,6 @@ function pick6CharactersByCategories(characters) {
     if (picked.length >= MAX_REVEALS) break;
   }
 
-  // Sécurité: si pour une raison quelconque on a moins de 6, on complète avec le reste
   if (picked.length < MAX_REVEALS) {
     const used = new Set(picked.map(p => p.image));
     const rest = clean.filter(c => !used.has(c.image));
@@ -145,7 +124,6 @@ function pick6CharactersByCategories(characters) {
     }
   }
 
-  // On garde l'ordre des catégories (déjà bon), pas de shuffle ici
   return picked;
 }
 
@@ -227,7 +205,6 @@ function setScoreBar(score) {
 }
 
 function currentPotentialScore() {
-  // revealedCount inclut le perso déjà affiché : score = 3000 - (revealedCount-1)*500
   const malus = Math.max(0, (revealedCount - 1) * REVEAL_STEP);
   return Math.max(MAX_SCORE - malus, 0);
 }
@@ -258,7 +235,8 @@ function initCustomUI() {
     filteredAnimes = applyFilters();
     if (filteredAnimes.length === 0) return;
 
-    totalRounds = clampInt(parseInt(roundCountEl.value || "5", 10), 1, 50);
+    // ✅ (1 à 100)
+    totalRounds = clampInt(parseInt(roundCountEl.value || "5", 10), 1, 100);
     currentRound = 1;
     totalScore = 0;
 
@@ -279,7 +257,6 @@ function applyFilters() {
   const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
-  // 1) base filter (year/type + doit avoir AU MOINS 6 persos valides)
   let pool = allAnimes.filter((a) => {
     return (
       a._year >= yearMin &&
@@ -292,15 +269,12 @@ function applyFilters() {
 
   if (pool.length === 0) return [];
 
-  // 2) top pop% par members
   pool.sort((a, b) => b._members - a._members);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-  // 3) top score% par score
   pool.sort((a, b) => b._score - a._score);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  // (sécurité) conserver seulement ceux qui ont bien >=6 persos valides
   pool = pool.filter(a => countValidCharacters(a.characters) >= MAX_REVEALS);
 
   return pool;
@@ -353,11 +327,8 @@ function startNewRound() {
   resetRoundUI();
 
   currentAnime = filteredAnimes[Math.floor(Math.random() * filteredAnimes.length)];
-
-  // ✅ nouvelle sélection par catégories (Cat1 -> Cat6)
   visibleCharacters = pick6CharactersByCategories(currentAnime.characters);
 
-  // crée les images (cachées)
   visibleCharacters.forEach((char, i) => {
     const img = document.createElement("img");
     img.src = char.image;
@@ -368,7 +339,6 @@ function startNewRound() {
     container.appendChild(img);
   });
 
-  // reveal 1er perso
   revealNextCharacter();
 }
 
@@ -383,7 +353,7 @@ function revealNextCharacter() {
     setScoreBar(currentPotentialScore());
     resetTimer();
   } else {
-    resetTimer(); // garde le timer, mais on gère à 0
+    resetTimer();
   }
 }
 
@@ -418,27 +388,22 @@ function endRound(roundScore, won, messageHtml) {
   clearInterval(countdownInterval);
   countdownInterval = null;
 
-  // afficher tous les persos restants
   for (let i = 0; i < visibleCharacters.length; i++) {
     const img = document.getElementById("char-" + i);
     if (img) img.style.display = "block";
   }
 
-  // bloc input
   input.disabled = true;
   submitBtn.disabled = true;
   suggestions.innerHTML = "";
 
   setScoreBar(roundScore);
 
-  // message
   feedback.innerHTML = messageHtml;
   feedback.className = won ? "success" : "error";
 
-  // score total
   totalScore += roundScore;
 
-  // bouton next / end
   restartBtn.style.display = "inline-block";
   restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
 
@@ -478,9 +443,7 @@ function showFinalRecap() {
       </button>
     </div>
   `;
-  document.getElementById("backToSettings").onclick = () => {
-    window.location.reload();
-  };
+  document.getElementById("backToSettings").onclick = () => window.location.reload();
 }
 
 // ====== Guess logic ======
@@ -505,7 +468,6 @@ function checkGuess() {
     return;
   }
 
-  // mauvais: révèle 1 perso (si possible)
   feedback.textContent = "❌ Mauvaise réponse.";
   feedback.className = "error";
 
@@ -535,7 +497,6 @@ input.addEventListener("input", function () {
 
   if (!val) return;
 
-  // titres uniques sur base filtrée
   const titles = [...new Set(filteredAnimes.map(a => a._title))];
   const matches = titles.filter(t => t.toLowerCase().includes(val)).slice(0, 7);
 
@@ -552,19 +513,16 @@ input.addEventListener("input", function () {
     suggestions.appendChild(div);
   });
 
-  // enable si match exact
   submitBtn.disabled = !titles.map(t => t.toLowerCase()).includes(val);
 });
 
 input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) {
-    checkGuess();
-  }
+  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) checkGuess();
 });
 
 submitBtn.addEventListener("click", checkGuess);
 
-// ====== Tooltip (icône info) ======
+// ====== Tooltip ======
 document.addEventListener("click", (e) => {
   const icon = e.target.closest(".info-icon");
   if (!icon) return;
