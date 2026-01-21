@@ -1,10 +1,11 @@
 /**********************
- * Guess The Opening — version “anti-bug audio”
+ * Guess The Opening — version “anti-bug audio” + timer basé sur le temps média
  * ✅ Ajouts:
  *  - Token d’annulation (anti race-condition) quand on change de round / retry
  *  - Retries (0s, +3s, +10s) avec cache-bust ?t=...
  *  - Détection de “stall” (chargement infini sans onerror) => retry
  *  - On charge 1 seule fois par round (plus stable), puis on seek (Début/Refrain/Complet)
+ *  - Limite 15s basée sur currentTime (pas setTimeout) => pas de “15s mangées” pendant le buffering
  *  - Petit status “Chargement…” injecté en JS (sans modifier le HTML)
  **********************/
 
@@ -193,7 +194,6 @@ function ensureMediaStatusEl() {
   el.style.textAlign = "center";
   el.style.userSelect = "none";
 
-  // place sous la barre de round si possible
   container.insertBefore(el, container.querySelector(".input-container") || null);
   mediaStatusEl = el;
   return mediaStatusEl;
@@ -223,7 +223,6 @@ let indice6Used = false;
 let indice3Used = false;
 let indiceActive = false;
 
-let stopTimer = null;
 const tryDurations = [15, 15, null]; // 3e écoute complète
 let currentStart = 0;
 
@@ -234,10 +233,9 @@ let roundToken = 0;
 const CAN_PLAY_WEBM_AUDIO = (() => {
   const a = document.createElement("audio");
   if (!a.canPlayType) return false;
-  // Safari renvoie souvent "" pour webm
   const t1 = a.canPlayType('audio/webm; codecs="opus"');
   const t2 = a.canPlayType("audio/webm");
-  const t3 = a.canPlayType("video/webm"); // au cas où
+  const t3 = a.canPlayType("video/webm");
   return (t1 && t1 !== "") || (t2 && t2 !== "") || (t3 && t3 !== "");
 })();
 
@@ -291,6 +289,48 @@ function applyVolume() {
 }
 if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
 
+// ====== Segment limiter (coupe après X secondes de "temps média", pas temps réel) ======
+let segmentLimiter = {
+  active: false,
+  endTime: 0,
+  handlerTimeUpdate: null,
+  handlerSeeked: null,
+};
+
+function clearSegmentLimiter() {
+  if (!segmentLimiter.active) return;
+  if (segmentLimiter.handlerTimeUpdate) {
+    audioPlayer.removeEventListener("timeupdate", segmentLimiter.handlerTimeUpdate);
+  }
+  if (segmentLimiter.handlerSeeked) {
+    audioPlayer.removeEventListener("seeked", segmentLimiter.handlerSeeked);
+  }
+  segmentLimiter.active = false;
+  segmentLimiter.endTime = 0;
+  segmentLimiter.handlerTimeUpdate = null;
+  segmentLimiter.handlerSeeked = null;
+}
+
+function setSegmentLimit(startSeconds, durationSeconds) {
+  clearSegmentLimiter();
+
+  segmentLimiter.active = true;
+  segmentLimiter.endTime = startSeconds + durationSeconds;
+
+  const check = () => {
+    if (audioPlayer.currentTime >= segmentLimiter.endTime - 0.06) {
+      try { audioPlayer.pause(); } catch {}
+      clearSegmentLimiter();
+    }
+  };
+
+  segmentLimiter.handlerTimeUpdate = check;
+  segmentLimiter.handlerSeeked = check;
+
+  audioPlayer.addEventListener("timeupdate", segmentLimiter.handlerTimeUpdate);
+  audioPlayer.addEventListener("seeked", segmentLimiter.handlerSeeked);
+}
+
 // ====== Filters ======
 function applyFilters() {
   const popPercent = parseInt(popEl.value, 10);
@@ -303,7 +343,6 @@ function applyFilters() {
 
   if (allowedTypes.length === 0 || allowedSongs.length === 0) return [];
 
-  // 1) filtre par anime year/type + songType
   let pool = allSongs.filter((s) => {
     return (
       s.animeYear >= yearMin &&
@@ -313,11 +352,9 @@ function applyFilters() {
     );
   });
 
-  // 2) top pop% par members (niveau anime)
   pool.sort((a, b) => b.animeMembers - a.animeMembers);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-  // 3) top score% par score (niveau anime)
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
@@ -353,7 +390,6 @@ function initCustomUI() {
 
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
 
-  // type pills
   document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -362,7 +398,6 @@ function initCustomUI() {
     });
   });
 
-  // song pills
   document.querySelectorAll("#songPills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -392,16 +427,6 @@ function initCustomUI() {
 }
 
 // ====== Playback helpers ======
-function stopPlayback() {
-  if (stopTimer) {
-    clearTimeout(stopTimer);
-    stopTimer = null;
-  }
-  try {
-    audioPlayer.pause();
-  } catch {}
-}
-
 let loaderTimers = { stall: null, delay: null };
 
 function clearLoaderTimers() {
@@ -413,9 +438,14 @@ function clearLoaderTimers() {
 
 function hardResetAudioElement() {
   try { audioPlayer.pause(); } catch {}
-  // reset src clean
   audioPlayer.removeAttribute("src");
   try { audioPlayer.load(); } catch {}
+}
+
+// ✅ stop: coupe limiter + pause
+function stopPlayback() {
+  clearSegmentLimiter();
+  try { audioPlayer.pause(); } catch {}
 }
 
 // ✅ charge l’audio avec retries + anti-stall + cache-bust
@@ -428,7 +458,6 @@ function loadAudioWithRetries(url, token, onReady, onFail) {
   let attempt = 1;
   let ready = false;
 
-  // nettoyer anciens handlers/timers
   clearLoaderTimers();
   audioPlayer.oncanplay = null;
   audioPlayer.onloadedmetadata = null;
@@ -450,7 +479,6 @@ function loadAudioWithRetries(url, token, onReady, onFail) {
     loaderTimers.delay = setTimeout(() => {
       if (token !== roundToken) return;
 
-      // reset dur
       hardResetAudioElement();
 
       if (attempt === 1) setMediaStatus("⏳ Chargement…");
@@ -459,16 +487,13 @@ function loadAudioWithRetries(url, token, onReady, onFail) {
       const finalUrl =
         attempt === 1 ? url : url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
 
-      // charge
       audioPlayer.preload = "auto";
       audioPlayer.src = finalUrl;
       try { audioPlayer.load(); } catch {}
 
-      // anti-stall: si pas prêt au bout de STALL_TIMEOUT_MS => retry
       loaderTimers.stall = setTimeout(() => {
         if (token !== roundToken) return;
         if (ready) return;
-        // si le navigateur n’a pas avancé, on considère stall
         doRetry("stall");
       }, STALL_TIMEOUT_MS);
     }, delayMs);
@@ -496,30 +521,19 @@ function loadAudioWithRetries(url, token, onReady, onFail) {
     if (!ready) setMediaStatus("⏳ Chargement…");
   };
 
-  audioPlayer.onstalled = () => {
-    // parfois pas de onerror => on retry
-    doRetry("stalled");
-  };
+  audioPlayer.onstalled = () => doRetry("stalled");
+  audioPlayer.onerror = () => doRetry("error");
 
-  audioPlayer.onerror = () => {
-    doRetry("error");
-  };
-
-  // on se contente de canplay pour considérer “prêt”
-  audioPlayer.oncanplay = () => {
-    markReady();
-  };
-
-  // fallback: certains navigateurs donnent metadata avant canplay, on laisse une chance
+  audioPlayer.oncanplay = () => markReady();
   audioPlayer.onloadedmetadata = () => {
     if (token !== roundToken) return;
-    // si canplay ne vient pas, le stall timer gère
+    // stall timer gère les cas “metadata ok mais pas playable”
   };
 
   scheduleAttempt(RETRY_DELAYS[0]);
 }
 
-// ====== Round init/reset ======
+// ====== Indices reset ======
 function resetIndice() {
   indice6Used = false;
   indice3Used = false;
@@ -535,6 +549,7 @@ function resetIndice() {
   if (old) old.remove();
 }
 
+// ====== Round init/reset ======
 function resetControls() {
   tries = 0;
   failedAnswers = [];
@@ -556,14 +571,12 @@ function resetControls() {
   resetIndice();
   stopPlayback();
 
-  // cache player + pas de controls pendant la partie
   playerWrapper.style.display = "none";
   audioPlayer.controls = false;
   audioPlayer.removeAttribute("controls");
 
   updateScoreBar(3000);
 
-  // label round
   if (roundLabel) {
     roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
   }
@@ -572,7 +585,6 @@ function resetControls() {
 }
 
 function startNewRound(pickTry = 0) {
-  // anti boucle infinie si dataset foireux
   if (pickTry > 12) {
     alert("❌ Trop de liens indisponibles d'affilée. Essaie d’élargir tes filtres ou reviens plus tard.");
     showCustomization();
@@ -587,22 +599,18 @@ function startNewRound(pickTry = 0) {
     return;
   }
 
-  // ✅ nouveau token (annule tous les callbacks/retries précédents)
   roundToken++;
-
-  // charge avec retries
   const token = roundToken;
+
   loadAudioWithRetries(
     currentSong.url,
     token,
     () => {
-      // prêt: active Début (tries est 0 ici)
       if (token !== roundToken) return;
       if (tries === 0) playTry1Btn.disabled = false;
       openingInput.disabled = true;
     },
     () => {
-      // si fail => on choisit une autre song
       if (token !== roundToken) return;
       startNewRound(pickTry + 1);
     }
@@ -618,7 +626,6 @@ function playSegment(tryNum) {
     return;
   }
 
-  // si le média n’est pas prêt, on bloque
   if (!audioPlayer.src) {
     setMediaStatus("⏳ Chargement…");
     return;
@@ -655,12 +662,15 @@ function playSegment(tryNum) {
 
   stopPlayback();
 
-  // ✅ on ne change plus src ici (plus stable)
-  try {
-    audioPlayer.currentTime = currentStart;
-  } catch {}
+  // seek sans changer src
+  try { audioPlayer.currentTime = currentStart; } catch {}
 
   applyVolume();
+
+  // ✅ Limite basée sur le temps média (donc pas mangée par le buffering)
+  const duration = tryDurations[tries - 1];
+  if (duration != null) setSegmentLimit(currentStart, duration);
+  else clearSegmentLimiter();
 
   audioPlayer.play().catch(() => {
     setMediaStatus("❌ Impossible de lire ce média.");
@@ -668,14 +678,7 @@ function playSegment(tryNum) {
     resultDiv.className = "incorrect";
   });
 
-  const duration = tryDurations[tries - 1];
-  if (duration != null) {
-    stopTimer = setTimeout(() => {
-      audioPlayer.pause();
-    }, duration * 1000);
-  }
-
-  // ✅ états des boutons (Début doit rester grisé après)
+  // ✅ états des boutons (Début reste grisé après)
   playTry1Btn.disabled = true;
   playTry2Btn.disabled = tries !== 1;
   playTry3Btn.disabled = tries !== 2;
@@ -756,7 +759,7 @@ function endRoundAndMaybeNext(roundScore, won) {
   totalScore += roundScore;
 
   if (currentRound >= totalRounds) {
-    const msg = won ? "✅ Série terminée !" : "✅ Série terminée !";
+    const msg = "✅ Série terminée !";
     resultDiv.innerHTML += `<div style="margin-top:10px; font-weight:900; opacity:0.95;">${msg}<br>Score total : <b>${totalScore}</b> / <b>${totalRounds * 3000}</b></div>`;
 
     nextBtn.style.display = "block";
@@ -815,7 +818,6 @@ function checkAnswer(selectedTitle) {
     return;
   }
 
-  // wrong
   failedAnswers.push(selectedTitle);
   updateFailedAttempts();
 
@@ -957,12 +959,9 @@ fetch("../data/licenses_only.json")
       allSongs.push(...extractSongsFromAnime(a));
     }
 
-    // init UI
     initCustomUI();
     updatePreview();
     showCustomization();
-
-    // volume init
     applyVolume();
 
     if (!CAN_PLAY_WEBM_AUDIO) {
