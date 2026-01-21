@@ -43,20 +43,6 @@ header {
   padding: 0 1rem;
   z-index: 2;
   position: relative;
-  width: 100%;
-}
-
-/* ✅ FIX #1 : le menu du header sur une seule ligne */
-#main-header .header-inner{
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  flex-wrap: nowrap; /* pas de retour à la ligne */
-}
-#main-header #back-to-menu{
-  white-space: nowrap;
 }
 header h1 {
   font-size: 2rem;
@@ -71,12 +57,6 @@ header h1 {
     0 0 18px #00eaff99,
     0 2px 8px #00bcd477,
     0 0 10px #fff1;
-
-  /* ✅ garde le titre sur 1 ligne (ellipsis si nécessaire) */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
 }
 
 /* === Boutons === */
@@ -512,214 +492,6 @@ body.light .info-icon{
   }
 }
 
-/* =========================================================
-   ✅ Character Quizz — Panel Personnalisation
-   (Ajouts + FIX #2 + FIX #3)
-========================================================= */
-
-.main-container{
-  background-color: #161e27ef;
-  border-radius: 20px;
-  box-shadow: 0 0 32px 5px #00bcd444;
-  border: 1.5px solid #00bcd455;
-  padding: 2.3rem 2.2rem 2.2rem 2.2rem;
-  margin: 0.5rem auto 0;
-  width: 100%;
-  max-width: 1200px;
-  position: relative;
-  z-index: 2;
-}
-
-.main-container h2{
-  margin: 0 0 1.6rem 0;
-  text-align: center;
-  font-size: 1.65rem;
-  font-weight: 900;
-  letter-spacing: 0.6px;
-  text-shadow:
-    0 0 6px #00eaff88,
-    0 0 18px #00eaff33;
-}
-
-.opt-row{
-  display: grid;
-  grid-template-columns: 150px 1fr 200px;
-  align-items: center;
-  gap: 16px;
-  padding: 0.65rem 0;
-}
-
-.opt-label{
-  font-weight: 800;
-  opacity: 0.9;
-}
-
-.opt-col{
-  min-width: 0;
-}
-
-.opt-value{
-  text-align: right;
-  font-weight: 800;
-  opacity: 0.9;
-  white-space: nowrap;
-}
-
-.opt-pill-group{
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.pill{
-  border-radius: 999px;
-  padding: 0.45rem 0.95rem;
-  border: 1.5px solid #00bcd455;
-  background: rgba(18, 30, 39, 0.55);
-  color: #eaffff;
-  cursor: pointer;
-  font-weight: 800;
-  transition: transform 0.15s, background 0.18s, box-shadow 0.18s, border-color 0.18s;
-}
-.pill:hover{
-  transform: translateY(-1px);
-}
-.pill.active{
-  background: linear-gradient(120deg, #00bcd4 75%, #1e88e5 100%);
-  border-color: rgba(255,255,255,0.35);
-  box-shadow: 0 10px 26px rgba(0, 234, 255, 0.18);
-}
-
-.opt-hint{
-  margin-top: 8px;
-  font-size: 0.95rem;
-  opacity: 0.75;
-}
-
-.round-input{
-  width: 86px;
-  padding: 0.45rem 0.55rem;
-  border-radius: 12px;
-  border: 1.5px solid rgba(255,255,255,0.25);
-  background: rgba(0,0,0,0.25);
-  color: inherit;
-  font-weight: 800;
-  text-align: center;
-  outline: none;
-}
-.round-hint{
-  margin-left: 8px;
-  opacity: 0.75;
-  font-size: 0.95rem;
-}
-
-/* Preview bar */
-.preview-count{
-  margin-top: 1rem;
-  padding: 0.9rem 1.1rem;
-  border-radius: 14px;
-  text-align: center;
-  font-weight: 900;
-  border: 1.5px solid #00bcd455;
-  background: rgba(10, 18, 26, 0.55);
-}
-.preview-count.good{
-  border-color: rgba(29, 233, 182, 0.55);
-  box-shadow: 0 0 18px rgba(29, 233, 182, 0.18);
-}
-.preview-count.bad{
-  border-color: rgba(253, 101, 76, 0.55);
-  box-shadow: 0 0 18px rgba(253, 101, 76, 0.14);
-}
-
-/* ✅ FIX #2 : bouton centré + plus bas */
-.opt-actions{
-  display: flex;
-  justify-content: center;
-  margin-top: 18px; /* espace sous "Titres disponibles" */
-}
-.opt-actions .menu-btn{
-  padding: 0.85rem 1.6rem;
-  font-size: 1.08rem;
-}
-
-/* Range inputs (général) */
-.opt-col input[type="range"]{
-  width: 100%;
-}
-
-/* ✅ FIX #3 : double slider Années plus compact (hauteur + thumb + track) */
-.double-range{
-  position: relative;
-  height: 22px; /* réduit la "hauteur" de la ligne Années */
-}
-
-.double-range input[type="range"]{
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 22px;
-  margin: 0;
-  background: transparent;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-/* Track (WebKit) */
-.double-range input[type="range"]::-webkit-slider-runnable-track{
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.20);
-}
-
-/* Thumb (WebKit) */
-.double-range input[type="range"]::-webkit-slider-thumb{
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  margin-top: -4px; /* centre sur track (6px) */
-  border-radius: 999px;
-  background: rgba(0, 234, 255, 0.95);
-  border: 2px solid rgba(255,255,255,0.55);
-  box-shadow: 0 0 10px rgba(0, 234, 255, 0.35);
-  cursor: pointer;
-}
-
-/* Firefox */
-.double-range input[type="range"]::-moz-range-track{
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.20);
-}
-.double-range input[type="range"]::-moz-range-thumb{
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: rgba(0, 234, 255, 0.95);
-  border: 2px solid rgba(255,255,255,0.55);
-  box-shadow: 0 0 10px rgba(0, 234, 255, 0.35);
-  cursor: pointer;
-}
-
-/* Responsive : garder le header sur 1 ligne en réduisant un peu */
-@media (max-width: 560px) {
-  header h1 {
-    font-size: 1.25rem;
-    margin: 0 0.6rem;
-  }
-  .menu-btn, .toggle-btn{
-    font-size: 1rem;
-    padding: 0.5rem 0.95rem;
-  }
-  .opt-row{
-    grid-template-columns: 110px 1fr 140px;
-  }
-}
-
 /* === Responsive === */
 @media (max-width: 1050px) {
   .split-layout {
@@ -748,6 +520,10 @@ body.light .info-icon{
   }
 }
 @media (max-width: 560px) {
+  header h1 {
+    font-size: 1.3rem;
+    padding: 0 3vw;
+  }
   .anime-list li img,
   .anime-list li iframe {
     height: 120px;
@@ -794,28 +570,28 @@ body.light .info-icon{
   width: 600px;
   height: 338px;
   min-height: 220px;
-  max-width: 100%;
+  max-width: 100%; /* pour le responsive */
   margin-bottom: 22px;
 }
 
 .anime-item.large-opening {
-  max-width: 630px;
+  max-width: 630px; /* 600px + padding/marges éventuels */
   width: 100%;
-  min-height: 600px;
+  min-height: 600px; /* Hauteur augmentée pour plus d’espace */
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding-bottom: 80px;
+  padding-bottom: 80px; /* optionnel, pour espace sous les boutons */
 }
 
 .anime-container {
-  max-width: 660px;
+  max-width: 660px; /* un peu plus large que la vidéo */
   width: 100%;
 }
 .anime-item.large-opening .rank-button {
   width: 100%;
-  max-width: 600px;
+  max-width: 600px;    /* Même largeur que la vidéo */
   margin: 0 auto;
   display: flex;
   flex-wrap: wrap;
@@ -838,4 +614,89 @@ body.light .info-icon{
 }
 #player-loader span {
   animation: loaderFade 1.2s infinite;
+}
+
+
+/* =========================================================
+   ✅ PATCH Character Quizz (MINIMAL) — ne touche PAS au jeu
+   1) header sur 1 ligne
+   2) bouton centré + un peu plus bas
+   3) slider années plus compact
+========================================================= */
+
+/* 1) Header sur une seule ligne */
+#main-header .header-inner{
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+#main-header h1{
+  min-width: 0;         /* autorise le shrink */
+  white-space: nowrap;  /* évite que le titre casse en 2-3 lignes */
+}
+#main-header #back-to-menu{
+  white-space: nowrap;
+}
+
+/* 2) Bouton "Lancer" centré et plus bas */
+#custom-panel .opt-actions{
+  display: flex;
+  justify-content: center;
+  margin-top: 18px; /* espace sous "Titres disponibles" */
+}
+
+/* 3) Barres d'années plus petites (double slider) */
+#custom-panel .double-range{
+  position: relative;
+  height: 22px;
+}
+#custom-panel .double-range input[type="range"]{
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Track */
+#custom-panel .double-range input[type="range"]::-webkit-slider-runnable-track{
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.22);
+}
+#custom-panel .double-range input[type="range"]::-moz-range-track{
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.22);
+}
+
+/* Thumb */
+#custom-panel .double-range input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4px;
+  border-radius: 999px;
+  background: rgba(0, 234, 255, 0.95);
+  border: 2px solid rgba(255,255,255,0.55);
+  box-shadow: 0 0 10px rgba(0, 234, 255, 0.35);
+  cursor: pointer;
+}
+#custom-panel .double-range input[type="range"]::-moz-range-thumb{
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(0, 234, 255, 0.95);
+  border: 2px solid rgba(255,255,255,0.55);
+  box-shadow: 0 0 10px rgba(0, 234, 255, 0.35);
+  cursor: pointer;
 }
