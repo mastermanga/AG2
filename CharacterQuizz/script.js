@@ -3,14 +3,14 @@
  * - Dataset: ../data/licenses_only.json
  * - Personnalisation: popularité/score/années/types + rounds
  * - Pas de daily
- * - Utilise uniquement "characters" (pas top_characters)
+ * - Utilise uniquement "characters"
  * - 6 persos révélés progressivement (timer + essai)
  * - Score: 3000 puis -500 par perso révélé (min 0)
  **********************/
 
 const MAX_SCORE = 3000;
-const REVEAL_STEP = 500;          // -500 par reveal
-const REVEAL_INTERVAL_SEC = 8;    // reveal auto toutes les 8s
+const REVEAL_STEP = 500;
+const REVEAL_INTERVAL_SEC = 8;
 const MAX_REVEALS = 6;
 
 // ====== UI: menu + theme ======
@@ -40,7 +40,7 @@ function getDisplayTitle(a) {
 }
 
 function getYear(a) {
-  const s = (a.season || "").trim(); // ex: "spring 2013"
+  const s = (a.season || "").trim();
   const parts = s.split(/\s+/);
   const y = parseInt(parts[1] || parts[0] || "0", 10);
   return Number.isFinite(y) ? y : 0;
@@ -58,21 +58,6 @@ function clampYearSliders() {
   }
 }
 
-/* ✅ Remplissage bleu des sliders (comme image 1) */
-function paintRange(el) {
-  if (!el) return;
-  const min = parseFloat(el.min || "0");
-  const max = parseFloat(el.max || "100");
-  const val = parseFloat(el.value || "0");
-  const pct = ((val - min) / (max - min)) * 100;
-
-  el.style.background = `linear-gradient(90deg,
-    rgba(0,234,255,0.95) 0%,
-    rgba(0,234,255,0.95) ${pct}%,
-    rgba(255,255,255,0.88) ${pct}%,
-    rgba(255,255,255,0.88) 100%)`;
-}
-
 function shuffleInPlace(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -86,25 +71,48 @@ function clampInt(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-// --- Selection personnages
-function pick6CharactersBalanced(characters) {
+/**
+ * ✅ Sélection "par catégories" (comme tu veux) :
+ * - On suppose que `characters` est déjà trié du moins connu -> plus connu.
+ * - On découpe en 6 groupes (cat1..cat6) dans l'ordre.
+ * - On prend 1 perso random dans chaque groupe, puis on affiche dans cet ordre.
+ */
+function pick6CharactersByCategories(characters) {
   if (!Array.isArray(characters) || characters.length === 0) return [];
-  const clean = characters.filter(c => c && typeof c.image === "string" && c.image && typeof c.name === "string");
+
+  const clean = characters.filter(c => c && typeof c.image === "string" && c.image && typeof c.name === "string" && c.name.trim());
   if (clean.length === 0) return [];
 
-  const pool = [...clean];
-  shuffleInPlace(pool);
-  const picked = pool.slice(0, Math.min(MAX_REVEALS, pool.length));
+  if (clean.length <= MAX_REVEALS) {
+    const pool = [...clean];
+    shuffleInPlace(pool);
+    return pool.slice(0, Math.min(MAX_REVEALS, pool.length));
+  }
 
-  const scoreName = (name) => {
-    const n = (name || "").trim();
-    const len = n.length;
-    const words = n.split(/\s+/).filter(Boolean).length;
-    return (len * 2) + (words * 6);
-  };
+  const bucketCount = MAX_REVEALS; // 6
+  const bucketSize = Math.max(1, Math.floor(clean.length / bucketCount)); // ex: 18 -> 3
 
-  picked.sort((a, b) => scoreName(b.name) - scoreName(a.name));
-  return picked;
+  const picked = [];
+
+  for (let i = 0; i < bucketCount; i++) {
+    const start = i * bucketSize;
+    const end = (i === bucketCount - 1) ? clean.length : Math.min(clean.length, (i + 1) * bucketSize);
+    const bucket = clean.slice(start, end);
+    if (bucket.length === 0) continue;
+
+    const chosen = bucket[Math.floor(Math.random() * bucket.length)];
+    picked.push(chosen);
+  }
+
+  // sécurité: si on a moins de 6 (cas rare sur petites listes), on complète au hasard sans doublon
+  if (picked.length < bucketCount) {
+    const set = new Set(picked.map(x => x.name + "||" + x.image));
+    const rest = clean.filter(x => !set.has(x.name + "||" + x.image));
+    shuffleInPlace(rest);
+    while (picked.length < bucketCount && rest.length) picked.push(rest.pop());
+  }
+
+  return picked.slice(0, bucketCount);
 }
 
 // ====== DOM refs ======
@@ -144,7 +152,7 @@ let allAnimes = [];
 let filteredAnimes = [];
 
 // ====== Session (Rounds) ======
-let totalRounds = 5;
+let totalRounds = 1;
 let currentRound = 1;
 let totalScore = 0;
 
@@ -165,6 +173,15 @@ function showCustomization() {
 function showGame() {
   customPanel.style.display = "none";
   gamePanel.style.display = "block";
+}
+
+// ====== Slider fill helper ======
+function setRangePct(el) {
+  const min = parseFloat(el.min || "0");
+  const max = parseFloat(el.max || "100");
+  const val = parseFloat(el.value || "0");
+  const pct = ((val - min) / (max - min)) * 100;
+  el.style.setProperty("--pct", `${Math.max(0, Math.min(100, pct))}%`);
 }
 
 // ====== Score bar ======
@@ -189,6 +206,14 @@ function currentPotentialScore() {
   return Math.max(MAX_SCORE - malus, 0);
 }
 
+// ====== grid perso (2 colonnes <=4, 3 colonnes >=5) ======
+function updateCharacterGrid() {
+  if (!container) return;
+  const is3 = revealedCount >= 5;
+  container.classList.toggle("grid-3", is3);
+  container.classList.toggle("grid-2", !is3);
+}
+
 // ====== Custom UI init ======
 function initCustomUI() {
   function syncLabels() {
@@ -199,11 +224,10 @@ function initCustomUI() {
     yearMinValEl.textContent = yearMinEl.value;
     yearMaxValEl.textContent = yearMaxEl.value;
 
-    // ✅ fill bleu sur toutes les barres
-    paintRange(popEl);
-    paintRange(scoreEl);
-    paintRange(yearMinEl);
-    paintRange(yearMaxEl);
+    setRangePct(popEl);
+    setRangePct(scoreEl);
+    setRangePct(yearMinEl);
+    setRangePct(yearMaxEl);
 
     updatePreview();
   }
@@ -223,7 +247,7 @@ function initCustomUI() {
     filteredAnimes = applyFilters();
     if (filteredAnimes.length === 0) return;
 
-    totalRounds = clampInt(parseInt(roundCountEl.value || "5", 10), 1, 50);
+    totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
     currentRound = 1;
     totalScore = 0;
 
@@ -296,6 +320,8 @@ function resetRoundUI() {
   timerDisplay.textContent = "";
 
   revealedCount = 0;
+  updateCharacterGrid();
+
   gameEnded = false;
 
   input.value = "";
@@ -317,7 +343,7 @@ function startNewRound() {
   resetRoundUI();
 
   currentAnime = filteredAnimes[Math.floor(Math.random() * filteredAnimes.length)];
-  visibleCharacters = pick6CharactersBalanced(currentAnime.characters);
+  visibleCharacters = pick6CharactersByCategories(currentAnime.characters);
 
   visibleCharacters.forEach((char, i) => {
     const img = document.createElement("img");
@@ -340,6 +366,7 @@ function revealNextCharacter() {
     if (img) img.style.display = "block";
     revealedCount++;
 
+    updateCharacterGrid();
     setScoreBar(currentPotentialScore());
     resetTimer();
   } else {
@@ -378,10 +405,13 @@ function endRound(roundScore, won, messageHtml) {
   clearInterval(countdownInterval);
   countdownInterval = null;
 
+  // afficher tous les persos restants
   for (let i = 0; i < visibleCharacters.length; i++) {
     const img = document.getElementById("char-" + i);
     if (img) img.style.display = "block";
   }
+  revealedCount = visibleCharacters.length;
+  updateCharacterGrid();
 
   input.disabled = true;
   submitBtn.disabled = true;
@@ -433,9 +463,7 @@ function showFinalRecap() {
       </button>
     </div>
   `;
-  document.getElementById("backToSettings").onclick = () => {
-    window.location.reload();
-  };
+  document.getElementById("backToSettings").onclick = () => window.location.reload();
 }
 
 // ====== Guess logic ======
@@ -516,7 +544,7 @@ input.addEventListener("keydown", (e) => {
 
 submitBtn.addEventListener("click", checkGuess);
 
-// ====== Tooltip (icône info) ======
+// ====== Tooltip ======
 document.addEventListener("click", (e) => {
   const icon = e.target.closest(".info-icon");
   if (!icon) return;
