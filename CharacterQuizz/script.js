@@ -71,31 +71,23 @@ function clampInt(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-// --- Selection personnages (reprend l’idée “ancien JS”: on évite de montrer d’emblée les + connus)
-// On prend 6 persos au hasard, puis on trie par "difficulté": on met au début ceux qui semblent moins “main”
+// --- Selection personnages
 function pick6CharactersBalanced(characters) {
   if (!Array.isArray(characters) || characters.length === 0) return [];
-  // on retire les entrées invalides
   const clean = characters.filter(c => c && typeof c.image === "string" && c.image && typeof c.name === "string");
   if (clean.length === 0) return [];
 
-  // on randomise puis on prend 6
   const pool = [...clean];
   shuffleInPlace(pool);
   const picked = pool.slice(0, Math.min(MAX_REVEALS, pool.length));
 
-  // Heuristique simple: pénaliser les noms "très courts" / ultra connus (souvent juste "Levi", "Naruto", etc.)
-  // => on met plutôt ces persos vers la fin. (On reste 100% sur `characters`, pas `top_characters`.)
   const scoreName = (name) => {
     const n = (name || "").trim();
     const len = n.length;
     const words = n.split(/\s+/).filter(Boolean).length;
-    // plus c’est “court/simple”, plus ça semble connu => score plus faible
-    // on veut les scores faibles PLUS TARD, donc on trie croissant -> puis on inverse
     return (len * 2) + (words * 6);
   };
 
-  // On veut commencer par “moins évidents” => scores plus élevés d’abord
   picked.sort((a, b) => scoreName(b.name) - scoreName(a.name));
   return picked;
 }
@@ -178,7 +170,6 @@ function setScoreBar(score) {
 }
 
 function currentPotentialScore() {
-  // revealedCount inclut le perso déjà affiché : score = 3000 - (revealedCount-1)*500
   const malus = Math.max(0, (revealedCount - 1) * REVEAL_STEP);
   return Math.max(MAX_SCORE - malus, 0);
 }
@@ -196,7 +187,6 @@ function initCustomUI() {
 
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
 
-  // type pills
   document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -230,7 +220,6 @@ function applyFilters() {
   const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
-  // 1) base filter (year/type + doit avoir des characters)
   let pool = allAnimes.filter((a) => {
     return (
       a._year >= yearMin &&
@@ -243,15 +232,12 @@ function applyFilters() {
 
   if (pool.length === 0) return [];
 
-  // 2) top pop% par members
   pool.sort((a, b) => b._members - a._members);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-  // 3) top score% par score
   pool.sort((a, b) => b._score - a._score);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  // Nettoyage final: éviter les titres sans images valides
   pool = pool.filter(a => {
     const chars = Array.isArray(a.characters) ? a.characters : [];
     return chars.some(c => c && c.image && typeof c.image === "string");
@@ -309,7 +295,6 @@ function startNewRound() {
   currentAnime = filteredAnimes[Math.floor(Math.random() * filteredAnimes.length)];
   visibleCharacters = pick6CharactersBalanced(currentAnime.characters);
 
-  // crée les images (cachées)
   visibleCharacters.forEach((char, i) => {
     const img = document.createElement("img");
     img.src = char.image;
@@ -320,7 +305,6 @@ function startNewRound() {
     container.appendChild(img);
   });
 
-  // reveal 1er perso
   revealNextCharacter();
 }
 
@@ -335,8 +319,7 @@ function revealNextCharacter() {
     setScoreBar(currentPotentialScore());
     resetTimer();
   } else {
-    // plus rien à révéler -> fin par timeout logique
-    resetTimer(); // garde le timer, mais on gère à 0
+    resetTimer();
   }
 }
 
@@ -353,11 +336,9 @@ function resetTimer() {
 
       if (gameEnded) return;
 
-      // si tout révélé => perdu
       if (revealedCount >= visibleCharacters.length) {
         loseRound("⏰ Temps écoulé !");
       } else {
-        // sinon on révèle un nouveau perso
         revealNextCharacter();
       }
       return;
@@ -373,27 +354,22 @@ function endRound(roundScore, won, messageHtml) {
   clearInterval(countdownInterval);
   countdownInterval = null;
 
-  // afficher tous les persos restants
   for (let i = 0; i < visibleCharacters.length; i++) {
     const img = document.getElementById("char-" + i);
     if (img) img.style.display = "block";
   }
 
-  // bloc input
   input.disabled = true;
   submitBtn.disabled = true;
   suggestions.innerHTML = "";
 
   setScoreBar(roundScore);
 
-  // message
   feedback.innerHTML = messageHtml;
   feedback.className = won ? "success" : "error";
 
-  // score total
   totalScore += roundScore;
 
-  // bouton next / end
   restartBtn.style.display = "inline-block";
   restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
 
@@ -421,7 +397,6 @@ function loseRound(prefix) {
 }
 
 function showFinalRecap() {
-  // on reste dans game-panel mais on remplace le contenu
   const gameContainer = document.getElementById("container");
   gameContainer.innerHTML = `
     <div style="width:100%;max-width:520px;text-align:center;">
@@ -435,8 +410,6 @@ function showFinalRecap() {
     </div>
   `;
   document.getElementById("backToSettings").onclick = () => {
-    // reset simple: recharger la page = safe pour remettre DOM initial
-    // (si tu préfères sans reload, dis-moi et je le fais)
     window.location.reload();
   };
 }
@@ -463,7 +436,6 @@ function checkGuess() {
     return;
   }
 
-  // mauvais: révèle 1 perso (si possible)
   feedback.textContent = "❌ Mauvaise réponse.";
   feedback.className = "error";
 
@@ -493,7 +465,6 @@ input.addEventListener("input", function () {
 
   if (!val) return;
 
-  // titres uniques sur base filtrée
   const titles = [...new Set(filteredAnimes.map(a => a._title))];
   const matches = titles.filter(t => t.toLowerCase().includes(val)).slice(0, 7);
 
@@ -510,7 +481,6 @@ input.addEventListener("input", function () {
     suggestions.appendChild(div);
   });
 
-  // enable si match exact
   submitBtn.disabled = !titles.map(t => t.toLowerCase()).includes(val);
 });
 
@@ -522,7 +492,7 @@ input.addEventListener("keydown", (e) => {
 
 submitBtn.addEventListener("click", checkGuess);
 
-// ====== Tooltip (icône info) ======
+// ====== Tooltip ======
 document.addEventListener("click", (e) => {
   const icon = e.target.closest(".info-icon");
   if (!icon) return;
@@ -603,4 +573,3 @@ fetch("../data/licenses_only.json")
     showCustomization();
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
-
