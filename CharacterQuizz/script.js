@@ -1,22 +1,8 @@
-/**********************
- * Character Quizz
- * - Dataset: ../data/licenses_only.json
- * - Personnalisation: popularité/score/années/types + rounds
- * - Utilise uniquement "characters"
- * - 6 persos révélés progressivement (timer + essai)
- * - Score: 3000 puis -500 par perso révélé (min 0)
- *
- * ✅ Sélection persos:
- * `characters` est supposé trié du moins connu -> plus connu.
- * On découpe en 6 catégories et on pick 1 perso random par catégorie (Cat1 -> Cat6).
- **********************/
-
 const MAX_SCORE = 3000;
 const REVEAL_STEP = 500;
 const REVEAL_INTERVAL_SEC = 8;
 const MAX_REVEALS = 6;
 
-// ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
   window.location.href = "../index.html";
 });
@@ -30,7 +16,6 @@ window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
 });
 
-// ====== Helpers ======
 function getDisplayTitle(a) {
   return (
     a.title_english ||
@@ -61,73 +46,67 @@ function clampYearSliders() {
   }
 }
 
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 function clampInt(n, a, b) {
   n = Number.isFinite(n) ? n : a;
   return Math.max(a, Math.min(b, n));
 }
 
-function isValidCharacter(c) {
-  return !!(
-    c &&
-    typeof c.name === "string" &&
-    c.name.trim() &&
-    typeof c.image === "string" &&
-    c.image.trim()
-  );
+function randomPick(arr) {
+  if (!arr || arr.length === 0) return null;
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function countValidCharacters(chars) {
-  if (!Array.isArray(chars)) return 0;
-  let n = 0;
-  for (const c of chars) if (isValidCharacter(c)) n++;
-  return n;
-}
-
-// ✅ 6 catégories (du moins connu -> plus connu), 1 random par catégorie dans l’ordre
-function pick6CharactersByCategories(characters) {
+/* 6 catégories (du moins connu au plus connu) */
+function pick6CharactersByBuckets(characters) {
   if (!Array.isArray(characters) || characters.length === 0) return [];
 
-  const clean = characters.filter(isValidCharacter);
+  const clean = characters.filter(
+    (c) => c && typeof c.name === "string" && c.name && typeof c.image === "string" && c.image
+  );
   if (clean.length === 0) return [];
 
-  if (clean.length <= MAX_REVEALS) return clean.slice(0, clean.length);
+  const bucketsCount = MAX_REVEALS;
 
-  const total = clean.length;
-  const tiers = MAX_REVEALS;
+  if (clean.length <= bucketsCount) {
+    const tmp = [...clean];
+    shuffleInPlace(tmp);
+    return tmp.slice(0, bucketsCount);
+  }
 
-  const base = Math.floor(total / tiers);
-  const rem = total % tiers;
+  const base = Math.floor(clean.length / bucketsCount);
+  const remainder = clean.length % bucketsCount;
 
   const buckets = [];
   let idx = 0;
-  for (let i = 0; i < tiers; i++) {
-    const size = base + (i < rem ? 1 : 0);
+  for (let i = 0; i < bucketsCount; i++) {
+    const size = base + (i < remainder ? 1 : 0);
     buckets.push(clean.slice(idx, idx + size));
     idx += size;
   }
 
   const picked = [];
   for (let i = 0; i < buckets.length; i++) {
-    const bucket = buckets[i];
-    if (!bucket || bucket.length === 0) continue;
-    const choice = bucket[Math.floor(Math.random() * bucket.length)];
-    picked.push(choice);
-    if (picked.length >= MAX_REVEALS) break;
+    const p = randomPick(buckets[i]);
+    if (p) picked.push(p);
   }
 
-  if (picked.length < MAX_REVEALS) {
-    const used = new Set(picked.map(p => p.image));
-    const rest = clean.filter(c => !used.has(c.image));
-    while (picked.length < MAX_REVEALS && rest.length) {
-      const k = Math.floor(Math.random() * rest.length);
-      picked.push(rest.splice(k, 1)[0]);
-    }
+  while (picked.length < bucketsCount) {
+    const extra = randomPick(clean);
+    if (extra) picked.push(extra);
   }
 
-  return picked;
+  return picked.slice(0, bucketsCount);
 }
 
-// ====== DOM refs ======
+/* DOM */
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
 
@@ -145,7 +124,6 @@ const previewCountEl = document.getElementById("previewCount");
 const applyBtn = document.getElementById("applyFiltersBtn");
 const roundCountEl = document.getElementById("roundCount");
 
-// game refs
 const container = document.getElementById("character-container");
 const feedback = document.getElementById("feedback");
 const timerDisplay = document.getElementById("timer");
@@ -155,20 +133,19 @@ const restartBtn = document.getElementById("restart-btn");
 const suggestions = document.getElementById("suggestions");
 const roundLabel = document.getElementById("roundLabel");
 
-// score bar
 const scoreBar = document.getElementById("score-bar");
 const scoreBarLabel = document.getElementById("score-bar-label");
 
-// ====== Data ======
+/* Data */
 let allAnimes = [];
 let filteredAnimes = [];
 
-// ====== Session (Rounds) ======
-let totalRounds = 5;
+/* Session */
+let totalRounds = 1;  // ✅ défaut = 1
 let currentRound = 1;
 let totalScore = 0;
 
-// ====== Round state ======
+/* Round state */
 let currentAnime = null;
 let visibleCharacters = [];
 let revealedCount = 0;
@@ -177,7 +154,6 @@ let gameEnded = false;
 let countdown = REVEAL_INTERVAL_SEC;
 let countdownInterval = null;
 
-// ====== UI show/hide ======
 function showCustomization() {
   customPanel.style.display = "block";
   gamePanel.style.display = "none";
@@ -187,7 +163,6 @@ function showGame() {
   gamePanel.style.display = "block";
 }
 
-// ====== Score bar ======
 function getScoreBarColor(score) {
   if (score >= 2500) return "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
   if (score >= 1500) return "linear-gradient(90deg,#fff96a,#ffc34b 90%)";
@@ -209,7 +184,6 @@ function currentPotentialScore() {
   return Math.max(MAX_SCORE - malus, 0);
 }
 
-// ====== Custom UI init ======
 function initCustomUI() {
   function syncLabels() {
     clampYearSliders();
@@ -222,7 +196,6 @@ function initCustomUI() {
 
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
 
-  // type pills
   document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -235,8 +208,8 @@ function initCustomUI() {
     filteredAnimes = applyFilters();
     if (filteredAnimes.length === 0) return;
 
-    // ✅ (1 à 100)
-    totalRounds = clampInt(parseInt(roundCountEl.value || "5", 10), 1, 100);
+    // ✅ 1 à 100, défaut = 1
+    totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
     currentRound = 1;
     totalScore = 0;
 
@@ -247,7 +220,6 @@ function initCustomUI() {
   syncLabels();
 }
 
-// ====== Filters ======
 function applyFilters() {
   const popPercent = parseInt(popEl.value, 10);
   const scorePercent = parseInt(scoreEl.value, 10);
@@ -263,7 +235,7 @@ function applyFilters() {
       a._year <= yearMax &&
       allowedTypes.includes(a._type) &&
       Array.isArray(a.characters) &&
-      countValidCharacters(a.characters) >= MAX_REVEALS
+      a.characters.length > 0
     );
   });
 
@@ -275,12 +247,10 @@ function applyFilters() {
   pool.sort((a, b) => b._score - a._score);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  pool = pool.filter(a => countValidCharacters(a.characters) >= MAX_REVEALS);
-
+  pool = pool.filter((a) => (a.characters || []).some((c) => c && c.image));
   return pool;
 }
 
-// ====== Preview ======
 function updatePreview() {
   const pool = applyFilters();
   const ok = pool.length > 0;
@@ -293,10 +263,8 @@ function updatePreview() {
   previewCountEl.classList.toggle("bad", !ok);
 
   applyBtn.disabled = !ok;
-  applyBtn.classList.toggle("disabled", !ok);
 }
 
-// ====== Game flow ======
 function resetRoundUI() {
   if (roundLabel) roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
 
@@ -313,7 +281,7 @@ function resetRoundUI() {
   submitBtn.disabled = true;
 
   restartBtn.style.display = "none";
-  restartBtn.textContent = (currentRound < totalRounds) ? "Suivant" : "Terminer";
+  restartBtn.textContent = currentRound < totalRounds ? "Suivant" : "Terminer";
 
   suggestions.innerHTML = "";
 
@@ -327,7 +295,7 @@ function startNewRound() {
   resetRoundUI();
 
   currentAnime = filteredAnimes[Math.floor(Math.random() * filteredAnimes.length)];
-  visibleCharacters = pick6CharactersByCategories(currentAnime.characters);
+  visibleCharacters = pick6CharactersByBuckets(currentAnime.characters);
 
   visibleCharacters.forEach((char, i) => {
     const img = document.createElement("img");
@@ -381,10 +349,75 @@ function resetTimer() {
   }, 1000);
 }
 
-// ====== End round ======
+function normalizeTitle(s) {
+  return (s || "").trim().toLowerCase();
+}
+
+function checkGuess() {
+  if (!currentAnime || gameEnded) return;
+
+  const guess = input.value.trim();
+  if (!guess) {
+    feedback.textContent = "⚠️ Tu dois écrire un nom d'anime.";
+    feedback.className = "error";
+    return;
+  }
+
+  const ok = normalizeTitle(guess) === normalizeTitle(currentAnime._title);
+  if (ok) return winRound();
+
+  feedback.textContent = "❌ Mauvaise réponse.";
+  feedback.className = "error";
+
+  input.value = "";
+  submitBtn.disabled = true;
+  input.focus();
+  suggestions.innerHTML = "";
+
+  clearInterval(countdownInterval);
+  countdownInterval = null;
+
+  if (revealedCount < visibleCharacters.length) revealNextCharacter();
+  else loseRound("❌ Mauvaise réponse.");
+}
+
+submitBtn.addEventListener("click", checkGuess);
+
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) checkGuess();
+});
+
+input.addEventListener("input", function () {
+  if (gameEnded) return;
+
+  const val = this.value.toLowerCase().trim();
+  suggestions.innerHTML = "";
+  feedback.textContent = "";
+  submitBtn.disabled = true;
+
+  if (!val) return;
+
+  const titles = [...new Set(filteredAnimes.map((a) => a._title))];
+  const matches = titles.filter((t) => t.toLowerCase().includes(val)).slice(0, 7);
+
+  matches.forEach((title) => {
+    const div = document.createElement("div");
+    div.innerHTML = `<span>${title.replace(new RegExp(val, "i"), (m) => `<b>${m}</b>`)}</span>`;
+    div.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      input.value = title;
+      suggestions.innerHTML = "";
+      submitBtn.disabled = false;
+      input.focus();
+    });
+    suggestions.appendChild(div);
+  });
+
+  submitBtn.disabled = !titles.map((t) => t.toLowerCase()).includes(val);
+});
+
 function endRound(roundScore, won, messageHtml) {
   gameEnded = true;
-
   clearInterval(countdownInterval);
   countdownInterval = null;
 
@@ -405,12 +438,11 @@ function endRound(roundScore, won, messageHtml) {
   totalScore += roundScore;
 
   restartBtn.style.display = "inline-block";
-  restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
+  restartBtn.textContent = currentRound < totalRounds ? "Round suivant" : "Voir le score total";
 
   restartBtn.onclick = () => {
-    if (currentRound >= totalRounds) {
-      showFinalRecap();
-    } else {
+    if (currentRound >= totalRounds) showFinalRecap();
+    else {
       currentRound += 1;
       startNewRound();
     }
@@ -419,8 +451,6 @@ function endRound(roundScore, won, messageHtml) {
 
 function winRound() {
   const score = currentPotentialScore();
-  if (score > 0) launchFireworks();
-
   const msg = `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>Score : <b>${score}</b> / ${MAX_SCORE}`;
   endRound(score, true, msg);
 }
@@ -446,142 +476,22 @@ function showFinalRecap() {
   document.getElementById("backToSettings").onclick = () => window.location.reload();
 }
 
-// ====== Guess logic ======
-function normalizeTitle(s) {
-  return (s || "").trim().toLowerCase();
-}
-
-function checkGuess() {
-  if (!currentAnime || gameEnded) return;
-
-  const guess = input.value.trim();
-  if (!guess) {
-    feedback.textContent = "⚠️ Tu dois écrire un nom d'anime.";
-    feedback.className = "error";
-    return;
-  }
-
-  const ok = normalizeTitle(guess) === normalizeTitle(currentAnime._title);
-
-  if (ok) {
-    winRound();
-    return;
-  }
-
-  feedback.textContent = "❌ Mauvaise réponse.";
-  feedback.className = "error";
-
-  input.value = "";
-  submitBtn.disabled = true;
-  input.focus();
-  suggestions.innerHTML = "";
-
-  clearInterval(countdownInterval);
-  countdownInterval = null;
-
-  if (revealedCount < visibleCharacters.length) {
-    revealNextCharacter();
-  } else {
-    loseRound("❌ Mauvaise réponse.");
-  }
-}
-
-// ====== Autocomplete ======
-input.addEventListener("input", function () {
-  if (gameEnded) return;
-
-  const val = this.value.toLowerCase().trim();
-  suggestions.innerHTML = "";
-  feedback.textContent = "";
-  submitBtn.disabled = true;
-
-  if (!val) return;
-
-  const titles = [...new Set(filteredAnimes.map(a => a._title))];
-  const matches = titles.filter(t => t.toLowerCase().includes(val)).slice(0, 7);
-
-  matches.forEach((title) => {
-    const div = document.createElement("div");
-    div.innerHTML = `<span>${title.replace(new RegExp(val, "i"), (m) => `<b>${m}</b>`)}</span>`;
-    div.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      input.value = title;
-      suggestions.innerHTML = "";
-      submitBtn.disabled = false;
-      input.focus();
-    });
-    suggestions.appendChild(div);
-  });
-
-  submitBtn.disabled = !titles.map(t => t.toLowerCase()).includes(val);
-});
-
-input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) checkGuess();
-});
-
-submitBtn.addEventListener("click", checkGuess);
-
-// ====== Tooltip ======
+/* Tooltip open/close */
 document.addEventListener("click", (e) => {
   const icon = e.target.closest(".info-icon");
   if (!icon) return;
-
   e.preventDefault();
   e.stopPropagation();
-
   const wrap = icon.closest(".info-wrap");
   if (wrap) wrap.classList.toggle("open");
 });
-
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
     document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
   }
 });
 
-// ====== Fireworks ======
-function launchFireworks() {
-  const canvas = document.getElementById("fireworks");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-
-  const particles = [];
-  function createParticle(x, y) {
-    const angle = Math.random() * 2 * Math.PI;
-    const speed = Math.random() * 5 + 2;
-    return { x, y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 60 };
-  }
-  for (let i = 0; i < 80; i++) particles.push(createParticle(canvas.width / 2, canvas.height / 2));
-
-  function animate() {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    particles.forEach((p) => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-      ctx.fillStyle = `hsl(${Math.random() * 360}, 100%, 50%)`;
-      ctx.fill();
-      p.x += p.dx;
-      p.y += p.dy;
-      p.dy += 0.05;
-      p.life--;
-    });
-
-    for (let i = particles.length - 1; i >= 0; i--) {
-      if (particles[i].life <= 0) particles.splice(i, 1);
-    }
-
-    if (particles.length > 0) requestAnimationFrame(animate);
-    else ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
-  animate();
-}
-
-// ====== Load dataset ======
+/* Load dataset */
 fetch("../data/licenses_only.json")
   .then((r) => r.json())
   .then((data) => {
