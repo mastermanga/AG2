@@ -1,79 +1,49 @@
 // =======================
-// Anime Tournament — script.js (mis à jour)
-// - Panel OU jeu (jamais les deux) via body.game-started
-// - Fix year (season -> year)
-// - UI personnalisation type Anidle
-// - Vote anime cliquable
-// - Chargement vidéo robuste
+// Anime Tournament — script.js (COMPLET + MODIFIÉ)
+// - Fix "0 titres dispo" (le JSON n'a pas "year" => on le calcule depuis season)
+// - Personnalisation robuste (types sécurisés TV+Movie si rien)
+// - Preview fiable + bouton disabled si pool insuffisant
+// - Affiche soit personnalisation soit jeu (classe body.game-started)
+// - Matchs en 2 colonnes (CSS) + vote sur le TITRE uniquement
+// - Vidéos: loadVideoWithRetry amélioré (6 essais 0/2/4/6/8/10), anti-timeout, anti-stall,
+//          + autoplay uniquement sur la vidéo de gauche (muted pour passer les restrictions)
+// - Nettoyage des vidéos pour éviter le lag réseau quand on change de match
+// - Fin de tournoi + classement simple (winner + éliminations)
 // =======================
 
+// =======================
+// CONFIG
+// =======================
 const DATA_URL = "../data/licenses_only.json";
 const TOTAL_MATCH_ITEMS = 32;
-const MIN_REQUIRED = 64;
 
-const ROUNDS_MIN = 1;
-const ROUNDS_MAX = 100;
+// Min de base pour être "confortable" (et éviter les pools trop petits)
+const MIN_REQUIRED_TITLES = 64; // pour le mode Anime
+const MIN_REQUIRED_SONGS = 64;  // pour le mode Openings (base avant buildSongs)
+
+// retries vidéos
+const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
+const LOAD_TIMEOUT_MS = 6000;
 
 // =======================
 // GLOBAL STATE
 // =======================
 let ALL_TITLES = [];
-let items = [];
-let mode = "anime"; // "anime" | "songs"
+let items = [];              // 32 items sélectionnés (animes OU songs)
+let mode = "anime";          // "anime" | "opening"
 
 let losses = [];
+let eliminationOrder = [];   // indices (dans items) éliminés à la 2e défaite
 let aliveWB = [];
 let aliveLB = [];
-let eliminationOrder = [];
+
 let roundNumber = 1;
 let roundMatches = [];
 let roundMatchIndex = 0;
 let currentMatch = null;
 
 // =======================
-// UI TOGGLE (perso vs jeu)
-// =======================
-function showCustomization() {
-  document.body.classList.remove("game-started");
-}
-
-function showGame() {
-  document.body.classList.add("game-started");
-}
-
-// =======================
-// BASIC UI
-// =======================
-document.getElementById("back-to-menu").onclick = () => {
-  window.location.href = "../index.html";
-};
-
-document.getElementById("themeToggle").onclick = () => {
-  document.body.classList.toggle("light");
-  localStorage.setItem(
-    "theme",
-    document.body.classList.contains("light") ? "light" : "dark"
-  );
-};
-
-if (localStorage.getItem("theme") === "light") {
-  document.body.classList.add("light");
-}
-
-// Tooltip (clic)
-document.addEventListener("pointerdown", (e) => {
-  const wrap = e.target.closest(".info-wrap");
-  if (wrap && e.target.closest(".info-icon")) {
-    e.preventDefault();
-    e.stopPropagation();
-    wrap.classList.toggle("open");
-    return;
-  }
-  document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
-});
-
-// =======================
-// HELPERS (normalisation)
+// HELPERS DATA
 // =======================
 function getDisplayTitle(a) {
   return (
@@ -86,27 +56,14 @@ function getDisplayTitle(a) {
   );
 }
 
-function parseYearFromSeason(seasonStr) {
-  const s = String(seasonStr || "").trim();
+function getYearFromSeason(a) {
+  // season: "spring 2013"
+  const s = String(a.season || "").trim();
   if (!s) return 0;
-  const m = s.match(/(19\d{2}|20\d{2})/);
-  return m ? parseInt(m[1], 10) : 0;
-}
-
-function getYear(a) {
-  let y = parseYearFromSeason(a.season);
-  if (y) return y;
-
-  const lists = [
-    ...(a.song?.openings || []),
-    ...(a.song?.endings || []),
-    ...(a.song?.inserts || []),
-  ];
-  for (const s of lists) {
-    const yy = parseYearFromSeason(s?.season);
-    if (yy) return yy;
-  }
-  return 0;
+  const parts = s.split(/\s+/);
+  // si "spring 2013" => parts[1] = 2013
+  const y = parseInt(parts[1] || parts[0] || "0", 10);
+  return Number.isFinite(y) ? y : 0;
 }
 
 function clampYearSliders() {
@@ -126,16 +83,6 @@ function clampYearSliders() {
   }
 }
 
-function clampRoundsValue() {
-  const el = document.getElementById("roundCount");
-  if (!el) return 1;
-  let v = parseInt(el.value, 10);
-  if (!Number.isFinite(v) || v < ROUNDS_MIN) v = ROUNDS_MIN;
-  if (v > ROUNDS_MAX) v = ROUNDS_MAX;
-  el.value = String(v);
-  return v;
-}
-
 function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -144,9 +91,166 @@ function shuffle(a) {
   return a;
 }
 
-function setPillActive(btn, isActive) {
-  btn.classList.toggle("active", !!isActive);
-  btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+// =======================
+// BASIC UI
+// =======================
+document.getElementById("back-to-menu")?.addEventListener("click", () => {
+  window.location.href = "../index.html";
+});
+
+document.getElementById("themeToggle")?.addEventListener("click", () => {
+  document.body.classList.toggle("light");
+  localStorage.setItem(
+    "theme",
+    document.body.classList.contains("light") ? "light" : "dark"
+  );
+});
+
+window.addEventListener("DOMContentLoaded", () => {
+  if (localStorage.getItem("theme") === "light") {
+    document.body.classList.add("light");
+  }
+});
+
+// Tooltip aide (clic mobile)
+document.addEventListener("pointerdown", (e) => {
+  const wrap = e.target.closest(".info-wrap");
+
+  if (wrap && e.target.closest(".info-icon")) {
+    e.preventDefault();
+    e.stopPropagation();
+    wrap.classList.toggle("open");
+    return;
+  }
+
+  document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
+});
+
+// =======================
+// PANEL vs GAME
+// =======================
+function showCustomization() {
+  document.body.classList.remove("game-started");
+
+  // fallback si ton HTML n’a pas #game-panel
+  const custom = document.getElementById("custom-panel");
+  if (custom) custom.style.display = "";
+
+  const gameEls = [
+    document.getElementById("round-indicator"),
+    document.getElementById("duel-container"),
+    document.getElementById("next-match-btn"),
+    document.getElementById("classement"),
+  ];
+  gameEls.forEach((el) => {
+    if (el) el.style.display = "none";
+  });
+}
+
+function showGame() {
+  document.body.classList.add("game-started");
+
+  // fallback si ton HTML n’a pas #game-panel
+  const custom = document.getElementById("custom-panel");
+  if (custom) custom.style.display = "none";
+
+  const duel = document.getElementById("duel-container");
+  if (duel) duel.style.display = "";
+
+  const roundBox = document.getElementById("round-indicator");
+  if (roundBox) roundBox.style.display = "";
+
+  const classement = document.getElementById("classement");
+  if (classement) classement.style.display = "none";
+
+  const replay = document.getElementById("next-match-btn");
+  if (replay) replay.style.display = "none";
+}
+
+// =======================
+// MODE SWITCH (boutons existants)
+/// + support optionnel d’un mode pills (#modePills comme Anidle)
+// =======================
+document.getElementById("mode-anime")?.addEventListener("click", () => switchMode("anime"));
+document.getElementById("mode-opening")?.addEventListener("click", () => switchMode("opening"));
+
+function syncModeButtons() {
+  const bAnime = document.getElementById("mode-anime");
+  const bOpen = document.getElementById("mode-opening");
+
+  if (bAnime) {
+    bAnime.classList.toggle("active", mode === "anime");
+    bAnime.setAttribute("aria-pressed", mode === "anime" ? "true" : "false");
+  }
+  if (bOpen) {
+    bOpen.classList.toggle("active", mode === "opening");
+    bOpen.setAttribute("aria-pressed", mode === "opening" ? "true" : "false");
+  }
+
+  // format data-mode (si tu ajoutes le visuel comme Anidle)
+  document.querySelectorAll("#modePills .pill[data-mode]").forEach((btn) => {
+    const m = btn.dataset.mode;
+    const on = m === mode;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+
+function initModePillsIfAny() {
+  const pills = Array.from(document.querySelectorAll("#modePills .pill[data-mode]"));
+  if (!pills.length) return;
+
+  pills.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const m = btn.dataset.mode;
+      if (!m || m === mode) return;
+      switchMode(m);
+    });
+  });
+
+  syncModeButtons();
+}
+
+function switchMode(m) {
+  if (mode === m) return;
+  mode = m;
+  syncModeButtons();
+  resetTournament();
+  refreshPreview();
+}
+
+// =======================
+// DEFAULT UI VALUES
+// =======================
+function setDefaultUI() {
+  const pop = document.getElementById("popPercent");
+  const score = document.getElementById("scorePercent");
+  const yMin = document.getElementById("yearMin");
+  const yMax = document.getElementById("yearMax");
+
+  if (pop) pop.value = "25";
+  if (score) score.value = "25";
+  if (yMin) yMin.value = "2000";
+  if (yMax) yMax.value = "2026";
+
+  const o = document.getElementById("incOpenings");
+  const e = document.getElementById("incEndings");
+  const i = document.getElementById("incInserts");
+  if (o) o.checked = true;
+  if (e) e.checked = false;
+  if (i) i.checked = false;
+
+  // ✅ défaut: TV + Movie (comme Anidle)
+  const pills = Array.from(document.querySelectorAll("#typePills .pill"));
+  if (pills.length) {
+    pills.forEach((b) => {
+      const t = b.dataset.type;
+      const on = t === "TV" || t === "Movie";
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
 }
 
 function ensureDefaultTypes() {
@@ -156,21 +260,168 @@ function ensureDefaultTypes() {
   const active = pills.filter((b) => b.classList.contains("active"));
   if (active.length > 0) return;
 
+  // sécurité: si rien => TV + Movie
   pills.forEach((b) => {
     const t = b.dataset.type;
-    const should = t === "TV" || t === "Movie";
-    setPillActive(b, should);
+    const on = t === "TV" || t === "Movie";
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
   });
 }
 
-function ensureDefaultSongKinds() {
-  const pills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
-  if (!pills.length) return;
+// =======================
+// UI READ
+// =======================
+function readOptions() {
+  clampYearSliders();
+  ensureDefaultTypes();
 
-  const active = pills.filter((b) => b.classList.contains("active"));
-  if (active.length > 0) return;
+  const popEl = document.getElementById("popPercent");
+  const scoreEl = document.getElementById("scorePercent");
+  const yMinEl = document.getElementById("yearMin");
+  const yMaxEl = document.getElementById("yearMax");
 
-  pills.forEach((b) => setPillActive(b, b.dataset.song === "opening"));
+  const pop = (parseInt(popEl?.value || "25", 10) || 25) / 100;
+  const score = (parseInt(scoreEl?.value || "25", 10) || 25) / 100;
+  const yMin = parseInt(yMinEl?.value || "2000", 10) || 0;
+  const yMax = parseInt(yMaxEl?.value || "2026", 10) || 9999;
+
+  const popVal = document.getElementById("popPercentVal");
+  const scoreVal = document.getElementById("scorePercentVal");
+  const yMinVal = document.getElementById("yearMinVal");
+  const yMaxVal = document.getElementById("yearMaxVal");
+
+  if (popVal) popVal.textContent = String(Math.round(pop * 100));
+  if (scoreVal) scoreVal.textContent = String(Math.round(score * 100));
+  if (yMinVal) yMinVal.textContent = String(yMin);
+  if (yMaxVal) yMaxVal.textContent = String(yMax);
+
+  const types = new Set(
+    [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type)
+  );
+
+  return {
+    pop,
+    score,
+    yMin,
+    yMax,
+    types,
+    incOP: !!document.getElementById("incOpenings")?.checked,
+    incED: !!document.getElementById("incEndings")?.checked,
+    incIN: !!document.getElementById("incInserts")?.checked,
+  };
+}
+
+// =======================
+// FILTER TITLES
+// =======================
+function filterTitles(data, o) {
+  let arr = [...data];
+
+  // 1) Top popularité
+  arr.sort((a, b) => b._members - a._members);
+  arr = arr.slice(0, Math.ceil(arr.length * o.pop));
+
+  // 2) Top score
+  arr.sort((a, b) => b._score - a._score);
+  arr = arr.slice(0, Math.ceil(arr.length * o.score));
+
+  // 3) type + années
+  arr = arr.filter((a) => o.types.has(a._type) && a._year >= o.yMin && a._year <= o.yMax);
+
+  return arr;
+}
+
+// =======================
+// BUILD SONGS
+// =======================
+function buildSongs(titles, o) {
+  const tracks = [];
+
+  const addList = (baseTitle, list, kind) => {
+    (list || []).forEach((s) => {
+      if (!s?.video) return;
+      tracks.push({
+        video: s.video,
+        label: `${baseTitle} ${kind} ${s.number ?? ""} : ${s.name ?? ""}${
+          s.artists?.length ? " by " + s.artists.join(", ") : ""
+        }`.replace(/\s+/g, " ").trim(),
+      });
+    });
+  };
+
+  titles.forEach((t) => {
+    const baseTitle = t._title || getDisplayTitle(t);
+
+    if (o.incOP) addList(baseTitle, t.song?.openings, "Opening");
+    if (o.incED) addList(baseTitle, t.song?.endings, "Ending");
+    if (o.incIN) addList(baseTitle, t.song?.inserts, "Insert");
+  });
+
+  return tracks;
+}
+
+// =======================
+// PREVIEW COUNT
+// =======================
+function refreshPreview() {
+  if (!ALL_TITLES.length) return;
+
+  const o = readOptions();
+  const titles = filterTitles(ALL_TITLES, o);
+
+  const box = document.getElementById("previewCount");
+  const btn = document.getElementById("applyFiltersBtn");
+
+  // conditions min pour pouvoir tirer 32 items
+  const minTitlesNeeded = Math.max(MIN_REQUIRED_TITLES, TOTAL_MATCH_ITEMS);
+  const minSongsNeeded = Math.max(MIN_REQUIRED_SONGS, TOTAL_MATCH_ITEMS);
+
+  if (mode === "anime") {
+    const ok = titles.length >= minTitlesNeeded;
+    if (box) {
+      box.textContent = `${titles.length} titres disponibles${ok ? " (OK)" : ` (Min ${minTitlesNeeded})`}`;
+      box.classList.toggle("good", ok);
+      box.classList.toggle("bad", !ok);
+    }
+    if (btn) btn.disabled = !ok;
+  } else {
+    const songs = buildSongs(titles, o);
+    const ok = songs.length >= minSongsNeeded;
+
+    if (box) {
+      box.textContent = `${songs.length} songs disponibles${ok ? " (OK)" : ` (Min ${minSongsNeeded})`}`;
+      box.classList.toggle("good", ok);
+      box.classList.toggle("bad", !ok);
+    }
+    if (btn) btn.disabled = !ok;
+  }
+}
+
+// =======================
+// UI EVENTS
+// =======================
+function wireCustomizationUI() {
+  // inputs
+  document.querySelectorAll("#custom-panel input")
+    .forEach((e) => e.addEventListener("input", refreshPreview));
+
+  // type pills
+  const typeWrap = document.getElementById("typePills");
+  if (typeWrap) {
+    typeWrap.addEventListener("click", (e) => {
+      const b = e.target.closest(".pill");
+      if (!b) return;
+
+      b.classList.toggle("active");
+      b.setAttribute("aria-pressed", b.classList.contains("active") ? "true" : "false");
+
+      ensureDefaultTypes();
+      refreshPreview();
+    });
+  }
+
+  document.getElementById("applyFiltersBtn")?.addEventListener("click", startGame);
 }
 
 // =======================
@@ -180,24 +431,25 @@ fetch(DATA_URL)
   .then((r) => r.json())
   .then((json) => {
     const arr = Array.isArray(json) ? json : [];
+
+    // normalise dataset (year/type/members/score + title)
     ALL_TITLES = arr.map((a) => {
       const title = getDisplayTitle(a);
-      const year = getYear(a);
       return {
         ...a,
         _title: title,
-        _year: year,
+        _year: getYearFromSeason(a),
         _members: Number.isFinite(+a.members) ? +a.members : 0,
         _score: Number.isFinite(+a.score) ? +a.score : 0,
         _type: a.type || "Unknown",
       };
     });
 
-    initPersonalisationUI();
-    updatePreview();
-    setRoundIndicatorIdle();
-
-    // ✅ au chargement : on voit la personnalisation
+    setDefaultUI();
+    initModePillsIfAny();
+    syncModeButtons();
+    wireCustomizationUI();
+    refreshPreview();
     showCustomization();
   })
   .catch((e) => {
@@ -205,227 +457,50 @@ fetch(DATA_URL)
   });
 
 // =======================
-// PERSONALISATION UI
+// START GAME
 // =======================
-function initPersonalisationUI() {
-  // Mode pills
-  document.querySelectorAll("#modePills .pill[data-mode]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const next = btn.dataset.mode;
-      if (!next || next === mode) return;
-      mode = next;
-
-      document.querySelectorAll("#modePills .pill[data-mode]").forEach((b) => {
-        setPillActive(b, b.dataset.mode === mode);
-      });
-
-      resetTournamentUI(true);
-      updatePreview();
-    });
-  });
-
-  // Ranges + labels
-  const pop = document.getElementById("popPercent");
-  const score = document.getElementById("scorePercent");
-  const yMin = document.getElementById("yearMin");
-  const yMax = document.getElementById("yearMax");
-
-  const popVal = document.getElementById("popPercentVal");
-  const scoreVal = document.getElementById("scorePercentVal");
-  const yMinVal = document.getElementById("yearMinVal");
-  const yMaxVal = document.getElementById("yearMaxVal");
-
-  function syncLabels() {
-    clampYearSliders();
-    if (popVal && pop) popVal.textContent = pop.value;
-    if (scoreVal && score) scoreVal.textContent = score.value;
-    if (yMinVal && yMin) yMinVal.textContent = yMin.value;
-    if (yMaxVal && yMax) yMaxVal.textContent = yMax.value;
-    updatePreview();
-  }
-  [pop, score, yMin, yMax].forEach((el) => el && el.addEventListener("input", syncLabels));
-
-  // Types pills
-  document.querySelectorAll("#typePills .pill[data-type]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      setPillActive(btn, !btn.classList.contains("active"));
-      ensureDefaultTypes();
-      updatePreview();
-    });
-  });
-  ensureDefaultTypes();
-
-  // Songs pills
-  document.querySelectorAll("#songPills .pill[data-song]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      setPillActive(btn, !btn.classList.contains("active"));
-      ensureDefaultSongKinds();
-      updatePreview();
-    });
-  });
-  ensureDefaultSongKinds();
-
-  // Rounds clamp
-  const roundInput = document.getElementById("roundCount");
-  if (roundInput) {
-    roundInput.addEventListener("input", () => clampRoundsValue());
-    clampRoundsValue();
-  }
-
-  // Start
-  document.getElementById("applyFiltersBtn").addEventListener("click", startGame);
-
-  syncLabels();
-}
-
-// =======================
-// READ OPTIONS + FILTERS
-// =======================
-function readOptions() {
-  clampYearSliders();
-  clampRoundsValue();
-  ensureDefaultTypes();
-  ensureDefaultSongKinds();
-
-  const popPercent = parseInt(document.getElementById("popPercent").value, 10);
-  const scorePercent = parseInt(document.getElementById("scorePercent").value, 10);
-  const yMin = parseInt(document.getElementById("yearMin").value, 10);
-  const yMax = parseInt(document.getElementById("yearMax").value, 10);
-
-  const types = new Set(
-    [...document.querySelectorAll("#typePills .pill.active[data-type]")].map((b) => b.dataset.type)
-  );
-
-  const songKinds = new Set(
-    [...document.querySelectorAll("#songPills .pill.active[data-song]")].map((b) => b.dataset.song)
-  );
-
-  return {
-    popRatio: popPercent / 100,
-    scoreRatio: scorePercent / 100,
-    yMin,
-    yMax,
-    types,
-    songKinds,
-    rounds: clampRoundsValue(),
-  };
-}
-
-function filterTitles(data, o) {
-  let arr = data
-    .filter((a) => o.types.has(a._type))
-    .filter((a) => a._year >= o.yMin && a._year <= o.yMax);
-
-  arr.sort((a, b) => b._members - a._members);
-  arr = arr.slice(0, Math.ceil(arr.length * o.popRatio));
-
-  arr.sort((a, b) => b._score - a._score);
-  arr = arr.slice(0, Math.ceil(arr.length * o.scoreRatio));
-
-  return arr;
-}
-
-function buildSongs(titles, o) {
-  const tracks = [];
-  const wantOP = o.songKinds.has("opening");
-  const wantED = o.songKinds.has("ending");
-  const wantIN = o.songKinds.has("insert");
-
-  const add = (baseTitle, list, kindLabel) => {
-    (list || []).forEach((s) => {
-      if (!s?.video) return;
-      const artists = Array.isArray(s.artists) && s.artists.length ? " by " + s.artists.join(", ") : "";
-      tracks.push({
-        video: s.video,
-        label: `${baseTitle} ${kindLabel} ${s.number ?? ""} : ${s.name ?? "Song"}${artists}`.replace(/\s+/g, " ").trim(),
-      });
-    });
-  };
-
-  titles.forEach((t) => {
-    const baseTitle = t._title || "Titre inconnu";
-    if (wantOP) add(baseTitle, t.song?.openings, "Opening");
-    if (wantED) add(baseTitle, t.song?.endings, "Ending");
-    if (wantIN) add(baseTitle, t.song?.inserts, "Insert");
-  });
-
-  return tracks;
-}
-
-// =======================
-// PREVIEW
-// =======================
-function updatePreview() {
+function startGame() {
   if (!ALL_TITLES.length) return;
 
   const o = readOptions();
   const titles = filterTitles(ALL_TITLES, o);
 
-  const box = document.getElementById("previewCount");
-  const btn = document.getElementById("applyFiltersBtn");
-
-  if (mode === "anime") {
-    const ok = titles.length >= MIN_REQUIRED;
-    box.textContent = `📚 Titres disponibles : ${titles.length} ${ok ? "(OK)" : "(Min 64)"}`;
-    box.classList.toggle("good", ok);
-    box.classList.toggle("bad", !ok);
-    btn.disabled = !ok;
+  const minTitlesNeeded = Math.max(MIN_REQUIRED_TITLES, TOTAL_MATCH_ITEMS);
+  if (mode === "anime" && titles.length < minTitlesNeeded) {
+    alert(`Pas assez de titres (${titles.length}/${minTitlesNeeded}).`);
     return;
   }
 
-  const songs = buildSongs(titles, o);
-  const ok = songs.length >= MIN_REQUIRED;
-  box.textContent = `🎵 Songs disponibles : ${songs.length} ${ok ? "(OK)" : "(Min 64)"}`;
-  box.classList.toggle("good", ok);
-  box.classList.toggle("bad", !ok);
-  btn.disabled = !ok;
-}
-
-// =======================
-// START GAME
-// =======================
-function startGame() {
-  resetTournamentUI(true);
-
-  const o = readOptions();
-  const titles = filterTitles(ALL_TITLES, o);
-
   if (mode === "anime") {
-    if (titles.length < MIN_REQUIRED) {
-      alert(`Pas assez de titres pour lancer (${titles.length}/${MIN_REQUIRED}).`);
-      return;
-    }
     const pool = shuffle([...titles]);
     items = pool.slice(0, TOTAL_MATCH_ITEMS).map((t) => ({
       image: t.image,
       title: t._title,
-      mal_id: t.mal_id,
     }));
   } else {
     const songs = buildSongs(titles, o);
-    if (songs.length < MIN_REQUIRED) {
-      alert(`Pas assez de songs pour lancer (${songs.length}/${MIN_REQUIRED}).`);
+    const minSongsNeeded = Math.max(MIN_REQUIRED_SONGS, TOTAL_MATCH_ITEMS);
+    if (songs.length < minSongsNeeded) {
+      alert(`Pas assez de songs (${songs.length}/${minSongsNeeded}).`);
       return;
     }
+
     const pool = shuffle([...songs]);
     items = pool.slice(0, TOTAL_MATCH_ITEMS);
   }
 
-  // ✅ on passe en mode jeu
+  resetTournament();
   showGame();
-
   initTournament();
-
-  // (optionnel) scroll vers le jeu
-  document.getElementById("game-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // =======================
-// TOURNAMENT CORE
+// TOURNAMENT CORE (double elim "simple")
 // =======================
 function initTournament() {
   losses = items.map(() => 0);
   eliminationOrder = [];
+
   roundNumber = 1;
   recomputePools();
   buildNextRound();
@@ -436,17 +511,40 @@ function recomputePools() {
   aliveWB = [];
   aliveLB = [];
   losses.forEach((l, i) => {
-    if (l === 0) aliveWB.push(i);
-    else if (l === 1) aliveLB.push(i);
+    if (l < 2) {
+      if (l === 0) aliveWB.push(i);
+      else aliveLB.push(i);
+    }
   });
 }
 
-function getAliveIndices() {
-  const alive = [];
+function getAliveAll() {
+  const all = [];
   losses.forEach((l, i) => {
-    if (l < 2) alive.push(i);
+    if (l < 2) all.push(i);
   });
-  return alive;
+  return all;
+}
+
+function isTournamentOver() {
+  return getAliveAll().length <= 1;
+}
+
+function buildNextRound() {
+  const m = [];
+
+  // pair dans WB puis LB
+  pair(aliveWB).forEach((p) => m.push(p));
+  pair(aliveLB).forEach((p) => m.push(p));
+
+  // ✅ cas bloquant: 1 WB + 1 LB => aucun match généré
+  if (m.length === 0) {
+    const all = getAliveAll();
+    pair(all).forEach((p) => m.push(p));
+  }
+
+  roundMatches = shuffle(m);
+  roundMatchIndex = 0;
 }
 
 function pair(pool) {
@@ -456,28 +554,37 @@ function pair(pool) {
   return r;
 }
 
-function buildNextRound() {
-  const m = [];
-  pair(aliveWB).forEach((p) => m.push(p));
-  pair(aliveLB).forEach((p) => m.push(p));
-  roundMatches = shuffle(m);
-  roundMatchIndex = 0;
+function updateRoundIndicator() {
+  const box = document.getElementById("round-indicator");
+  if (!box) return;
+
+  const totalThisRound = roundMatches.length || 0;
+  const currentIndex = Math.min(roundMatchIndex, totalThisRound);
+
+  box.textContent = `Round ${roundNumber} — Match ${currentIndex}/${totalThisRound} — Mode: ${mode === "anime" ? "Animes" : "Openings"}`;
 }
 
 function showNextMatch() {
-  const alive = getAliveIndices();
-  if (alive.length <= 1) {
-    finishTournament(alive[0]);
+  if (isTournamentOver()) {
+    finishTournament();
     return;
   }
 
   if (roundMatchIndex >= roundMatches.length) {
     roundNumber++;
     buildNextRound();
+
+    // si toujours vide mais pas over => on force un pairing global
+    if (roundMatches.length === 0 && !isTournamentOver()) {
+      const all = getAliveAll();
+      roundMatches = pair(all);
+      roundMatchIndex = 0;
+    }
   }
 
+  // sécurité
   if (!roundMatches.length) {
-    finishTournament(alive[0]);
+    finishTournament();
     return;
   }
 
@@ -487,87 +594,212 @@ function showNextMatch() {
 }
 
 // =======================
+// CLEANUP MEDIA (anti-lag réseau)
+// =======================
+function cleanupCurrentMedia() {
+  const box = document.getElementById("duel-container");
+  if (!box) return;
+
+  // stop vidéos en cours
+  box.querySelectorAll("video").forEach((v) => {
+    try {
+      v.pause();
+      v.removeAttribute("src");
+      v.load();
+    } catch {}
+  });
+}
+
+// =======================
+// VIDEO LOAD (AMÉLIORÉ) — 6 essais + timeout + mini anti-stall
+// =======================
+function waitEventOrTimeout(target, events, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+
+    const onOk = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(true);
+    };
+
+    const onFail = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error("video error"));
+    };
+
+    const t = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error("timeout"));
+    }, timeoutMs);
+
+    function cleanup() {
+      clearTimeout(t);
+      events.ok.forEach((ev) => target.removeEventListener(ev, onOk));
+      events.fail.forEach((ev) => target.removeEventListener(ev, onFail));
+    }
+
+    events.ok.forEach((ev) => target.addEventListener(ev, onOk, { once: true }));
+    events.fail.forEach((ev) => target.addEventListener(ev, onFail, { once: true }));
+  });
+}
+
+function getOrCreateStatusEl(video) {
+  const parent = video.parentElement;
+  if (!parent) return null;
+
+  let st = parent.querySelector(".videoStatus");
+  if (!st) {
+    st = document.createElement("div");
+    st.className = "videoStatus";
+    st.style.fontWeight = "900";
+    st.style.opacity = "0.9";
+    st.style.fontSize = "0.95rem";
+    parent.insertBefore(st, video.nextSibling);
+  }
+  return st;
+}
+
+async function loadVideoWithRetry(video, url, { autoplay = false } = {}) {
+  video.preload = "metadata";
+  video.playsInline = true;
+  video.controls = true;
+
+  const status = getOrCreateStatusEl(video);
+
+  for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+    const delay = RETRY_DELAYS[attempt];
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+
+    try {
+      if (status) status.textContent = `Chargement… (essai ${attempt + 1}/${RETRY_DELAYS.length})`;
+
+      // reset propre
+      try {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      } catch {}
+
+      video.src = url;
+      video.load();
+
+      // attendre prêt léger
+      await waitEventOrTimeout(
+        video,
+        { ok: ["loadeddata", "canplay"], fail: ["error", "abort"] },
+        LOAD_TIMEOUT_MS
+      );
+
+      // autoplay si demandé (muted pour éviter blocage)
+      if (autoplay) {
+        video.muted = true;
+        try {
+          await video.play();
+        } catch {
+          // si bloqué: on reste prêt sans planter
+          try { video.pause(); } catch {}
+        }
+      }
+
+      // mini anti-stall au moment du chargement (facultatif)
+      // si "waiting/stalled" direct après => retry
+      await waitEventOrTimeout(
+        video,
+        { ok: ["canplay", "playing"], fail: ["stalled", "waiting", "error"] },
+        1500
+      );
+
+      if (status) status.textContent = "✅ Prêt";
+      return true;
+    } catch {
+      // retry
+    }
+  }
+
+  if (status) status.textContent = "❌ Vidéo indisponible";
+  const fallback = document.createElement("div");
+  fallback.textContent = "❌ Vidéo indisponible";
+  fallback.style.fontWeight = "900";
+  fallback.style.opacity = "0.9";
+  video.replaceWith(fallback);
+  return false;
+}
+
+// =======================
 // RENDER MATCH
 // =======================
 async function renderMatch() {
   const box = document.getElementById("duel-container");
+  if (!box) return;
+
+  cleanupCurrentMedia();
   box.innerHTML = "";
 
-  for (const idx of [currentMatch.a, currentMatch.b]) {
+  const indices = [currentMatch.a, currentMatch.b];
+
+  // on crée d'abord les 2 cartes (layout stable), puis on charge séquentiel
+  const cardEls = [];
+
+  for (const idx of indices) {
     const item = items[idx];
+
     const div = document.createElement("div");
     div.className = mode === "anime" ? "anime" : "opening";
 
     if (mode === "anime") {
       const img = document.createElement("img");
       img.src = item.image;
-      img.alt = item.title || "Anime";
+      img.alt = item.title || "anime";
+      img.loading = "eager";
 
       const title = document.createElement("div");
       title.className = "vote-title";
       title.textContent = item.title || "Titre";
-      title.onclick = () => vote(idx);
+      // ✅ vote uniquement sur le titre
+      title.addEventListener("click", () => vote(idx));
 
-      div.append(img, title);
+      div.appendChild(img);
+      div.appendChild(title);
+      box.appendChild(div);
+      cardEls.push({ div, idx, kind: "anime" });
     } else {
       const video = document.createElement("video");
       video.controls = true;
-      await loadVideoWithRetry(video, item.video);
 
       const title = document.createElement("div");
       title.className = "vote-title";
-      title.textContent = item.label;
-      title.onclick = () => vote(idx);
+      title.textContent = item.label || "Song";
+      // ✅ vote uniquement sur le titre
+      title.addEventListener("click", () => vote(idx));
 
-      div.append(video, title);
+      div.appendChild(video);
+      div.appendChild(title);
+      box.appendChild(div);
+      cardEls.push({ div, idx, kind: "video", video, url: item.video });
     }
-
-    box.appendChild(div);
-  }
-}
-
-// =======================
-// VIDEO LOAD WITH RETRY (sans autoplay)
-// =======================
-function waitVideoEvent(video, timeoutMs = 6500) {
-  return new Promise((resolve, reject) => {
-    let done = false;
-    const onOk = () => { if (done) return; done = true; cleanup(); resolve(); };
-    const onErr = () => { if (done) return; done = true; cleanup(); reject(new Error("video error")); };
-    const t = setTimeout(() => { if (done) return; done = true; cleanup(); reject(new Error("timeout")); }, timeoutMs);
-
-    function cleanup() {
-      clearTimeout(t);
-      video.removeEventListener("loadeddata", onOk);
-      video.removeEventListener("canplay", onOk);
-      video.removeEventListener("error", onErr);
-    }
-
-    video.addEventListener("loadeddata", onOk, { once: true });
-    video.addEventListener("canplay", onOk, { once: true });
-    video.addEventListener("error", onErr, { once: true });
-  });
-}
-
-async function loadVideoWithRetry(video, url) {
-  const delays = [0, 2000, 6000];
-
-  for (const delay of delays) {
-    if (delay) await new Promise((r) => setTimeout(r, delay));
-    try {
-      video.src = url;
-      video.load();
-      await waitVideoEvent(video);
-      return;
-    } catch {}
   }
 
-  const s = document.createElement("div");
-  s.textContent = "❌ Vidéo indisponible";
-  s.style.fontWeight = "900";
-  s.style.opacity = "0.9";
-  s.style.padding = "8px 2px";
-  video.replaceWith(s);
+  // Chargement vidéo séquentiel:
+  // gauche = currentMatch.a => autoplay
+  if (mode === "opening") {
+    // left
+    const left = cardEls.find((c) => c.idx === currentMatch.a);
+    if (left?.video && left?.url) {
+      await loadVideoWithRetry(left.video, left.url, { autoplay: true });
+    }
+
+    // right
+    const right = cardEls.find((c) => c.idx === currentMatch.b);
+    if (right?.video && right?.url) {
+      await loadVideoWithRetry(right.video, right.url, { autoplay: false });
+    }
+  }
 }
 
 // =======================
@@ -582,78 +814,129 @@ function vote(winner) {
   if (losses[loser] === 2) eliminationOrder.push(loser);
 
   recomputePools();
+
+  if (isTournamentOver()) {
+    finishTournament();
+    return;
+  }
+
   showNextMatch();
 }
 
 // =======================
-// FIN + UI
+// FIN + CLASSEMENT
 // =======================
-function setRoundIndicatorIdle() {
-  const el = document.getElementById("round-indicator");
-  if (!el) return;
-  el.textContent = "Tournoi : en cours…";
-}
+function finishTournament() {
+  cleanupCurrentMedia();
 
-function updateRoundIndicator() {
-  const el = document.getElementById("round-indicator");
-  if (!el) return;
-  const total = roundMatches.length || 0;
-  const idx = Math.min(roundMatchIndex, total);
-  el.textContent = `Round ${roundNumber} — Match ${idx}/${Math.max(1, total)} — Mode: ${mode === "anime" ? "Animes" : "Songs"}`;
-}
+  const alive = getAliveAll();
+  const winner = alive.length ? alive[0] : null;
 
-function finishTournament(winnerIndex) {
-  const duel = document.getElementById("duel-container");
+  // ranking: winner + (dernière élimination = #2, etc.)
+  const ranking = [];
+  if (winner !== null) ranking.push(winner);
+  ranking.push(...eliminationOrder.slice().reverse());
+
+  renderClassement(ranking);
+
   const replay = document.getElementById("next-match-btn");
-
-  let winnerLabel = "—";
-  if (typeof winnerIndex === "number" && items[winnerIndex]) {
-    winnerLabel = mode === "anime" ? items[winnerIndex].title : items[winnerIndex].label;
+  if (replay) {
+    replay.style.display = "";
+    replay.textContent = "Rejouer";
+    replay.onclick = () => {
+      resetTournament();
+      showCustomization();
+      refreshPreview();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
   }
 
-  duel.innerHTML = `
-    <div style="width:100%; text-align:center; font-weight:900; font-size:1.35rem;">
-      🏆 Tournoi terminé !<br>
-      <div style="margin-top:10px; font-size:1.05rem; opacity:0.92;">
-        Gagnant : <span style="text-decoration:underline;">${escapeHtml(winnerLabel)}</span>
-      </div>
-    </div>
-  `;
+  const duel = document.getElementById("duel-container");
+  if (duel) duel.innerHTML = "";
 
-  replay.style.display = "inline-flex";
-  replay.onclick = () => {
-    // ✅ retour au panel (pas les deux)
-    resetTournamentUI(true);
-    updatePreview();
-    showCustomization();
-    document.getElementById("custom-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  const roundBox = document.getElementById("round-indicator");
+  if (roundBox) roundBox.textContent = "🏁 Tournoi terminé !";
 }
 
-function resetTournamentUI(keepMode = true) {
-  document.getElementById("duel-container").innerHTML = "";
-  document.getElementById("classement").innerHTML = "";
-  document.getElementById("next-match-btn").style.display = "none";
+function renderClassement(rankingIdx) {
+  const box = document.getElementById("classement");
+  if (!box) return;
+
+  box.innerHTML = "";
+  box.style.display = "";
+
+  rankingIdx.forEach((idx, i) => {
+    const item = items[idx];
+    const rank = i + 1;
+
+    const card = document.createElement("div");
+    card.className = "classement-item";
+    if (rank === 1) card.classList.add("top1");
+    else if (rank === 2) card.classList.add("top2");
+    else if (rank === 3) card.classList.add("top3");
+
+    const badge = document.createElement("div");
+    badge.className = "rank";
+    badge.textContent = `#${rank}`;
+
+    card.appendChild(badge);
+
+    if (mode === "anime") {
+      const img = document.createElement("img");
+      img.src = item.image;
+      img.alt = item.title || "anime";
+      img.loading = "lazy";
+      card.appendChild(img);
+
+      const t = document.createElement("div");
+      t.className = "title";
+      t.textContent = item.title || "Titre";
+      card.appendChild(t);
+    } else {
+      const v = document.createElement("video");
+      v.controls = true;
+      v.preload = "metadata";
+      v.src = item.video;
+      card.appendChild(v);
+
+      const t = document.createElement("div");
+      t.className = "title";
+      t.textContent = item.label || "Song";
+      card.appendChild(t);
+    }
+
+    box.appendChild(card);
+  });
+
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// =======================
+// RESET
+// =======================
+function resetTournament() {
+  cleanupCurrentMedia();
+
+  const duel = document.getElementById("duel-container");
+  const classement = document.getElementById("classement");
+  const replay = document.getElementById("next-match-btn");
+  const roundBox = document.getElementById("round-indicator");
+
+  if (duel) duel.innerHTML = "";
+  if (classement) {
+    classement.innerHTML = "";
+    classement.style.display = "none";
+  }
+  if (replay) replay.style.display = "none";
+  if (roundBox) roundBox.textContent = "";
 
   items = [];
   losses = [];
+  eliminationOrder = [];
   aliveWB = [];
   aliveLB = [];
-  eliminationOrder = [];
   roundNumber = 1;
   roundMatches = [];
   roundMatchIndex = 0;
   currentMatch = null;
-
-  // (optionnel) ne touche pas au mode sélectionné
-  if (!keepMode) mode = "anime";
-}
-
-function escapeHtml(s) {
-  return String(s || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
