@@ -50,7 +50,8 @@ function getDisplayTitle(a) {
 }
 
 function getYear(a) {
-  const s = (a.season || "").trim(); // ex "spring 2013"
+  const s = (a.season || "").։
+
   const parts = s.split(/\s+/);
   const y = parseInt(parts[1] || parts[0] || "0", 10);
   return Number.isFinite(y) ? y : 0;
@@ -340,13 +341,23 @@ function applyFilters() {
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
+  // ✅ IMPORTANT: en songs on affiche le NOM DE L'ANIME, pas le nom de la song
   return pool.map(s => ({
     kind: "song",
     _key: `song|${s._key}`,
-    title: s.songName || "Song",
-    image: s.animeImage || "",
+
+    // ✅ affichage
+    title: s.animeTitle || "Anime",
+
+    // (optionnel) on garde le nom de la song si tu veux t'en servir plus tard
+    songName: s.songName || "",
+
+    // ✅ vidéo
     url: s.url,
-    songType: s.songType
+    songType: s.songType,
+
+    // image inutile en songs
+    image: ""
   }));
 }
 
@@ -366,6 +377,29 @@ function updatePreview() {
 
   applyBtn.disabled = !ok;
   applyBtn.classList.toggle("disabled", !ok);
+}
+
+// ====== SONG AUTOPLAY HELPER ======
+function loadAndAutoplayVideo(url) {
+  playerZone.style.display = "block";
+
+  // reset propre
+  songPlayer.pause?.();
+  songPlayer.removeAttribute("src");
+  songPlayer.load?.();
+
+  songPlayer.src = url;
+  songPlayer.load?.();
+
+  const tryPlay = () => {
+    songPlayer.play?.().catch(() => {});
+  };
+
+  // ✅ autoplay dès que possible
+  songPlayer.addEventListener("canplay", tryPlay, { once: true });
+
+  // fallback
+  setTimeout(tryPlay, 250);
 }
 
 // ====== GAME ======
@@ -449,28 +483,34 @@ function displayCurrentItem() {
     return;
   }
 
-  // set title
+  // ✅ Nom affiché (anime en songs)
   itemName.textContent = item.title || "";
 
-  // anime image
-  if (item.image) {
-    animeImg.src = item.image;
-    animeImg.style.display = "block";
-  } else {
+  if (currentMode === "songs") {
+    // ✅ PAS d'image en songs -> que la vidéo
     animeImg.style.display = "none";
-  }
 
-  // player
-  if (currentMode === "songs" && item.url) {
-    playerZone.style.display = "block";
-    songPlayer.pause?.();
-    songPlayer.src = item.url;
-    songPlayer.load?.();
+    if (item.url) {
+      loadAndAutoplayVideo(item.url);
+    } else {
+      playerZone.style.display = "none";
+      songPlayer.pause?.();
+      songPlayer.removeAttribute("src");
+      songPlayer.load?.();
+    }
   } else {
+    // mode anime normal
     playerZone.style.display = "none";
     songPlayer.pause?.();
     songPlayer.removeAttribute("src");
     songPlayer.load?.();
+
+    if (item.image) {
+      animeImg.src = item.image;
+      animeImg.style.display = "block";
+    } else {
+      animeImg.style.display = "none";
+    }
   }
 }
 
@@ -501,10 +541,21 @@ function updateRankingList() {
 
     const it = rankings[i];
     if (it) {
-      const img = document.createElement("img");
-      img.src = it.image || "";
-      img.alt = it.title || "";
-      li.appendChild(img);
+      // ✅ en mode songs -> on met une VIDEO au lieu d'une image
+      if (it.kind === "song") {
+        const vid = document.createElement("video");
+        vid.src = it.url || "";
+        vid.controls = true;
+        vid.preload = "metadata";
+        vid.playsInline = true;
+        li.appendChild(vid);
+      } else {
+        // anime -> image
+        const img = document.createElement("img");
+        img.src = it.image || "";
+        img.alt = it.title || "";
+        li.appendChild(img);
+      }
 
       const span = document.createElement("span");
       span.textContent = `Rang ${i + 1}: ${it.title || ""}`;
