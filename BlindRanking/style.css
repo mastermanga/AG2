@@ -1,19 +1,24 @@
+/* =========================
+   BLIND RANKING (v2) — FULL CSS
+   - Look & feel proche de tes autres mini-jeux (Opening / Guess the Anime)
+   - Inclut: fond + particules, header néon, panel personnalisation, split layout, tooltip, light mode, responsive
+========================= */
+
+/* ==== BACKGROUND + PARTICULES ==== */
 body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background: radial-gradient(circle at 50% 25%, #263859 0%, #121212 100%);
   color: #eee;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
   min-height: 100vh;
+  padding: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 2rem 1rem;
-  transition: background-color 0.3s, color 0.3s;
-  margin: 0;
+  transition: background 0.3s, color 0.3s;
   overflow-x: hidden;
-  position: relative;
 }
 
-/* === Fond animé particules === */
 body::before {
   content: "";
   position: fixed;
@@ -24,34 +29,35 @@ body::before {
     radial-gradient(circle, #00fff94d 2px, transparent 3px) 30vw 20vh/120px 120px repeat,
     radial-gradient(circle, #42a5f577 1.5px, transparent 3px) 70vw 75vh/90px 90px repeat;
   animation: moveParticles 18s linear infinite alternate;
-  opacity: 0.27;
+  opacity: 0.22;
 }
+
 @keyframes moveParticles {
   0%   { background-position: 30vw 20vh, 70vw 75vh; }
   100% { background-position: 33vw 22vh, 68vw 78vh; }
 }
 
-/* === Header et titre néon === */
+/* ==== HEADER ==== */
 header {
-  max-width: 1200px;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto 1.4rem auto;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
-  margin-left: auto;
-  margin-right: auto;
-  padding: 0 1rem;
+  padding: 1.3rem 1rem 0.4rem 1rem;
   z-index: 2;
   position: relative;
 }
+
 header h1 {
-  font-size: 2rem;
+  font-size: 2.2rem;
+  font-weight: bold;
   text-align: center;
   flex-grow: 1;
   margin: 0 1rem;
-  letter-spacing: 1px;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  font-weight: 800;
+  letter-spacing: 1.2px;
+  color: #fff;
   text-shadow:
     0 0 6px #00eaff,
     0 0 18px #00eaff99,
@@ -59,102 +65,287 @@ header h1 {
     0 0 10px #fff1;
 }
 
-/* === Boutons === */
-.menu-btn, .toggle-btn, .suivant-btn, .rank-button button, .mode-select button {
-  background: linear-gradient(120deg, #00bcd4 75%, #1e88e5 100%);
-  color: #fff;
-  border-radius: 10px;
-  font-weight: bold;
+/* ==== BOUTONS PRINCIPAUX ==== */
+.menu-btn, .toggle-btn, #next-btn {
+  background: linear-gradient(120deg, #00bcd4 65%, #1e88e5 100%);
+  color: #fff !important;
   border: none;
-  outline: none;
-  box-shadow: 0 1px 7px #00bcd466;
-  font-size: 1.13rem;
+  padding: 0.65rem 1.3rem;
+  border-radius: 14px;
   cursor: pointer;
-  padding: 0.6rem 1.3rem;
-  transition: 
-    background 0.21s,
-    color 0.16s,
-    box-shadow 0.18s,
-    border 0.16s;
-}
-.menu-btn:hover, .toggle-btn:hover, .suivant-btn:hover, .rank-button button:hover, .mode-select button:hover,
-.menu-btn:focus, .toggle-btn:focus, .suivant-btn:focus, .rank-button button:focus, .mode-select button:focus {
-  background: linear-gradient(120deg, #1de9b6 80%, #1565c0 100%);
-  color: #fff;
-  text-shadow: 0 0 10px #fff9, 0 2px 6px #fff8;
-  box-shadow: 0 10px 34px #00eaffd7, 0 2.5px 14px #1976d277;
-  border: 2px solid #fff5;
-}
-.menu-btn, .toggle-btn {
+  font-weight: bold;
+  font-size: 1.08rem;
+  transition: background 0.3s, color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.13s;
+  box-shadow: 0 1px 7px #00bcd455;
+  opacity: 0.93;
+  outline: none;
+  margin: 0.5rem 0.5rem;
   flex-shrink: 0;
 }
 
-/* === Mode select === */
-.mode-select {
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-  margin-bottom: 2rem;
-}
-.mode-select button.active,
-.mode-select button[aria-pressed="true"] {
-  background: #0097a7;
-  color: #fff;
+.menu-btn:hover, .toggle-btn:hover, #next-btn:hover {
+  background: linear-gradient(120deg, #1de9b6 70%, #1976d2 100%);
+  color: #fff !important;
+  box-shadow: 0 2px 14px #00eaff77;
+  opacity: 1;
+  filter: brightness(1.08);
 }
 
-/* === Container principal split === */
-.split-layout {
+.menu-btn:active, .toggle-btn:active, #next-btn:active {
+  transform: scale(0.98);
+  filter: brightness(0.93);
+  opacity: 0.89;
+}
+
+.menu-btn:disabled,
+#next-btn:disabled,
+.menu-btn.disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  filter: grayscale(0.2) brightness(0.9);
+  box-shadow: none !important;
+}
+
+/* ==== HEADER RIGHT (theme + help) ==== */
+.header-right{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  flex-shrink:0;
+}
+
+/* =========================
+   PERSONNALISATION (panel)
+========================= */
+#custom-panel {
+  background: #161e27ee;
+  border-radius: 22px;
+  box-shadow: 0 0 32px 5px #00bcd466;
+  max-width: 1400px;
+  width: 98vw;
+  margin: 0.6rem auto 1.2rem auto;
+  padding: 1.7rem 1.8rem;
+  position: relative;
+  z-index: 1;
+}
+
+#custom-panel h2 {
+  margin: 0 0 1rem 0;
+  text-align: center;
+  font-size: 1.8rem;
+  text-shadow: 0 0 10px #00eaff55;
+}
+
+/* ====== opt rows ====== */
+.opt-row {
+  width: 100%;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.opt-label {
+  font-weight: 900;
+  min-width: 160px;
+  opacity: 0.95;
+}
+
+.opt-col {
+  flex: 1;
+  min-width: 280px;
+}
+
+.opt-value {
+  margin-top: 6px;
+  font-weight: 900;
+  opacity: 0.92;
+  text-align: right;
+}
+
+/* ====== range styling ====== */
+#custom-panel input[type="range"] {
+  width: 100%;
+  appearance: none;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #00bcd4 0%, #ffffff 75%);
+  outline: none;
+  box-shadow: 0 1px 10px rgba(0, 188, 212, 0.18);
+}
+
+#custom-panel input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #0fbcd4;
+  border: 2px solid rgba(255,255,255,0.6);
+  box-shadow: 0 0 14px rgba(0, 234, 255, 0.55);
+  cursor: pointer;
+}
+
+#custom-panel input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #0fbcd4;
+  border: 2px solid rgba(255,255,255,0.6);
+  box-shadow: 0 0 14px rgba(0, 234, 255, 0.55);
+  cursor: pointer;
+}
+
+/* ====== Pills ====== */
+.opt-pill-group {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  border: 1.5px solid rgba(0, 188, 212, 0.55);
+  background: rgba(0, 0, 0, 0.22);
+  color: #eaffff;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s, border-color 0.15s, opacity 0.15s;
+  user-select: none;
+}
+
+.pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 16px rgba(0, 234, 255, 0.22);
+}
+
+.pill.active {
+  background: linear-gradient(120deg, rgba(0,188,212,0.65), rgba(30,136,229,0.55));
+  border-color: rgba(0, 234, 255, 0.85);
+  box-shadow: 0 0 18px rgba(0, 234, 255, 0.35);
+}
+
+/* ====== Preview count ====== */
+.preview-count {
+  margin-top: 14px;
+  width: 100%;
+  font-weight: 900;
+  text-align: center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid #00bcd455;
+  background: rgba(0,0,0,0.15);
+}
+
+.preview-count.good {
+  border-color: rgba(38, 255, 128, 0.35);
+  box-shadow: 0 0 16px rgba(38,255,128,0.12);
+}
+
+.preview-count.bad {
+  border-color: rgba(255, 80, 80, 0.35);
+  box-shadow: 0 0 16px rgba(255,80,80,0.10);
+}
+
+/* =========================
+   MODE SELECT (anime / songs)
+========================= */
+.mode-select {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin: 0.2rem auto 1.0rem auto;
+  z-index: 2;
+}
+
+.mode-select button {
+  background: rgba(0, 0, 0, 0.25);
+  color: #eaffff;
+  border: 1.5px solid rgba(0, 188, 212, 0.55);
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 1px 10px rgba(0, 188, 212, 0.12);
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.mode-select button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 18px rgba(0, 234, 255, 0.22);
+}
+
+.mode-select button.active,
+.mode-select button[aria-pressed="true"] {
+  background: linear-gradient(120deg, rgba(0,188,212,0.65), rgba(30,136,229,0.55));
+  border-color: rgba(0, 234, 255, 0.85);
+  box-shadow: 0 0 18px rgba(0, 234, 255, 0.35);
+}
+
+/* =========================
+   GAME LAYOUT (split)
+========================= */
+#ranking-game.split-layout {
   background-color: #161e27ef;
-  border-radius: 20px;
+  border-radius: 22px;
   box-shadow: 0 0 32px 5px #00bcd444;
   border: 1.5px solid #00bcd455;
-  padding: 2.3rem 2.2rem 2.2rem 2.2rem;
-  margin-left: auto;
-  margin-right: auto;
-  margin-top: 0.5rem;
+  padding: 2.2rem 2.0rem 2.0rem 2.0rem;
+  margin: 0.6rem auto 1.2rem auto;
   display: flex;
   flex-direction: row;
   align-items: flex-start;
-  gap: 3rem;
+  gap: 2.3rem;
   position: relative;
   z-index: 2;
-  width: 100%;
+  width: 98vw;
   max-width: 1400px;
-  transition: background 0.25s;
+  transition: background 0.25s, box-shadow 0.25s;
 }
 
-/* Partie classement à gauche */
+/* Partie classement */
 .ranking-container {
-  width: 55%;
+  width: 58%;
   min-width: 340px;
-  max-width: 700px;
+  max-width: 860px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
 }
+
 .anime-list {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);  /* 4 colonnes */
-  gap: 26px 16px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 22px 14px;
   padding: 0;
   margin: 0;
   list-style: none;
   justify-items: center;
+  width: 100%;
 }
+
 .anime-list li {
   background: #191919;
   border-radius: 18px;
   box-shadow: 0 4px 22px #0003;
-  min-width: 140px;        /* plus petit, pour tenir à 4 */
-  max-width: 180px;
+  min-width: 140px;
+  max-width: 190px;
   width: 100%;
   text-align: center;
   padding: 0 0 15px 0;
-  margin-bottom: 8px;
-  transition: box-shadow 0.2s;
+  transition: box-shadow 0.2s, transform 0.12s;
 }
+
+.anime-list li:hover {
+  box-shadow: 0 8px 28px #0005;
+  transform: translateY(-1px);
+}
+
 .anime-list li img,
-.anime-list li iframe {
+.anime-list li iframe,
+.anime-list li video {
   width: 98%;
   height: 210px;
   object-fit: cover;
@@ -166,108 +357,140 @@ header h1 {
 
 .anime-list li span {
   display: block;
-  font-size: 1.08rem;
+  font-size: 1.02rem;
   margin-top: 0.6em;
-  font-weight: 500;
+  font-weight: 600;
   color: #f5f5f5;
+  padding: 0 8px;
 }
 
-/* Partie devinette à droite */
+/* Partie devinette */
 .anime-container {
-  width: 380px;
+  width: 420px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
 }
+
 .anime-item {
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 22px;
+  margin-bottom: 18px;
   background: #181818;
-  padding: 24px 18px 16px 18px;
+  padding: 22px 18px 16px 18px;
   border-radius: 18px;
   box-shadow: 0 4px 16px #0003;
 }
 
 #anime-img {
   border-radius: 14px;
-  margin-bottom: 15px;
+  margin-bottom: 14px;
   max-width: 320px;
   max-height: 420px;
+  box-shadow: 0 3px 18px #0005;
 }
+
 #anime-name {
-  font-size: 1.19rem;
-  font-weight: 600;
-  margin-bottom: 1.4em;
+  font-size: 1.16rem;
+  font-weight: 800;
+  margin-bottom: 1.1em;
   text-align: center;
-  letter-spacing: 1px;
+  letter-spacing: 0.6px;
 }
 
-.rank-button {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  justify-content: center;
-  margin-bottom: 3px;
-}
-.rank-button button {
-  min-width: 38px;
-  padding: 0.6em 0.9em;
-  font-size: 1.03rem;
-  font-weight: bold;
-  margin: 2px 0;
-}
-.rank-button button:disabled {
-  background: #aaa;
-  color: #555;
-  cursor: default;
-}
-
-/* === Player zone === */
-#yt-player-1, #yt-player-2 {
+/* Player zone */
+#player-zone {
   width: 100%;
-  height: 600px;
-  border-radius: 16px;
+  margin-bottom: 14px;
+  position: relative;
+}
+
+#media-player {
+  width: 100%;
+  border-radius: 12px;
   background: #222;
   box-shadow: 0 2px 12px #1116;
-  margin-bottom: 0.7em;
-  transition: box-shadow 0.18s;
-  z-index: 1;
 }
+
 #player-loader {
   position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
+  inset: 0;
   display: none;
   align-items: center;
   justify-content: center;
-  background: rgba(24,24,24,0.78);
-  z-index: 9;
-  border-radius: 16px;
-}
-#player-loader span {
-  color: #fff;
-  font-size: 1.17rem;
-  font-weight: 500;
-  text-shadow: 0 2px 12px #000a;
-  letter-spacing: 1.5px;
+  background: rgba(24, 24, 24, 0.72);
+  border-radius: 12px;
+  z-index: 3;
 }
 
-.suivant-btn {
-  margin-top: 18px;
-  padding: 15px 35px;
-  border-radius: 10px;
-  border: none;
-  font-weight: bold;
+#player-loader span {
+  color: #fff;
   font-size: 1.12rem;
+  font-weight: 700;
+  text-shadow: 0 2px 12px #000a;
+  letter-spacing: 1px;
+  animation: loaderFade 1.2s infinite;
+}
+
+@keyframes loaderFade {
+  0% { opacity: 0.35; }
+  50% { opacity: 1; }
+  100% { opacity: 0.35; }
+}
+
+/* Rank buttons */
+.rank-button {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+.rank-button button {
   background: linear-gradient(120deg, #00bcd4 75%, #1e88e5 100%);
   color: #fff;
+  border-radius: 12px;
+  font-weight: 900;
+  border: none;
+  outline: none;
+  box-shadow: 0 1px 7px #00bcd466;
+  font-size: 1.03rem;
   cursor: pointer;
-  box-shadow: 0 1px 8px #1114;
-  transition: background 0.18s;
+  padding: 0.62em 0.95em;
+  transition: background 0.21s, transform 0.12s, box-shadow 0.18s, opacity 0.15s;
+  min-width: 44px;
+}
+
+.rank-button button:hover:not(:disabled) {
+  background: linear-gradient(120deg, #1de9b6 80%, #1565c0 100%);
+  box-shadow: 0 10px 24px #00eaff7a, 0 2px 10px #1976d24f;
+  transform: translateY(-1px);
+}
+
+.rank-button button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.rank-button button:disabled {
+  background: #2b3c56;
+  color: #7acde6;
+  cursor: not-allowed;
+  opacity: 0.65;
+  box-shadow: none;
+  filter: grayscale(0.17) brightness(0.93);
+}
+
+/* Next / Rejouer */
+#next-btn {
+  margin-top: 14px;
+  padding: 15px 35px;
+  border-radius: 14px;
+  font-weight: 900;
+  font-size: 1.08rem;
   display: block;
   width: 85%;
   max-width: 340px;
@@ -275,94 +498,9 @@ header h1 {
   margin-right: auto;
 }
 
-/* === Footer === */
-footer {
-  margin-top: auto;
-  padding: 1.2rem 0 0.4rem 0;
-  color: #555;
-  font-size: 1rem;
-  text-align: center;
-  width: 100%;
-  max-width: 420px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-/* === Mode clair === */
-body.light {
-  background: radial-gradient(circle at 45% 10%, #e3f6fc 0%, #f5f5f5 100%);
-  color: #222;
-}
-body.light .split-layout {
-  background-color: #fff;
-  box-shadow: 0 0 22px #42a5f5;
-  border: 1.5px solid #42a5f577;
-}
-body.light header h1 {
-  color: #1976d2;
-  text-shadow: 0 1px 4px #42a5f588;
-}
-body.light .anime-list li {
-  background: #f8f8f8;
-  color: #181818;
-}
-body.light .anime-container,
-body.light .anime-item {
-  background: #e4f2fc;
-  color: #222;
-}
-body.light .rank-button button {
-  background: #1976d2;
-  color: #fff;
-}
-body.light .rank-button button:disabled {
-  background: #bbb;
-  color: #fff;
-}
-body.light .suivant-btn {
-  background: #1976d2;
-  color: #fff;
-}
-body.light .suivant-btn:hover {
-  background: #1565c0;
-  color: #fff;
-}
-body.light #yt-player-1,
-body.light #yt-player-2 {
-  background: #e8eaf6;
-  box-shadow: 0 2px 11px #aab6c41a;
-}
-body.light #player-loader {
-  background: rgba(230, 240, 255, 0.88);
-}
-body.light #player-loader span {
-  color: #1565c0;
-  text-shadow: 0 2px 10px #fff6;
-}
-body.light .menu-btn,
-body.light .toggle-btn,
-body.light .mode-select button {
-  background: #1565c0;
-  color: #fff;
-}
-body.light .mode-select button.active,
-body.light .mode-select button[aria-pressed="true"] {
-  background: #1976d2;
-  color: #fff;
-}
-body.light footer {
-  color: #888;
-}
-
-.header-right{
-  display:inline-flex;
-  align-items:center;
-  gap:10px;
-  flex-shrink:0;
-}
-
-/* ========== BOUTON AIDE (SVG) + TOOLTIP ========== */
-
+/* =========================
+   TOOLTIP HELP (icône info)
+========================= */
 .info-wrap{
   position: relative;
   display: inline-flex;
@@ -374,23 +512,18 @@ body.light footer {
   width: 26px;
   height: 26px;
   border-radius: 999px;
-
   display: inline-flex;
   align-items: center;
   justify-content: center;
-
   background: rgba(18, 30, 39, 0.55);
   border: 1.5px solid rgba(255, 255, 255, 0.35);
-
   box-shadow:
     0 0 10px rgba(0, 234, 255, 0.55),
     0 0 24px rgba(0, 188, 212, 0.35),
     inset 0 0 0 1px rgba(0, 234, 255, 0.18);
-
   color: #eaffff;
   cursor: help;
   user-select: none;
-
   transition: transform 0.16s, box-shadow 0.16s, background 0.16s, border-color 0.16s;
 }
 
@@ -412,47 +545,39 @@ body.light footer {
   outline: none;
 }
 
-/* Tooltip : par défaut vers le bas (évite de sortir de l’écran en haut du header) */
+/* Tooltip : vers le bas */
 .info-tip{
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-
   transform: translateY(-6px) scale(0.98);
-
   width: 320px;
   padding: 10px 12px;
   border-radius: 14px;
-
   background: linear-gradient(120deg, #233554f3 80%, #00bcd422 100%);
   border: 1.5px solid #00bcd455;
   box-shadow: 0 10px 34px rgba(0, 234, 255, 0.32), 0 2.5px 14px rgba(25, 118, 210, 0.25);
-
   color: #fff;
   font-size: 0.95rem;
   font-weight: 500;
   line-height: 1.25;
   letter-spacing: 0.1px;
-
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-
   transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
   z-index: 999;
 }
 
-/* Flèche vers le haut (pointe vers l’icône) */
+/* Flèche */
 .info-tip::after{
   content: "";
   position: absolute;
   top: -7px;
   right: 18px;
-
   border-width: 0 7px 7px 7px;
   border-style: solid;
   border-color: transparent transparent #233554f3 transparent;
-
   filter: drop-shadow(0 2px 2px rgba(0, 234, 255, 0.18));
 }
 
@@ -464,7 +589,109 @@ body.light footer {
   transform: translateY(0) scale(1);
 }
 
-/* Light mode */
+/* =========================
+   FOOTER
+========================= */
+footer {
+  margin-top: auto;
+  padding: 1.2rem 0 0.4rem 0;
+  color: #555;
+  font-size: 0.95rem;
+  text-align: center;
+  user-select: none;
+  width: 100%;
+  max-width: 350px;
+  margin-left: auto;
+  margin-right: auto;
+  transition: color 0.3s;
+}
+
+/* =========================
+   LIGHT MODE
+========================= */
+body.light {
+  background: radial-gradient(circle at 45% 10%, #e3f6fc 0%, #f5f5f5 100%);
+  color: #222;
+}
+
+body.light header h1 {
+  color: #1976d2;
+  text-shadow: 0 2px 8px #42a5f5aa, 0 0 10px #fff2;
+}
+
+body.light #custom-panel,
+body.light #ranking-game.split-layout {
+  background: #fff;
+  box-shadow: 0 0 18px #42a5f555;
+  border-color: rgba(66,165,245,0.35);
+}
+
+body.light .anime-list li {
+  background: #f8f8f8;
+  color: #181818;
+}
+
+body.light .anime-list li span {
+  color: #1a1a1a;
+}
+
+body.light .anime-item {
+  background: #e4f2fc;
+  color: #222;
+}
+
+body.light #media-player {
+  background: #e8eaf6;
+  box-shadow: 0 2px 11px #aab6c41a;
+}
+
+body.light #player-loader {
+  background: rgba(230, 240, 255, 0.88);
+}
+
+body.light #player-loader span {
+  color: #1565c0;
+  text-shadow: 0 2px 10px #fff6;
+}
+
+body.light .menu-btn,
+body.light .toggle-btn,
+body.light #next-btn {
+  background: linear-gradient(120deg, #42a5f5 80%, #00bcd4 100%) !important;
+  color: #f5f5f5 !important;
+  box-shadow: 0 1px 8px #42a5f5bb;
+}
+
+body.light .menu-btn:hover,
+body.light .toggle-btn:hover,
+body.light #next-btn:hover {
+  background: linear-gradient(120deg, #81d4fa 70%, #1976d2 100%) !important;
+  color: #fff !important;
+}
+
+body.light .pill {
+  background: rgba(255,255,255,0.65);
+  color: #0b1a2a;
+  border-color: rgba(25,118,210,0.35);
+}
+
+body.light .pill.active {
+  background: linear-gradient(120deg, rgba(66,165,245,0.7), rgba(0,188,212,0.45));
+  border-color: rgba(25,118,210,0.55);
+}
+
+body.light .mode-select button {
+  background: rgba(255,255,255,0.65);
+  color: #0b1a2a;
+  border-color: rgba(25,118,210,0.35);
+}
+
+body.light .mode-select button.active,
+body.light .mode-select button[aria-pressed="true"] {
+  background: linear-gradient(120deg, rgba(66,165,245,0.7), rgba(0,188,212,0.45));
+  border-color: rgba(25,118,210,0.55);
+}
+
 body.light .info-tip{
   background: linear-gradient(120deg, #e0f7fa 90%, #1565c01a 100%);
   border: 1.5px solid rgba(66, 165, 245, 0.45);
@@ -484,135 +711,97 @@ body.light .info-icon{
     inset 0 0 0 1px rgba(66, 165, 245, 0.18);
 }
 
-/* Mobile */
-@media (max-width: 600px){
+body.light footer { color: #888; }
+
+/* =========================
+   RESPONSIVE
+========================= */
+@media (max-width: 1050px) {
+  #ranking-game.split-layout {
+    flex-direction: column;
+    gap: 24px;
+    max-width: 96vw;
+    padding: 1.4rem 0.9rem;
+  }
+
+  .ranking-container {
+    width: 100%;
+    min-width: 0;
+    max-width: 98vw;
+    align-items: center;
+  }
+
+  .anime-container {
+    width: 100%;
+    max-width: 98vw;
+    min-width: 0;
+  }
+
+  .anime-item {
+    max-width: 520px;
+    width: 100%;
+  }
+}
+
+@media (max-width: 700px) {
+  header h1 { font-size: 1.35rem; }
+  .anime-list { grid-template-columns: repeat(2, 1fr); }
+  .anime-list li img,
+  .anime-list li video,
+  .anime-list li iframe { height: 150px; }
+}
+
+@media (max-width: 560px) {
+  header {
+    padding: 1.0rem 0.6rem 0.2rem 0.6rem;
+  }
+
+  header h1 {
+    font-size: 1.18rem;
+    margin: 0 0.4rem;
+  }
+
+  #custom-panel {
+    width: 98vw;
+    padding: 1.3rem 1.0rem;
+  }
+
+  #ranking-game.split-layout {
+    width: 98vw;
+    padding: 1.2rem 0.8rem;
+  }
+
+  .anime-list { grid-template-columns: repeat(2, 1fr); gap: 14px 10px; }
+
+  .anime-list li img,
+  .anime-list li video,
+  .anime-list li iframe {
+    height: 120px;
+  }
+
+  #next-btn {
+    width: 100%;
+    max-width: 360px;
+  }
+
   .info-tip{
     width: min(320px, 86vw);
     right: 0;
   }
 }
 
-
-/* === Responsive === */
-@media (max-width: 1050px) {
-  .split-layout {
-    flex-direction: column;
-    gap: 28px;
-    max-width: 96vw;
-    padding: 1.4rem 0.6rem;
-  }
-  .ranking-container {
-    width: 98vw;
-    min-width: 0;
-    max-width: 98vw;
-    align-items: center;
-  }
-  .anime-list {
-    justify-content: center;
-  }
-  .anime-container {
-    width: 99vw;
-    max-width: 98vw;
-    min-width: 0;
-  }
-  .anime-item {
-    max-width: 450px;
-    width: 99vw;
-  }
-}
-@media (max-width: 560px) {
-  header h1 {
-    font-size: 1.3rem;
-    padding: 0 3vw;
-  }
-  .anime-list li img,
-  .anime-list li iframe {
-    height: 120px;
-    min-width: 100px;
-  }
-  .anime-item {
-    padding: 11px 3vw 11px 3vw;
-  }
-  .anime-container {
-    padding-left: 0;
-    padding-right: 0;
-  }
-  .suivant-btn {
-    font-size: 1rem;
-    padding: 13px 10px;
-  }
-  .ranking-container {
-    min-width: 0;
-    width: 100vw;
-  }
-  #yt-player-1,
-  #yt-player-2 {
-    height: 110px;
-    min-height: 70px;
-  }
-}
-
-/* Apparition douce */
-.split-layout, .anime-item, .menu-btn, .toggle-btn, .suivant-btn {
+/* =========================
+   APPARITION DOUCE
+========================= */
+#custom-panel, #ranking-game.split-layout, .anime-item, .menu-btn, .toggle-btn, #next-btn {
   opacity: 0;
   transform: translateY(22px);
   animation: fadeUp 0.55s cubic-bezier(.47,1.64,.41,.8) 0.12s forwards;
 }
+
 @keyframes fadeUp {
   to {
     opacity: 1;
     transform: none;
   }
-}
-
-.anime-item.large-opening #yt-player-1,
-.anime-item.large-opening #yt-player-2,
-.anime-item.large-opening #player-zone {
-  width: 600px;
-  height: 338px;
-  min-height: 220px;
-  max-width: 100%; /* pour le responsive */
-  margin-bottom: 22px;
-}
-
-.anime-item.large-opening {
-  max-width: 630px; /* 600px + padding/marges éventuels */
-  width: 100%;
-  min-height: 600px; /* Hauteur augmentée pour plus d’espace */
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  padding-bottom: 80px; /* optionnel, pour espace sous les boutons */
-}
-
-.anime-container {
-  max-width: 660px; /* un peu plus large que la vidéo */
-  width: 100%;
-}
-.anime-item.large-opening .rank-button {
-  width: 100%;
-  max-width: 600px;    /* Même largeur que la vidéo */
-  margin: 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 80px;
-}
-
-.anime-item.large-opening #rank-section {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-}
-
-/* Loader animation (optionnel) */
-@keyframes loaderFade {
-  0% { opacity: 0.3; }
-  50% { opacity: 1; }
-  100% { opacity: 0.3; }
-}
-#player-loader span {
-  animation: loaderFade 1.2s infinite;
 }
