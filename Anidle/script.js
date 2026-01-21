@@ -4,7 +4,10 @@ const INDICE_COST = 300;
 
 const MIN_REQUIRED = 64;
 
-// ========== MENU + THEME ==========
+// ====== MODE (future-proof) ======
+let currentMode = "anime"; // pour l’instant un seul mode, mais prêt pour ajouter d’autres
+
+// ====== MENU + THEME ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
   window.location.href = "../index.html";
 });
@@ -18,7 +21,7 @@ window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
 });
 
-// ========== HELPERS ==========
+// ====== HELPERS ======
 function getDisplayTitle(a) {
   return (
     a.title_english ||
@@ -31,7 +34,7 @@ function getDisplayTitle(a) {
 }
 
 function getYear(a) {
-  const s = (a.season || "").trim(); // "spring 2013"
+  const s = (a.season || "").trim();
   const parts = s.split(/\s+/);
   const y = parseInt(parts[1] || parts[0] || "0", 10);
   return Number.isFinite(y) ? y : 0;
@@ -62,22 +65,30 @@ function clampRoundsValue() {
   if (!el) return 1;
   let v = parseInt(el.value, 10);
   if (!Number.isFinite(v) || v < 1) v = 1;
-  if (v > 50) v = 50;
+  if (v > 100) v = 100;
   el.value = String(v);
   return v;
 }
 
-// ========== GLOBAL DATA ==========
+function setRangeFill(input) {
+  const min = Number(input.min || 0);
+  const max = Number(input.max || 100);
+  const val = Number(input.value || 0);
+  const pct = ((val - min) * 100) / (max - min);
+  input.style.background = `linear-gradient(90deg, rgba(0,234,255,0.85) ${pct}%, rgba(255,255,255,0.9) ${pct}%)`;
+}
+
+// ====== GLOBAL DATA ======
 let allAnimes = [];
-let filteredBase = []; // pool après personnalisation
+let filteredBase = [];
 let targetAnime = null;
 
-// ========== MULTI-ROUNDS STATE ==========
+// ====== MULTI-ROUNDS STATE ======
 let totalRounds = 1;
-let currentRound = 1;   // 1..totalRounds
+let currentRound = 1;
 let totalScore = 0;
 
-// ========== GAME STATE ==========
+// ====== GAME STATE ======
 let attemptCount = 0;
 let gameOver = false;
 
@@ -91,7 +102,7 @@ let indicesScoreRange = null;
 let indicesGenresFoundSet = new Set();
 let indicesScoreRangeActivation = [0, 0];
 
-// ========== LOAD DATA ==========
+// ====== LOAD DATA ======
 fetch("../data/licenses_only.json")
   .then((r) => r.json())
   .then((data) => {
@@ -114,16 +125,18 @@ fetch("../data/licenses_only.json")
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
 
-// ========== UI TOGGLE (perso vs jeu) ==========
+// ====== UI TOGGLE ======
 function showCustomization() {
   document.body.classList.remove("game-started");
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function showGame() {
   document.body.classList.add("game-started");
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-// ========== PERSONALISATION UI ==========
+// ====== PERSONALISATION UI ======
 function initPersonalisationUI() {
   const pop = document.getElementById("popPercent");
   const score = document.getElementById("scorePercent");
@@ -135,28 +148,49 @@ function initPersonalisationUI() {
   const yMinVal = document.getElementById("yearMinVal");
   const yMaxVal = document.getElementById("yearMaxVal");
 
+  // Mode pills (même si 1 seul bouton)
+  const modeBtns = document.querySelectorAll("#modePills .pill");
+  if (modeBtns.length) {
+    modeBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        // exclusif (comme sur tes autres jeux)
+        modeBtns.forEach((b) => {
+          b.classList.remove("active");
+          b.setAttribute("aria-pressed", "false");
+        });
+        btn.classList.add("active");
+        btn.setAttribute("aria-pressed", "true");
+        currentMode = btn.dataset.mode || "anime";
+
+        // pour le futur : ici tu pourras changer de dataset / règles selon le mode
+        updatePreview();
+      });
+    });
+  }
+
   const roundInput = document.getElementById("roundCount");
   if (roundInput) {
-    roundInput.addEventListener("input", () => {
-      clampRoundsValue();
-      // pas besoin de preview ici, mais on peut le laisser
-    });
+    roundInput.addEventListener("input", () => clampRoundsValue());
     clampRoundsValue();
   }
 
   function syncLabels() {
     clampYearSliders();
+
     popVal.textContent = pop.value;
     scoreVal.textContent = score.value;
     yMinVal.textContent = yMin.value;
     yMaxVal.textContent = yMax.value;
+
+    [pop, score, yMin, yMax].forEach(setRangeFill);
+
     updatePreview();
   }
 
   [pop, score, yMin, yMax].forEach((el) => el.addEventListener("input", syncLabels));
 
   // Pills types
-  document.querySelectorAll(".pill").forEach((btn) => {
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
@@ -166,13 +200,8 @@ function initPersonalisationUI() {
 
   document.getElementById("applyFiltersBtn").addEventListener("click", () => {
     filteredBase = applyFilters();
+    if (filteredBase.length < MIN_REQUIRED) return;
 
-    if (filteredBase.length < MIN_REQUIRED) {
-      alert(`Pas assez de titres pour lancer (${filteredBase.length}/${MIN_REQUIRED}).`);
-      return;
-    }
-
-    // ✅ multi-rounds: on fixe la "session"
     totalRounds = clampRoundsValue();
     currentRound = 1;
     totalScore = 0;
@@ -184,31 +213,31 @@ function initPersonalisationUI() {
   syncLabels();
 }
 
-// ========== APPLY FILTERS ==========
+// ====== APPLY FILTERS ======
 function applyFilters() {
+  // (future) tu pourras switcher ici selon currentMode
+  // ex : if (currentMode === "hard") {...}
+
   const popPercent = parseInt(document.getElementById("popPercent").value, 10);
   const scorePercent = parseInt(document.getElementById("scorePercent").value, 10);
   const yearMin = parseInt(document.getElementById("yearMin").value, 10);
   const yearMax = parseInt(document.getElementById("yearMax").value, 10);
 
-  const allowedTypes = [...document.querySelectorAll(".pill.active")].map((b) => b.dataset.type);
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
-  // 1) année + type
   let pool = allAnimes.filter((a) => a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type));
 
-  // 2) popularité top %
   pool.sort((a, b) => b._members - a._members);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-  // 3) score top %
   pool.sort((a, b) => b._score - a._score);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
   return pool;
 }
 
-// ========== PREVIEW COUNT ==========
+// ====== PREVIEW COUNT ======
 function updatePreview() {
   const preview = document.getElementById("previewCount");
   const btn = document.getElementById("applyFiltersBtn");
@@ -216,24 +245,22 @@ function updatePreview() {
   const pool = applyFilters();
   const ok = pool.length >= MIN_REQUIRED;
 
-  preview.textContent = `📚 Titres disponibles : ${pool.length} ${ok ? "(OK)" : "(Min 64)"}`;
-
+  preview.textContent = `📚 Titres disponibles : ${pool.length} ${ok ? "(OK)" : `(Min ${MIN_REQUIRED})`}`;
   preview.classList.toggle("good", ok);
   preview.classList.toggle("bad", !ok);
 
   btn.disabled = !ok;
 }
 
-// ========== GAME INIT ==========
+// ====== GAME INIT ======
 function resetScoreBar() {
   const scoreBar = document.getElementById("score-bar");
   const scoreBarLabel = document.getElementById("score-bar-label");
   if (scoreBar) scoreBar.style.width = "100%";
-  if (scoreBarLabel) scoreBarLabel.textContent = "3000 / 3000";
+  if (scoreBarLabel) scoreBarLabel.textContent = `${MAX_SCORE} / ${MAX_SCORE}`;
 }
 
 function startNewGame() {
-  // choisit un anime mystère DANS filteredBase
   targetAnime = filteredBase[Math.floor(Math.random() * filteredBase.length)];
 
   attemptCount = 0;
@@ -248,19 +275,21 @@ function startNewGame() {
   indicesScoreRange = null;
   indicesScoreRangeActivation = [0, 0];
 
-  document.getElementById("animeInput").value = "";
+  const input = document.getElementById("animeInput");
+  input.value = "";
+  input.disabled = false;
+
   document.getElementById("suggestions").innerHTML = "";
   document.getElementById("results").innerHTML = "";
   document.getElementById("counter").textContent = "Tentatives : 0 (-150)";
   document.getElementById("successContainer").style.display = "none";
   document.getElementById("successContainer").innerHTML = "";
-  document.getElementById("animeInput").disabled = false;
 
   ["btnIndiceStudio", "btnIndiceSaison", "btnIndiceGenres", "btnIndiceScore"].forEach((id) => {
-    const btn = document.getElementById(id);
-    if (btn) {
-      btn.disabled = true;
-      btn.classList.remove("used");
+    const b = document.getElementById(id);
+    if (b) {
+      b.disabled = true;
+      b.classList.remove("used");
     }
   });
 
@@ -269,7 +298,7 @@ function startNewGame() {
   updateScoreBar();
 }
 
-// ========== INDICES BUTTONS ==========
+// ====== INDICES BUTTONS ======
 document.getElementById("btnIndiceStudio").addEventListener("click", function () {
   if (!indicesAvailable.studio || indicesActivated.studio) return;
   indicesActivated.studio = true;
@@ -310,14 +339,12 @@ document.getElementById("btnIndiceScore").addEventListener("click", function () 
   updateScoreBar();
 });
 
-// ========== SCORE BAR ==========
+// ====== SCORE BAR ======
 function updateScoreBar() {
   const scoreBar = document.getElementById("score-bar");
   const scoreBarLabel = document.getElementById("score-bar-label");
 
   const indiceCount = Object.values(indicesActivated).filter(Boolean).length;
-
-  // même logique que ton ancien code : 1ère tentative ne retire pas 150
   const tentative = Math.max(0, attemptCount - 1);
 
   let score = MAX_SCORE - tentative * TENTATIVE_COST - indiceCount * INDICE_COST;
@@ -338,14 +365,15 @@ function updateScoreBar() {
   }
 }
 
-// ========== AUTOCOMPLETE (top 5) ==========
-document.getElementById("animeInput").addEventListener("input", function () {
+// ====== AUTOCOMPLETE ======
+const animeInput = document.getElementById("animeInput");
+const suggestionsBox = document.getElementById("suggestions");
+
+animeInput.addEventListener("input", function () {
   if (gameOver) return;
 
   const input = this.value.trim().toLowerCase();
-  const suggestions = document.getElementById("suggestions");
-  suggestions.innerHTML = "";
-
+  suggestionsBox.innerHTML = "";
   if (!input) return;
 
   const matches = filteredBase.filter((a) => a._titleLower.includes(input));
@@ -355,19 +383,31 @@ document.getElementById("animeInput").addEventListener("input", function () {
     const div = document.createElement("div");
     div.textContent = anime._title;
     div.onclick = () => {
-      document.getElementById("animeInput").value = anime._title;
-      suggestions.innerHTML = "";
+      animeInput.value = anime._title;
+      suggestionsBox.innerHTML = "";
       guessAnime();
     };
-    suggestions.appendChild(div);
+    suggestionsBox.appendChild(div);
   });
 });
 
-// ========== GUESS ==========
+animeInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !gameOver) {
+    e.preventDefault();
+    suggestionsBox.innerHTML = "";
+    guessAnime();
+  }
+});
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".input-container")) suggestionsBox.innerHTML = "";
+});
+
+// ====== GUESS ======
 function guessAnime() {
   if (gameOver) return;
 
-  const input = document.getElementById("animeInput").value.trim().toLowerCase();
+  const input = animeInput.value.trim().toLowerCase();
   const guessedAnime = filteredBase.find((a) => a._titleLower === input);
 
   if (!guessedAnime) {
@@ -378,19 +418,16 @@ function guessAnime() {
   attemptCount++;
   document.getElementById("counter").textContent = `Tentatives : ${attemptCount} (-150)`;
 
-  // 1) Studio
   if (!indicesActivated.studio && guessedAnime.studio && guessedAnime.studio === targetAnime.studio) {
     indicesAvailable.studio = true;
     document.getElementById("btnIndiceStudio").disabled = false;
   }
 
-  // 2) Année
   if (!indicesActivated.saison && String(guessedAnime._year) === String(targetAnime._year)) {
     indicesAvailable.saison = true;
     document.getElementById("btnIndiceSaison").disabled = false;
   }
 
-  // 3) Genres/Thèmes
   const allGuessed = [...(guessedAnime.genres || []), ...(guessedAnime.themes || [])];
   const allTarget = [...(targetAnime.genres || []), ...(targetAnime.themes || [])];
 
@@ -403,7 +440,6 @@ function guessAnime() {
     document.getElementById("btnIndiceGenres").disabled = false;
   }
 
-  // 4) Score (+/-0.30)
   const gScore = guessedAnime._score;
   const tScore = targetAnime._score;
 
@@ -424,7 +460,6 @@ function guessAnime() {
     document.getElementById("btnIndiceScore").disabled = false;
   }
 
-  // --- Affichage résultat ---
   const results = document.getElementById("results");
 
   if (attemptCount === 1) {
@@ -453,7 +488,6 @@ function guessAnime() {
   const row = document.createElement("div");
   row.classList.add("row");
 
-  // Image
   const cellImage = document.createElement("div");
   cellImage.classList.add("cell", "cell-image");
   const img = document.createElement("img");
@@ -463,7 +497,6 @@ function guessAnime() {
   cellImage.appendChild(img);
   row.appendChild(cellImage);
 
-  // Title
   const cellTitle = document.createElement("div");
   cellTitle.classList.add("cell", "cell-title");
   const isTitleMatch = guessedAnime.mal_id === targetAnime.mal_id;
@@ -471,7 +504,6 @@ function guessAnime() {
   cellTitle.textContent = guessedAnime._title;
   row.appendChild(cellTitle);
 
-  // Year
   const cellYear = document.createElement("div");
   cellYear.classList.add("cell", "cell-season");
   if (guessedAnime._year === targetAnime._year) {
@@ -479,12 +511,10 @@ function guessAnime() {
     cellYear.textContent = `✅ ${guessedAnime._year}`;
   } else {
     cellYear.classList.add("red");
-    cellYear.textContent =
-      guessedAnime._year < targetAnime._year ? `🔼 ${guessedAnime._year}` : `${guessedAnime._year} 🔽`;
+    cellYear.textContent = guessedAnime._year < targetAnime._year ? `🔼 ${guessedAnime._year}` : `${guessedAnime._year} 🔽`;
   }
   row.appendChild(cellYear);
 
-  // Studio
   const cellStudio = document.createElement("div");
   cellStudio.classList.add("cell", "cell-studio");
   const isStudioMatch = (guessedAnime.studio || "") === (targetAnime.studio || "");
@@ -492,14 +522,12 @@ function guessAnime() {
   cellStudio.textContent = guessedAnime.studio || "—";
   row.appendChild(cellStudio);
 
-  // Genres
   const cellGenres = document.createElement("div");
   cellGenres.classList.add("cell", "cell-genre");
 
   if (isTitleMatch) {
     cellGenres.classList.add("green");
     cellGenres.innerHTML = allGuessed.length ? allGuessed.join("<br>") : "—";
-    row.appendChild(cellGenres);
   } else {
     const norm = (s) => String(s || "").trim().toLowerCase();
     const guessedSet = new Set(allGuessed.map(norm).filter(Boolean));
@@ -515,10 +543,9 @@ function guessAnime() {
     else cellGenres.classList.add("red");
 
     cellGenres.innerHTML = allGuessed.length ? allGuessed.join("<br>") : "—";
-    row.appendChild(cellGenres);
   }
+  row.appendChild(cellGenres);
 
-  // Score
   const cellScore = document.createElement("div");
   cellScore.classList.add("cell", "cell-score");
   if (gScore === tScore) {
@@ -533,21 +560,19 @@ function guessAnime() {
   }
   row.appendChild(cellScore);
 
-  // Insert under header
-  const header = results.querySelector(".header-row") || results.querySelector(".row");
-  if (header) results.insertBefore(row, header.nextSibling);
+  const headerRow = results.querySelector(".header-row");
+  if (headerRow) results.insertBefore(row, headerRow.nextSibling);
   else results.appendChild(row);
 
-  // cleanup
-  document.getElementById("animeInput").value = "";
-  document.getElementById("suggestions").innerHTML = "";
+  animeInput.value = "";
+  suggestionsBox.innerHTML = "";
 
   updateAideList();
   updateScoreBar();
 
   if (isTitleMatch) {
     gameOver = true;
-    document.getElementById("animeInput").disabled = true;
+    animeInput.disabled = true;
     ["btnIndiceStudio", "btnIndiceSaison", "btnIndiceGenres", "btnIndiceScore"].forEach((id) => {
       const b = document.getElementById(id);
       if (b) b.disabled = true;
@@ -558,7 +583,16 @@ function guessAnime() {
   }
 }
 
-// ========== AIDE LIST (FILTRÉE PAR INDICES + RANDOM) ==========
+// ====== AIDE LIST ======
+function escapeHtml(str) {
+  return String(str || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function updateAideList() {
   const aideDiv = document.getElementById("aideContainer");
 
@@ -567,18 +601,15 @@ function updateAideList() {
   if (indicesActivated.studio && indicesStudioAtActivation) {
     filtered = filtered.filter((a) => (a.studio || "") === indicesStudioAtActivation);
   }
-
   if (indicesActivated.saison && indicesYearAtActivation) {
     filtered = filtered.filter((a) => String(a._year) === String(indicesYearAtActivation));
   }
-
   if (indicesActivated.genres && indicesGenresFound.length > 0) {
     filtered = filtered.filter((a) => {
       const allG = [...(a.genres || []), ...(a.themes || [])];
       return indicesGenresFound.every((x) => allG.includes(x));
     });
   }
-
   if (indicesActivated.score && indicesScoreRange) {
     filtered = filtered.filter((a) => a._score >= indicesScoreRange[0] && a._score <= indicesScoreRange[1]);
   }
@@ -588,18 +619,18 @@ function updateAideList() {
 
   aideDiv.innerHTML =
     `<h3>🔍 Suggestions</h3><ul>` +
-    list
-      .map((a) => `<li onclick="selectFromAide('${a._title.replace(/'/g, "\\'")}')">${a._title}</li>`)
-      .join("") +
+    list.map((a) => `<li data-title="${escapeHtml(a._title)}">${escapeHtml(a._title)}</li>`).join("") +
     `</ul>`;
+
+  aideDiv.querySelectorAll("li[data-title]").forEach((li) => {
+    li.addEventListener("click", () => {
+      animeInput.value = li.getAttribute("data-title") || "";
+      guessAnime();
+    });
+  });
 }
 
-window.selectFromAide = function (title) {
-  document.getElementById("animeInput").value = title;
-  guessAnime();
-};
-
-// ========== CONFETTIS ==========
+// ====== CONFETTIS ======
 function launchFireworks() {
   const canvas = document.getElementById("fireworks");
   const ctx = canvas.getContext("2d");
@@ -613,9 +644,7 @@ function launchFireworks() {
     return { x, y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 60 };
   }
 
-  for (let i = 0; i < 110; i++) {
-    particles.push(createParticle(canvas.width / 2, canvas.height / 2));
-  }
+  for (let i = 0; i < 110; i++) particles.push(createParticle(canvas.width / 2, canvas.height / 2));
 
   function animate() {
     ctx.fillStyle = "rgba(0, 0, 0, 0.10)";
@@ -643,7 +672,7 @@ function launchFireworks() {
   animate();
 }
 
-// ========== VICTOIRE + MULTI-ROUNDS ==========
+// ====== VICTOIRE + MULTI-ROUNDS ======
 function computeRoundScore() {
   const indiceCount = Object.values(indicesActivated).filter(Boolean).length;
   const tentative = Math.max(0, attemptCount - 1);
@@ -661,21 +690,21 @@ function showSuccessMessage() {
   const hasNext = currentRound < totalRounds;
 
   container.innerHTML = `
-    <div id="winMessage" style="margin-bottom: 18px; font-size: 2rem; font-weight: bold; text-align: center;">
+    <div id="winMessage">
       🎇 <span style="font-size:2.3rem;">🥳</span>
-      Bravo ! C'était <u>${targetAnime._title}</u> en ${attemptCount} tentative${attemptCount > 1 ? "s" : ""}.
+      Bravo ! C'était <u>${escapeHtml(targetAnime._title)}</u> en ${attemptCount} tentative${attemptCount > 1 ? "s" : ""}.
       <span style="font-size:2.3rem;">🎉</span>
 
-      <div style="margin-top:10px; font-size:1.2rem; opacity:0.92;">
+      <div class="win-sub">
         Round ${currentRound} / ${totalRounds} — Score du round : <b>${roundScore}</b> / ${MAX_SCORE}
       </div>
 
-      <div style="margin-top:8px; font-size:1.05rem; opacity:0.9;">
+      <div class="win-sub" style="margin-top:6px;">
         Total : <b>${totalScore}</b> / ${totalRounds * MAX_SCORE}
       </div>
 
-      <div style="margin-top:14px; display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
-        <button id="nextRoundBtn" class="menu-btn" style="padding:0.75rem 1.2rem; font-size:1.05rem;">
+      <div class="win-actions">
+        <button id="nextRoundBtn" class="menu-btn">
           ${hasNext ? "➡️ Round suivant" : "✅ Terminer"}
         </button>
       </div>
@@ -690,21 +719,19 @@ function showSuccessMessage() {
     nextBtn.onclick = () => {
       if (currentRound < totalRounds) {
         currentRound += 1;
-        startNewGame(); // ✅ même personnalisation, nouveau mystère
+        startNewGame();
       } else {
-        // fin session => retour personnalisation
         showCustomization();
-        // (optionnel) tu peux aussi reset l'écran de jeu
         document.getElementById("results").innerHTML = "";
         document.getElementById("aideContainer").innerHTML = "";
-        document.getElementById("suggestions").innerHTML = "";
-        document.getElementById("animeInput").value = "";
+        suggestionsBox.innerHTML = "";
+        animeInput.value = "";
       }
     };
   }
 }
 
-// ========== TOOLTIP AIDE ==========
+// ====== TOOLTIP AIDE ======
 document.addEventListener("pointerdown", (e) => {
   const wrap = e.target.closest(".info-wrap");
 
