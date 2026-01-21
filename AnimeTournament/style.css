@@ -138,7 +138,7 @@ body.light .toggle-btn:hover {
 }
 
 /* =========================================
-   GENERIC BLOCK (used by game blocks)
+   GENERIC BLOCK (game blocks)
    ========================================= */
 .main-block {
   max-width: 1500px;
@@ -427,61 +427,73 @@ body.light #round-indicator {
 }
 
 /* =========================================
-   DUEL (FIX: plus de chevauchement)
+   DUEL (✅ 1 seule ligne + image complète)
    ========================================= */
+
+/* ✅ Toujours en 1 ligne, si pas la place => scroll horizontal */
 #duel-container {
   display: flex;
-  flex-wrap: wrap;                 /* ✅ autorise le retour à la ligne */
-  gap: clamp(18px, 3vw, 46px);     /* ✅ espace auto */
+  flex-wrap: nowrap;                  /* ✅ 1 ligne */
+  gap: clamp(18px, 3vw, 46px);
   justify-content: center;
   align-items: flex-start;
   width: 100%;
   max-width: 1600px;
   margin-bottom: 1.2rem;
+
+  overflow-x: auto;                   /* ✅ au lieu de wrap */
+  overflow-y: hidden;
+  padding-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* ✅ Chaque choix devient une "colonne" responsive */
+/* (optionnel) scrollbar plus discrète */
+#duel-container::-webkit-scrollbar { height: 10px; }
+#duel-container::-webkit-scrollbar-thumb {
+  background: rgba(0, 188, 212, 0.35);
+  border-radius: 999px;
+}
+#duel-container::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.15);
+  border-radius: 999px;
+}
+
+/* ✅ chaque carte prend ~50% mais peut dépasser => scroll */
 #duel-container .anime,
 #duel-container .opening {
-  flex: 1 1 520px;                 /* base: 520px puis s'adapte */
+  flex: 1 0 520px;                    /* base 520px, sinon scroll */
   max-width: 760px;
-  width: 100%;
+  min-width: 420px;
 
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 0.9rem;
+
+  padding: 10px;                      /* ✅ évite "collé" */
+  border-radius: 16px;
+  background: rgba(0,0,0,0.10);
 }
 
-/* Desktop large: 2 colonnes propres */
-@media (min-width: 1200px) {
-  #duel-container .anime,
-  #duel-container .opening {
-    max-width: calc(50% - 28px);   /* ✅ évite "collé" */
-  }
-}
-
-/* Anime images */
+/* ✅ image complète (plus de zoom/crop) */
 #duel-container .anime img {
   width: 100%;
-  height: auto;
-  aspect-ratio: 3 / 4;
-  max-height: 480px;
-  object-fit: cover;
+  height: 420px;                      /* taille contrôlée */
+  object-fit: contain;                /* ✅ image entière */
+  object-position: center;
+  background: #000;                   /* bandes noires propre */
   border-radius: 8px;
   box-shadow: 0 0 18px #1116;
 }
 
-/* Songs videos (✅ plus de width fixe 650px) */
+/* ✅ vidéo non coupée et responsive */
 #duel-container .opening video {
   width: 100%;
-  height: auto;
-  aspect-ratio: 16 / 9;
-  max-height: 360px;
-  object-fit: cover;
+  height: 360px;
+  object-fit: contain;
+  background: #000;
   border-radius: 8px;
   box-shadow: 0 0 18px #1116;
-  background: #000;
 }
 
 /* Vote titles */
@@ -492,13 +504,18 @@ body.light #round-indicator {
   border-radius: 12px;
   margin: 0;
   padding: 0.75em 1.1em;
-  font-size: 1.15rem;
+  font-size: 1.08rem;                 /* un peu plus petit => moins de “collision” */
   font-weight: 900;
   letter-spacing: 0.01em;
   transition: background 0.14s, color 0.14s, box-shadow 0.17s, transform 0.12s;
   user-select: none;
   width: 100%;
   text-align: center;
+
+  white-space: normal;               /* ✅ wrap du texte */
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+
   animation: duel-pulse-clic 1.18s infinite alternate cubic-bezier(.65,.12,.45,1);
 }
 
@@ -595,9 +612,7 @@ footer {
 body.light footer { color: #888; }
 
 /* =========================================
-   ✅ PANEL vs GAME (sans wrapper HTML)
-   - par défaut: on voit la personnalisation
-   - quand body.game-started: on voit le jeu
+   ✅ PANEL vs GAME (comme Anidle)
    ========================================= */
 
 /* Hide game UI by default */
@@ -633,13 +648,21 @@ body.game-started #classement { display: block; }
    ========================================= */
 @media (max-width: 900px) {
   header h1 { font-size: 1.6rem; }
-  #duel-container .opening video { max-height: 320px; }
+  #duel-container .opening video { height: 300px; }
+  #duel-container .anime img { height: 360px; }
 }
 
 @media (max-width: 600px) {
   header h1 { font-size: 1.4rem; }
   .info-tip { width: min(340px, 86vw); right: 0; }
   #custom-panel { padding: 1.3rem 1rem; }
+
+  /* sur mobile, on garde 1 ligne MAIS on réduit la base */
+  #duel-container .anime,
+  #duel-container .opening {
+    flex-basis: 320px;
+    min-width: 320px;
+  }
 }
 
 @media (max-width: 500px) {
