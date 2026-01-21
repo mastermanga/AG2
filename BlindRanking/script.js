@@ -1,9 +1,9 @@
 /**********************
- * Blind Ranking (Anime + Songs)
- * ✅ Songs: titre complet + autoplay + volume bar
- * ✅ Grille songs: lazy load (image en fond + bouton Charger)
- * ✅ Retry anti-bug: 1 + 5 retries (2,4,6,8,10s)
- * ✅ Ne mute jamais les vidéos
+ * Blind Ranking (Anime / Songs)
+ * - Songs: à droite = VIDEO uniquement (autoplay si possible, non mutée)
+ * - Grille ranking: JAMAIS de vidéo (uniquement image cover)
+ * - Titre songs: "Oeuvre OP/ED/IN N — Nom — Artiste"
+ * - Loader anti-bug media + retries: 1 + 5 retries (2/4/6/8/10s)
  **********************/
 
 // ====== MENU & THEME ======
@@ -35,14 +35,13 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// ====== CONSTANTS ======
+// ====== HELPERS ======
 const MIN_REQUIRED = 64;
 
-// ✅ 5 retries: 2,4,6,8,10s (donc 6 tentatives au total)
+// retries: 1 essai + 5 retries => 0, 2s, 4s, 6s, 8s, 10s
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const STALL_TIMEOUT_MS = 6000;
 
-// ====== HELPERS ======
 function normalizeAnimeList(json) {
   if (Array.isArray(json)) return json;
   if (json && Array.isArray(json.animes)) return json.animes;
@@ -62,8 +61,20 @@ function getDisplayTitle(a) {
 
 function getYear(a) {
   const s = ((a && a.season) ? String(a.season) : "").trim(); // ex "spring 2013"
-  const m = s.match(/(19|20)\d{2}/);
-  return m ? parseInt(m[0], 10) : 0;
+  const m = s.match(/(\d{4})/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+function clampYearSliders() {
+  const minEl = document.getElementById("yearMin");
+  const maxEl = document.getElementById("yearMax");
+  let a = parseInt(minEl.value, 10);
+  let b = parseInt(maxEl.value, 10);
+  if (a > b) {
+    [a, b] = [b, a];
+    minEl.value = a;
+    maxEl.value = b;
+  }
 }
 
 function shuffleInPlace(arr) {
@@ -79,18 +90,6 @@ function clampInt(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-function clampYearSliders() {
-  const minEl = document.getElementById("yearMin");
-  const maxEl = document.getElementById("yearMax");
-  let a = parseInt(minEl.value, 10);
-  let b = parseInt(maxEl.value, 10);
-  if (a > b) {
-    [a, b] = [b, a];
-    minEl.value = a;
-    maxEl.value = b;
-  }
-}
-
 function safeNum(x) {
   const n = +x;
   return Number.isFinite(n) ? n : 0;
@@ -99,18 +98,23 @@ function safeNum(x) {
 function songTypeLabel(t) {
   if (t === "OP") return "OP";
   if (t === "ED") return "ED";
-  return "Insert Song";
+  return "IN";
 }
 
 function formatSongTitle(s) {
   const type = songTypeLabel(s.songType);
-  const num = (s.songNumber && s.songNumber > 0) ? ` ${s.songNumber}` : "";
+  const num = s.songNumber ? ` ${s.songNumber}` : "";
   const name = s.songName ? ` — ${s.songName}` : "";
-  const artist = s.songArtists ? ` — ${s.songArtists}` : "";
-  return `${s.animeTitle} ${type}${num}${name}${artist}`.trim();
+  const art = s.songArtists ? ` — ${s.songArtists}` : "";
+  return `${s.animeTitle || "Anime"} ${type}${num}${name}${art}`;
 }
 
-// ====== SONGS extraction ======
+function formatItemLabel(it) {
+  if (!it) return "";
+  if (it.kind === "song") return formatSongTitle(it);
+  return it.title || "";
+}
+
 function extractSongsFromAnime(anime) {
   const out = [];
   const song = anime.song || {};
@@ -136,6 +140,8 @@ function extractSongsFromAnime(anime) {
         songNumber: safeNum(it.number) || 1,
         songArtists: artists || "",
 
+        // anime meta
+        animeMalId: anime.mal_id ?? null,
         animeTitle: anime._title,
         animeTitleLower: anime._titleLower,
         animeImage: anime.image || "",
@@ -144,8 +150,9 @@ function extractSongsFromAnime(anime) {
         animeMembers: anime._members,
         animeScore: anime._score,
 
+        // media
         url,
-        _key: `${b.type}|${it.number || ""}|${it.name || ""}|${url}`,
+        _key: `${b.type}|${it.number || ""}|${it.name || ""}|${url}|${anime.mal_id || ""}`,
       });
     }
   }
@@ -174,8 +181,6 @@ const roundCountEl = document.getElementById("roundCount");
 const rankingList = document.getElementById("ranking-list");
 const animeImg = document.getElementById("anime-img");
 const itemName = document.getElementById("item-name");
-
-const mediaStatusEl = document.getElementById("mediaStatus");
 
 const playerZone = document.getElementById("player-zone");
 const songPlayer = document.getElementById("songPlayer");
@@ -211,205 +216,9 @@ let selectedItems = [];
 let currentIndex = 0;
 let rankings = new Array(10).fill(null);
 
-// ====== VOLUME ======
-let currentVolume = 0.5;
-
-function loadSavedVolume() {
-  const saved = parseInt(localStorage.getItem("blind_volume") || "50", 10);
-  const v = Math.max(0, Math.min(100, saved));
-  currentVolume = v / 100;
-  if (volumeSlider) volumeSlider.value = String(v);
-  if (volumeVal) volumeVal.textContent = `${v}%`;
-}
-
-function setVideoAudio(videoEl) {
-  if (!videoEl) return;
-  // ✅ ne jamais mute
-  videoEl.muted = false;
-  videoEl.defaultMuted = false;
-  videoEl.removeAttribute("muted");
-  videoEl.volume = currentVolume;
-}
-
-function applyVolumeEverywhere() {
-  if (!volumeSlider) return;
-  const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "50", 10)));
-  currentVolume = v / 100;
-  localStorage.setItem("blind_volume", String(v));
-  if (volumeVal) volumeVal.textContent = `${v}%`;
-
-  // main player
-  setVideoAudio(songPlayer);
-  // grid videos déjà chargées
-  document.querySelectorAll("#ranking-list video").forEach(vd => setVideoAudio(vd));
-}
-
-// ====== STATUS ======
-function setMediaStatus(msg) {
-  if (!mediaStatusEl) return;
-  mediaStatusEl.textContent = msg || "";
-}
-
-// ====== VIDEO LOADER (retries + anti-stall) ======
-function withCacheBuster(url) {
-  const sep = url.includes("?") ? "&" : "?";
-  return url + sep + "t=" + Date.now();
-}
-
-function hardResetVideo(videoEl) {
-  try { videoEl.pause(); } catch {}
-  try { videoEl.removeAttribute("src"); } catch {}
-  try { videoEl.load(); } catch {}
-}
-
-function loadVideoWithRetries(videoEl, url, {
-  statusEl = null,
-  autoplay = false,
-  preloadOnly = false,
-  poster = ""
-} = {}) {
-  if (!videoEl || !url) return;
-
-  // id local pour annuler une ancienne charge sur CE video
-  videoEl._loadId = (videoEl._loadId || 0) + 1;
-  const myId = videoEl._loadId;
-
-  let attemptIndex = 0;
-  let stallTimer = null;
-  let done = false;
-
-  const setStatusLocal = (msg) => {
-    const el = statusEl || mediaStatusEl;
-    if (!el) return;
-    el.textContent = msg || "";
-  };
-
-  const isValid = () => videoEl._loadId === myId;
-
-  const cleanup = () => {
-    if (stallTimer) {
-      clearTimeout(stallTimer);
-      stallTimer = null;
-    }
-    videoEl.onloadedmetadata = null;
-    videoEl.oncanplay = null;
-    videoEl.onplaying = null;
-    videoEl.onwaiting = null;
-    videoEl.onstalled = null;
-    videoEl.onerror = null;
-  };
-
-  const startStallTimer = () => {
-    if (stallTimer) clearTimeout(stallTimer);
-    stallTimer = setTimeout(() => {
-      if (!isValid() || done) return;
-      triggerRetry("🔄 Rechargement (stall)...");
-    }, STALL_TIMEOUT_MS);
-  };
-
-  const markReady = () => {
-    if (!isValid() || done) return;
-    done = true;
-    cleanup();
-    setStatusLocal("");
-
-    // ✅ jamais mute + volume global
-    setVideoAudio(videoEl);
-
-    if (preloadOnly) return;
-
-    if (autoplay) {
-      videoEl.play?.().catch(() => {
-        // autoplay avec son souvent bloqué -> on affiche un message
-        setStatusLocal("▶ Clique sur lecture pour lancer le son (autoplay bloqué).");
-      });
-    }
-  };
-
-  const triggerRetry = (msg) => {
-    if (!isValid() || done) return;
-
-    cleanup();
-    attemptIndex++;
-
-    if (attemptIndex >= RETRY_DELAYS.length) {
-      done = true;
-      setStatusLocal("❌ Média indisponible.");
-      return;
-    }
-
-    setStatusLocal(msg || `🔄 Nouvelle tentative (${attemptIndex + 1}/${RETRY_DELAYS.length})...`);
-    setTimeout(() => {
-      if (!isValid() || done) return;
-      doAttempt();
-    }, RETRY_DELAYS[attemptIndex]);
-  };
-
-  const doAttempt = () => {
-    if (!isValid() || done) return;
-
-    const src = attemptIndex === 0 ? url : withCacheBuster(url);
-
-    try { hardResetVideo(videoEl); } catch {}
-
-    if (poster) {
-      try { videoEl.poster = poster; } catch {}
-    }
-
-    setStatusLocal(attemptIndex === 0
-      ? "⏳ Chargement..."
-      : `🔄 Nouvelle tentative (${attemptIndex + 1}/${RETRY_DELAYS.length})...`
-    );
-
-    videoEl.preload = "metadata";
-    videoEl.src = src;
-    videoEl.load();
-
-    videoEl.onloadedmetadata = () => {
-      if (!isValid() || done) return;
-      if (preloadOnly) return markReady();
-      markReady();
-    };
-
-    videoEl.oncanplay = () => {
-      if (!isValid() || done) return;
-      if (preloadOnly) return markReady();
-      markReady();
-    };
-
-    videoEl.onwaiting = () => {
-      if (!isValid() || done) return;
-      setStatusLocal("⏳ Chargement...");
-      startStallTimer();
-    };
-
-    videoEl.onstalled = () => {
-      if (!isValid() || done) return;
-      setStatusLocal("⏳ Chargement...");
-      startStallTimer();
-    };
-
-    videoEl.onplaying = () => {
-      if (!isValid() || done) return;
-      setStatusLocal("");
-      if (stallTimer) {
-        clearTimeout(stallTimer);
-        stallTimer = null;
-      }
-    };
-
-    videoEl.onerror = () => {
-      if (!isValid() || done) return;
-      triggerRetry();
-    };
-
-    // anti-stall au départ
-    startStallTimer();
-  };
-
-  attemptIndex = 0;
-  doAttempt();
-}
+// tokens anti-bug media
+let roundToken = 0;
+let mediaToken = 0;
 
 // ====== UI SHOW/HIDE ======
 function showCustomization() {
@@ -419,6 +228,141 @@ function showCustomization() {
 function showGame() {
   customPanel.style.display = "none";
   gamePanel.style.display = "block";
+}
+
+// ====== VOLUME ======
+function applyVolume() {
+  if (!songPlayer) return;
+  const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "30", 10)));
+  // ⚠️ non muté
+  songPlayer.muted = false;
+  songPlayer.volume = v / 100;
+  if (volumeVal) volumeVal.textContent = `${v}%`;
+}
+if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
+
+// ====== MEDIA LOADER (retries + anti-stall) ======
+function hardResetMedia() {
+  try { songPlayer.pause(); } catch {}
+  songPlayer.removeAttribute("src");
+  songPlayer.load();
+}
+
+function withCacheBuster(url) {
+  const sep = url.includes("?") ? "&" : "?";
+  return url + sep + "t=" + Date.now();
+}
+
+function loadMediaWithRetries(url, localRound, localMedia, { autoplay = true } = {}) {
+  let attemptIndex = 0;
+  let stallTimer = null;
+  let done = false;
+
+  const cleanup = () => {
+    if (stallTimer) {
+      clearTimeout(stallTimer);
+      stallTimer = null;
+    }
+    songPlayer.onloadedmetadata = null;
+    songPlayer.oncanplay = null;
+    songPlayer.onplaying = null;
+    songPlayer.onwaiting = null;
+    songPlayer.onstalled = null;
+    songPlayer.onerror = null;
+  };
+
+  const isStillValid = () => localRound === roundToken && localMedia === mediaToken;
+
+  const startStallTimer = () => {
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      if (!isStillValid() || done) return;
+      triggerRetry();
+    }, STALL_TIMEOUT_MS);
+  };
+
+  const markReady = () => {
+    if (!isStillValid() || done) return;
+    done = true;
+    cleanup();
+
+    // autoplay best-effort (souvent OK après interaction user)
+    if (autoplay) {
+      songPlayer.muted = false; // ✅ ne mute pas
+      songPlayer.play?.().catch(() => {});
+    }
+  };
+
+  const triggerRetry = () => {
+    if (!isStillValid() || done) return;
+
+    cleanup();
+    attemptIndex++;
+
+    if (attemptIndex >= RETRY_DELAYS.length) {
+      done = true;
+      // on laisse l’UI continuer (pas de blocage), mais on vide la source
+      try { songPlayer.pause(); } catch {}
+      return;
+    }
+
+    setTimeout(() => {
+      if (!isStillValid() || done) return;
+      doAttempt();
+    }, RETRY_DELAYS[attemptIndex]);
+  };
+
+  const doAttempt = () => {
+    if (!isStillValid() || done) return;
+
+    const src = attemptIndex === 0 ? url : withCacheBuster(url);
+
+    try { hardResetMedia(); } catch {}
+
+    songPlayer.preload = "metadata";
+    songPlayer.muted = false; // ✅ ne mute pas
+    songPlayer.src = src;
+    songPlayer.load();
+
+    songPlayer.onloadedmetadata = () => {
+      if (!isStillValid() || done) return;
+      markReady();
+    };
+
+    songPlayer.oncanplay = () => {
+      if (!isStillValid() || done) return;
+      markReady();
+    };
+
+    songPlayer.onwaiting = () => {
+      if (!isStillValid() || done) return;
+      startStallTimer();
+    };
+
+    songPlayer.onstalled = () => {
+      if (!isStillValid() || done) return;
+      startStallTimer();
+    };
+
+    songPlayer.onplaying = () => {
+      if (!isStillValid() || done) return;
+      if (stallTimer) {
+        clearTimeout(stallTimer);
+        stallTimer = null;
+      }
+    };
+
+    songPlayer.onerror = () => {
+      if (!isStillValid() || done) return;
+      triggerRetry();
+    };
+
+    startStallTimer();
+  };
+
+  attemptIndex = 0;
+  doAttempt();
+  return cleanup;
 }
 
 // ====== UI INIT ======
@@ -443,14 +387,6 @@ function initCustomUI() {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-
-      // au moins 1 type
-      const any = document.querySelectorAll("#typePills .pill.active").length > 0;
-      if (!any) {
-        btn.classList.add("active");
-        btn.setAttribute("aria-pressed", "true");
-      }
-
       updatePreview();
     });
   });
@@ -460,14 +396,6 @@ function initCustomUI() {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-
-      // au moins 1
-      const any = document.querySelectorAll("#songPills .pill.active").length > 0;
-      if (!any) {
-        btn.classList.add("active");
-        btn.setAttribute("aria-pressed", "true");
-      }
-
       updatePreview();
     });
   });
@@ -579,25 +507,23 @@ function applyFilters() {
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  return pool.map(s => {
-    const item = {
-      kind: "song",
-      _key: `song|${s._key}`,
-      animeTitle: s.animeTitle || "Anime",
-      songType: s.songType,
-      songNumber: s.songNumber || 1,
-      songName: s.songName || "",
-      songArtists: s.songArtists || "",
-      url: s.url,
-      animeImage: s.animeImage || ""
-    };
-    item.displayTitle = formatSongTitle(item);
-    return item;
-  });
+  // ✅ Songs: on garde TOUT ce qu'il faut pour le titre complet + image anime
+  return pool.map(s => ({
+    kind: "song",
+    _key: `song|${s._key}`,
+    animeTitle: s.animeTitle || "Anime",
+    songName: s.songName || "",
+    songNumber: s.songNumber || 1,
+    songArtists: s.songArtists || "",
+    songType: s.songType,
+    url: s.url,
+    image: s.animeImage || "" // ✅ grille = image anime
+  }));
 }
 
 // ====== PREVIEW ======
 function updatePreview() {
+  // dataset pas chargé
   if (!allAnimes.length) {
     previewCountEl.textContent = "⏳ Chargement de la base…";
     previewCountEl.classList.add("bad");
@@ -634,13 +560,15 @@ function resetGameUI() {
   resultDiv.textContent = "";
   nextBtn.style.display = "none";
 
-  setMediaStatus("");
+  // stop media
+  mediaToken++;
+  try { songPlayer.pause(); } catch {}
+  songPlayer.removeAttribute("src");
+  songPlayer.load();
 
-  if (songPlayer) {
-    try { songPlayer.pause(); } catch {}
-    songPlayer.removeAttribute("src");
-    songPlayer.load?.();
-  }
+  // volume row only in songs
+  volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
+  applyVolume();
 }
 
 function pick10FromPool(pool) {
@@ -658,7 +586,9 @@ function pick10FromPool(pool) {
 }
 
 function startRound() {
+  roundToken++;
   resetGameUI();
+
   roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
 
   const minNeeded = Math.max(10, MIN_REQUIRED);
@@ -698,43 +628,45 @@ function displayCurrentItem() {
     return;
   }
 
-  setMediaStatus("");
+  // ✅ titre complet
+  itemName.textContent = formatItemLabel(item);
 
   if (currentMode === "songs") {
-    // ✅ songs: titre complet, pas d'image séparée
-    itemName.textContent = item.displayTitle || item.animeTitle || "";
-
+    // ✅ songs: VIDEO uniquement (pas d’image séparée)
     animeImg.style.display = "none";
     playerZone.style.display = "block";
-    if (volumeRow) volumeRow.style.display = "flex";
+    volumeRow.style.display = "flex";
 
-    // reset src
-    try { songPlayer.pause(); } catch {}
-    songPlayer.removeAttribute("src");
-    songPlayer.load?.();
+    // poster possible sur la vidéo (c’est toujours le player vidéo)
+    songPlayer.poster = item.image || "";
 
-    // appliquer audio/volume (pas mute)
-    setVideoAudio(songPlayer);
+    if (item.url) {
+      mediaToken++;
+      const localRound = roundToken;
+      const localMedia = mediaToken;
 
-    // poster = anime image (dans la vidéo, pas une image séparée)
-    const poster = item.animeImage || "";
-    loadVideoWithRetries(songPlayer, item.url, {
-      statusEl: mediaStatusEl,
-      autoplay: true,
-      preloadOnly: false,
-      poster
-    });
+      // reset avant load
+      try { songPlayer.pause(); } catch {}
+      songPlayer.removeAttribute("src");
+      songPlayer.load();
 
+      // non muté + volume
+      songPlayer.muted = false;
+      applyVolume();
+
+      loadMediaWithRetries(item.url, localRound, localMedia, { autoplay: true });
+    } else {
+      try { songPlayer.pause(); } catch {}
+      songPlayer.removeAttribute("src");
+      songPlayer.load();
+    }
   } else {
-    // anime mode
-    itemName.textContent = item.title || "";
-
+    // anime mode normal
+    volumeRow.style.display = "none";
     playerZone.style.display = "none";
-    if (volumeRow) volumeRow.style.display = "none";
-
     try { songPlayer.pause(); } catch {}
     songPlayer.removeAttribute("src");
-    songPlayer.load?.();
+    songPlayer.load();
 
     if (item.image) {
       animeImg.src = item.image;
@@ -763,51 +695,6 @@ function assignRank(rank) {
   displayCurrentItem();
 }
 
-// ✅ création thumb lazy avec image fond + bouton Charger
-function createSongThumb(it, slotIndex) {
-  const thumb = document.createElement("div");
-  thumb.className = "song-thumb";
-  if (it.animeImage) thumb.style.backgroundImage = `url("${it.animeImage}")`;
-
-  const btn = document.createElement("button");
-  btn.className = "load-btn";
-  btn.type = "button";
-  btn.textContent = "▶ Charger";
-  thumb.appendChild(btn);
-
-  btn.addEventListener("click", () => {
-    btn.disabled = true;
-    btn.textContent = "⏳";
-
-    // remplacer par la vidéo
-    const vid = document.createElement("video");
-    vid.controls = true;
-    vid.preload = "metadata";
-    vid.playsInline = true;
-
-    // ✅ pas mute + volume global
-    setVideoAudio(vid);
-
-    // poster = anime image
-    if (it.animeImage) vid.poster = it.animeImage;
-
-    thumb.replaceWith(vid);
-
-    // charger sans autoplay obligatoire, mais on peut jouer (clic utilisateur = OK)
-    loadVideoWithRetries(vid, it.url, {
-      statusEl: null,
-      autoplay: true,
-      preloadOnly: false,
-      poster: it.animeImage || ""
-    });
-
-    // s’assurer que le volume reste à jour si l’utilisateur bouge le slider après
-    applyVolumeEverywhere();
-  });
-
-  return thumb;
-}
-
 function updateRankingList() {
   rankingList.innerHTML = "";
 
@@ -816,20 +703,16 @@ function updateRankingList() {
     const it = rankings[i];
 
     if (it) {
-      if (it.kind === "song") {
-        // ✅ lazy load: image en fond + bouton "Charger"
-        li.appendChild(createSongThumb(it, i));
-      } else {
-        const img = document.createElement("img");
-        img.src = it.image || "";
-        img.alt = it.title || "";
-        li.appendChild(img);
-      }
+      // ✅ Grille: JAMAIS de vidéo, uniquement image anime
+      const img = document.createElement("img");
+      img.src = it.image || "";
+      img.alt = it.kind === "song" ? (it.animeTitle || "") : (it.title || "");
+      img.loading = "lazy";
+      img.decoding = "async";
+      li.appendChild(img);
 
       const span = document.createElement("span");
-      span.textContent = it.kind === "song"
-        ? `Rang ${i + 1}: ${it.displayTitle || it.animeTitle || ""}`
-        : `Rang ${i + 1}: ${it.title || ""}`;
+      span.textContent = `Rang ${i + 1}: ${formatItemLabel(it)}`;
       li.appendChild(span);
     } else {
       const ph = document.createElement("div");
@@ -843,9 +726,6 @@ function updateRankingList() {
 
     rankingList.appendChild(li);
   }
-
-  // appliquer volume si des vidéos existent déjà
-  applyVolumeEverywhere();
 }
 
 function finishRound() {
@@ -880,10 +760,6 @@ function finishRound() {
   }
 }
 
-// ====== INIT VOLUME ======
-loadSavedVolume();
-if (volumeSlider) volumeSlider.addEventListener("input", applyVolumeEverywhere);
-
 // ====== LOAD DATA ======
 fetch("../data/licenses_only.json")
   .then(r => {
@@ -893,15 +769,15 @@ fetch("../data/licenses_only.json")
   .then(json => {
     const raw = normalizeAnimeList(json);
 
-    allAnimes = raw.map(a => {
+    allAnimes = (Array.isArray(raw) ? raw : []).map(a => {
       const title = getDisplayTitle(a);
       return {
         ...a,
         _title: title,
         _titleLower: title.toLowerCase(),
         _year: getYear(a),
-        _members: Number.isFinite(+a.members) ? +a.members : 0,
-        _score: Number.isFinite(+a.score) ? +a.score : 0,
+        _members: safeNum(a.members),
+        _score: safeNum(a.score),
         _type: a.type || "Unknown",
       };
     });
@@ -913,10 +789,11 @@ fetch("../data/licenses_only.json")
     updatePreview();
     showCustomization();
 
-    // parcours auto start
+    // volume default
+    applyVolume();
+
+    // parcours auto-start
     if (isParcours) {
-      if (forcedMode === "anime" || forcedMode === "songs") currentMode = forcedMode;
-      updateModePillsFromState();
       filteredPool = applyFilters();
       const minNeeded = Math.max(10, MIN_REQUIRED);
       if (filteredPool.length >= minNeeded) {
