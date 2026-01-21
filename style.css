@@ -99,78 +99,6 @@ header h1 {
   z-index: 2;
 }
 
-/* --- DAILY RECAP --- */
-#daily-recap-block {
-  background: linear-gradient(120deg, #233554f3 80%, #00bcd411 100%);
-  border-radius: 15px;
-  box-shadow: 0 2px 12px #00bcd430;
-  padding: 1.25rem 1.1rem 1.15rem 1.1rem;
-  margin-bottom: 0rem;
-  width: 100%;
-  max-width: 385px;
-  transition: background 0.25s;
-  z-index: 2;
-  position: relative;
-  border: 1.5px solid #00bcd455;
-  text-align: center;
-}
-
-#daily-recap-block h2 {
-  margin-top: 0;
-  margin-bottom: 12px;
-  font-size: 1.18rem;
-  font-weight: bold;
-  letter-spacing: 0.3px;
-  color: #00eaff;
-  text-align: center;
-  text-shadow:
-    0 0 7px #00eaff,
-    0 0 18px #00eaff99,
-    0 1px 4px #1de9b68e;
-}
-
-.daily-title {
-  display: flex;
-  align-items: center;
-  gap: 0.45em;
-  width: 100%;
-  justify-content: center;
-}
-
-.daily-title .emoji {
-  font-size: 1.18em;
-  filter: drop-shadow(0 0 3px #ffd600bb);
-}
-
-#daily-recap-block ul {
-  list-style: none;
-  margin: 0 0 0.7rem 0;
-  padding: 0;
-  align-items: center;
-  justify-content: center;
-  display: flex;
-  flex-direction: column;
-}
-#daily-recap-block li {
-  margin: 0.27rem 0;
-  font-size: 1.07rem;
-  display: flex;
-  align-items: center;
-  gap: 0.8em;
-  padding: 2px 0 2px 0;
-  justify-content: center;
-}
-#recap-total {
-  margin-top: 0px;
-  padding-top: 0px;
-  font-size: 1.16rem;
-  font-weight: bold;
-  display: inline-block;
-  color: #fff;
-  text-shadow: 0 0 4px #00eaffb3;
-  vertical-align: middle;
-}
-
 /* --- MENU JEUX EN MODE "CARD" --- */
 .menu {
   display: grid;
@@ -380,7 +308,7 @@ header h1 {
 }
 
 /* --- Animation d'apparition douce --- */
-#daily-recap-block, .menu .game-card {
+.menu .game-card {
   opacity: 0;
   transform: translateY(22px);
   animation: fadeUp 0.55s cubic-bezier(.47,1.64,.41,.8) 0.12s forwards;
@@ -419,15 +347,7 @@ body.light #container {
   background-color: #fff;
   box-shadow: 0 0 22px #42a5f5;
 }
-body.light #daily-recap-block {
-  background: linear-gradient(120deg, #e0f7fa 90%, #1565c01a 100%);
-  box-shadow: 0 2px 14px #42a5f54b;
-  border: 1.5px solid #42a5f577;
-}
-body.light #daily-recap-block h2 {
-  color: #1565c0;
-  text-shadow: 0 1px 4px #42a5f588;
-}
+
 body.light #recap-total {
   color: #1976d2;
   text-shadow: 0 0 4px #1976d233;
@@ -502,10 +422,6 @@ body.light .info-icon:focus {
     row-gap: 0.8rem;
   }
 
-  #daily-recap-block {
-    max-width: 98vw;
-    padding: 1rem 5vw 1rem 5vw;
-  }
 
   .menu .game-card {
     font-size: 1.02rem;
