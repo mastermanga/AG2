@@ -187,6 +187,7 @@ function initCustomUI() {
 
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
 
+  // type pills
   document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -220,6 +221,7 @@ function applyFilters() {
   const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
+  // 1) base filter
   let pool = allAnimes.filter((a) => {
     return (
       a._year >= yearMin &&
@@ -232,12 +234,15 @@ function applyFilters() {
 
   if (pool.length === 0) return [];
 
+  // 2) top pop% par members
   pool.sort((a, b) => b._members - a._members);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
+  // 3) top score% par score
   pool.sort((a, b) => b._score - a._score);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
+  // Nettoyage final
   pool = pool.filter(a => {
     const chars = Array.isArray(a.characters) ? a.characters : [];
     return chars.some(c => c && c.image && typeof c.image === "string");
@@ -295,6 +300,7 @@ function startNewRound() {
   currentAnime = filteredAnimes[Math.floor(Math.random() * filteredAnimes.length)];
   visibleCharacters = pick6CharactersBalanced(currentAnime.characters);
 
+  // crée les images (cachées)
   visibleCharacters.forEach((char, i) => {
     const img = document.createElement("img");
     img.src = char.image;
@@ -305,6 +311,7 @@ function startNewRound() {
     container.appendChild(img);
   });
 
+  // reveal 1er perso
   revealNextCharacter();
 }
 
