@@ -601,3 +601,50 @@ body.light footer{ color:#888; }
   background:#222;
   box-shadow: 0 2px 14px #1116;
 }
+
+/* ====== MEDIA STATUS (anti-bug) ====== */
+.media-status{
+  width:100%;
+  min-height: 1.2em;
+  text-align:center;
+  font-weight:900;
+  opacity:0.9;
+  margin: -6px 0 10px 0;
+  user-select:none;
+}
+
+/* ====== LAZY VIDEO THUMB (ranking grid) ====== */
+.video-thumb{
+  width:100%;
+  height:150px;
+  border-radius:12px;
+  background: rgba(255,255,255,0.08);
+  box-shadow: 0 2px 14px #1116;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  position:relative;
+  overflow:hidden;
+}
+
+.load-video-btn{
+  border:none;
+  cursor:pointer;
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-weight:900;
+  color:#fff;
+  background: linear-gradient(120deg, #00bcd4 75%, #1e88e5 100%);
+  box-shadow: 0 1px 10px rgba(0,234,255,0.25);
+  transition: transform 0.12s, filter 0.15s, opacity 0.15s;
+}
+
+.load-video-btn:hover{ filter: brightness(1.08); transform: translateY(-1px); }
+.load-video-btn:active{ transform: scale(0.98); }
+
+.load-video-btn:disabled{
+  opacity:0.65;
+  cursor:not-allowed;
+  filter: grayscale(0.2);
+  box-shadow:none;
+}
