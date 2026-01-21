@@ -703,6 +703,8 @@ body.light .info-icon{
 
 /* =========================================================
    ✅ PATCH GAME — corrigé: container centré + barre qui se vide droite->gauche
+   + ✅ Images en 2 lignes (3 colonnes)
+   + ✅ Boutons bleus comme les autres (Valider)
 ========================================================= */
 
 #game-panel{
@@ -723,7 +725,6 @@ body.light .info-icon{
   border: 1.5px solid #00bcd455;
   padding: 46px 44px 40px;
 
-  /* ✅ centré quoi qu'il arrive */
   margin: 0 auto;
 
   display: flex;
@@ -733,13 +734,12 @@ body.light .info-icon{
   box-sizing: border-box;
 }
 
-/* Score bar (✅ fill ancré à gauche, label centré sur toute la barre) */
+/* Score bar */
 #game-panel #score-bar-container{
   width: 100%;
   max-width: 600px;
   height: 36px;
 
-  /* ✅ pas de flex centré => sinon le fill se centre et "rétrécit au milieu" */
   display: block;
   position: relative;
 
@@ -750,17 +750,13 @@ body.light .info-icon{
   overflow: hidden;
 }
 
-/* Le fill reste collé à gauche */
 #game-panel #score-bar{
   height: 100%;
   border-radius: 999px;
-
-  /* ✅ on annule le inline "position:relative" (sinon le label se centre dans le fill) */
   position: static !important;
   margin: 0;
 }
 
-/* Label centré sur la barre complète (pas dans le fill) */
 #game-panel #score-bar-label{
   position: absolute;
   left: 50%;
@@ -784,21 +780,26 @@ body.light .info-icon{
   margin-top: -6px;
 }
 
-/* Images personnages */
+/* ✅ Images personnages : 3 colonnes => 2 lignes pour 6 persos */
 #game-panel #character-container{
   width: 100%;
   max-width: 600px;
   min-height: 260px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 14px;
+  justify-items: center;
+  align-items: start;
 }
 
 #game-panel .character-img{
-  width: 190px;
-  height: 240px;
+  width: 100%;
+  max-width: 180px;
+  aspect-ratio: 3 / 4;
+  height: auto;
   object-fit: cover;
+
   border-radius: 18px;
   background: #222;
   border: 2px solid rgba(255,255,255,0.14);
@@ -864,25 +865,27 @@ body.light .info-icon{
   background: rgba(0,188,212,0.12);
 }
 
-/* Boutons valider/suivant */
+/* ✅ Boutons du jeu (Valider + Suivant) => bleu comme les autres */
 #game-panel #submit-btn,
 #game-panel #restart-btn{
-  background: rgba(255,255,255,0.22);
-  border: 1px solid rgba(255,255,255,0.18);
+  background: linear-gradient(120deg, #00bcd4 75%, #1e88e5 100%);
   color: #fff;
   border-radius: 12px;
-  padding: 10px 22px;
-  font-size: 1.05rem;
   font-weight: 900;
+  border: none;
+  outline: none;
+  box-shadow: 0 1px 7px #00bcd466;
+  font-size: 1.05rem;
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
-  transition: transform 0.12s, background 0.18s;
+  padding: 10px 22px;
+  transition: background 0.21s, box-shadow 0.18s, transform 0.12s;
 }
 
 #game-panel #submit-btn:hover:not(:disabled),
 #game-panel #restart-btn:hover:not(:disabled){
+  background: linear-gradient(120deg, #1de9b6 80%, #1565c0 100%);
+  box-shadow: 0 10px 34px #00eaffd7, 0 2.5px 14px #1976d277;
   transform: translateY(-1px);
-  background: rgba(255,255,255,0.30);
 }
 
 #game-panel #submit-btn:disabled{
@@ -946,8 +949,13 @@ body.light #game-panel #timer{
     padding: 28px 18px 26px;
     border-radius: 28px;
   }
+
+  /* ✅ sur mobile on repasse en 2 colonnes */
+  #game-panel #character-container{
+    grid-template-columns: repeat(2, 1fr);
+  }
+
   #game-panel .character-img{
-    width: 160px;
-    height: 210px;
+    max-width: 160px;
   }
 }
