@@ -1,11 +1,11 @@
 /**********************
- * Guess The Opening
- * - Dataset: ../data/licenses_only.json
- * - Personnalisation: popularité/score/années/types + songs(OP/ED/IN)
- * - Pas de daily
- * - Player caché pendant la partie, reveal à la fin
- * - Rounds (enchaînés) + score total affiché à la fin
- * - Volume slider pendant la partie
+ * Guess The Opening — version “anti-bug audio”
+ * ✅ Ajouts:
+ *  - Token d’annulation (anti race-condition) quand on change de round / retry
+ *  - Retries (0s, +3s, +10s) avec cache-bust ?t=...
+ *  - Détection de “stall” (chargement infini sans onerror) => retry
+ *  - On charge 1 seule fois par round (plus stable), puis on seek (Début/Refrain/Complet)
+ *  - Petit status “Chargement…” injecté en JS (sans modifier le HTML)
  **********************/
 
 const MAX_SCORE = 3000;
@@ -17,7 +17,11 @@ const SCORE_TRY3 = 1500;
 const SCORE_TRY3_WITH_6 = 1000;
 const SCORE_TRY3_WITH_3 = 500;
 
-const MIN_REQUIRED_SONGS = 64; // ✅ Min 64 (comme demandé)
+const MIN_REQUIRED_SONGS = 64;
+
+// retries like Tournament
+const RETRY_DELAYS = [0, 3000, 10000];
+const STALL_TIMEOUT_MS = 8000; // si au bout de 8s pas prêt => retry
 
 // ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
@@ -45,7 +49,7 @@ function getDisplayTitle(a) {
 }
 
 function getYear(a) {
-  const s = (a.season || "").trim(); // ex: "spring 2013"
+  const s = (a.season || "").trim();
   const parts = s.split(/\s+/);
   const y = parseInt(parts[1] || parts[0] || "0", 10);
   return Number.isFinite(y) ? y : 0;
@@ -74,6 +78,11 @@ function shuffleInPlace(arr) {
 function safeNum(x) {
   const n = +x;
   return Number.isFinite(n) ? n : 0;
+}
+
+function clampInt(n, a, b) {
+  n = Number.isFinite(n) ? n : a;
+  return Math.max(a, Math.min(b, n));
 }
 
 // ====== Songs extraction (structure: anime.song.openings/endings/inserts) ======
@@ -167,6 +176,34 @@ const audioPlayer = document.getElementById("audioPlayer");
 const volumeSlider = document.getElementById("volumeSlider");
 const volumeVal = document.getElementById("volumeVal");
 
+// ====== Status (injecté, pas besoin de toucher le HTML) ======
+let mediaStatusEl = document.getElementById("mediaStatus");
+function ensureMediaStatusEl() {
+  if (mediaStatusEl) return mediaStatusEl;
+  const container = document.getElementById("container");
+  if (!container) return null;
+
+  const el = document.createElement("div");
+  el.id = "mediaStatus";
+  el.style.margin = "6px 0 10px 0";
+  el.style.fontWeight = "900";
+  el.style.opacity = "0.9";
+  el.style.fontSize = "0.95rem";
+  el.style.minHeight = "1.2em";
+  el.style.textAlign = "center";
+  el.style.userSelect = "none";
+
+  // place sous la barre de round si possible
+  container.insertBefore(el, container.querySelector(".input-container") || null);
+  mediaStatusEl = el;
+  return mediaStatusEl;
+}
+function setMediaStatus(msg) {
+  const el = ensureMediaStatusEl();
+  if (!el) return;
+  el.textContent = msg || "";
+}
+
 // ====== Data ======
 let allAnimes = [];
 let allSongs = [];
@@ -189,6 +226,20 @@ let indiceActive = false;
 let stopTimer = null;
 const tryDurations = [15, 15, null]; // 3e écoute complète
 let currentStart = 0;
+
+// ✅ token anti “anciens callbacks”
+let roundToken = 0;
+
+// ====== WebM support (audio) ======
+const CAN_PLAY_WEBM_AUDIO = (() => {
+  const a = document.createElement("audio");
+  if (!a.canPlayType) return false;
+  // Safari renvoie souvent "" pour webm
+  const t1 = a.canPlayType('audio/webm; codecs="opus"');
+  const t2 = a.canPlayType("audio/webm");
+  const t3 = a.canPlayType("video/webm"); // au cas où
+  return (t1 && t1 !== "") || (t2 && t2 !== "") || (t3 && t3 !== "");
+})();
 
 // ====== UI show/hide ======
 function showCustomization() {
@@ -240,59 +291,6 @@ function applyVolume() {
 }
 if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
 
-// ====== Custom UI init ======
-function initCustomUI() {
-  function syncLabels() {
-    clampYearSliders();
-    popValEl.textContent = popEl.value;
-    scoreValEl.textContent = scoreEl.value;
-    yearMinValEl.textContent = yearMinEl.value;
-    yearMaxValEl.textContent = yearMaxEl.value;
-    updatePreview();
-  }
-
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
-
-  // type pills
-  document.querySelectorAll("#typePills .pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-      updatePreview();
-    });
-  });
-
-  // song pills
-  document.querySelectorAll("#songPills .pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-      updatePreview();
-    });
-  });
-
-  applyBtn.addEventListener("click", () => {
-    filteredSongs = applyFilters();
-
-    // ✅ Min 64 + bouton grisé + label "Min 64"
-    if (filteredSongs.length < MIN_REQUIRED_SONGS) return;
-
-    totalRounds = clampInt(parseInt(roundCountEl.value || "5", 10), 1, 50);
-    currentRound = 1;
-    totalScore = 0;
-
-    showGame();
-    startNewRound();
-  });
-
-  syncLabels();
-}
-
-function clampInt(n, a, b) {
-  n = Number.isFinite(n) ? n : a;
-  return Math.max(a, Math.min(b, n));
-}
-
 // ====== Filters ======
 function applyFilters() {
   const popPercent = parseInt(popEl.value, 10);
@@ -342,7 +340,58 @@ function updatePreview() {
   applyBtn.classList.toggle("disabled", !ok);
 }
 
-// ====== Playback ======
+// ====== Custom UI init ======
+function initCustomUI() {
+  function syncLabels() {
+    clampYearSliders();
+    popValEl.textContent = popEl.value;
+    scoreValEl.textContent = scoreEl.value;
+    yearMinValEl.textContent = yearMinEl.value;
+    yearMaxValEl.textContent = yearMaxEl.value;
+    updatePreview();
+  }
+
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
+
+  // type pills
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      updatePreview();
+    });
+  });
+
+  // song pills
+  document.querySelectorAll("#songPills .pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      updatePreview();
+    });
+  });
+
+  applyBtn.addEventListener("click", () => {
+    if (!CAN_PLAY_WEBM_AUDIO) {
+      alert("⚠️ Ton navigateur ne supporte pas WebM (souvent Safari/iOS). Ce mini-jeu ne peut pas lire les openings.");
+      return;
+    }
+
+    filteredSongs = applyFilters();
+    if (filteredSongs.length < MIN_REQUIRED_SONGS) return;
+
+    totalRounds = clampInt(parseInt(roundCountEl.value || "5", 10), 1, 50);
+    currentRound = 1;
+    totalScore = 0;
+
+    showGame();
+    startNewRound(0);
+  });
+
+  syncLabels();
+}
+
+// ====== Playback helpers ======
 function stopPlayback() {
   if (stopTimer) {
     clearTimeout(stopTimer);
@@ -353,11 +402,225 @@ function stopPlayback() {
   } catch {}
 }
 
+let loaderTimers = { stall: null, delay: null };
+
+function clearLoaderTimers() {
+  if (loaderTimers.stall) clearTimeout(loaderTimers.stall);
+  if (loaderTimers.delay) clearTimeout(loaderTimers.delay);
+  loaderTimers.stall = null;
+  loaderTimers.delay = null;
+}
+
+function hardResetAudioElement() {
+  try { audioPlayer.pause(); } catch {}
+  // reset src clean
+  audioPlayer.removeAttribute("src");
+  try { audioPlayer.load(); } catch {}
+}
+
+// ✅ charge l’audio avec retries + anti-stall + cache-bust
+function loadAudioWithRetries(url, token, onReady, onFail) {
+  if (!url) {
+    onFail?.("missing-url");
+    return;
+  }
+
+  let attempt = 1;
+  let ready = false;
+
+  // nettoyer anciens handlers/timers
+  clearLoaderTimers();
+  audioPlayer.oncanplay = null;
+  audioPlayer.onloadedmetadata = null;
+  audioPlayer.onerror = null;
+  audioPlayer.onstalled = null;
+  audioPlayer.onwaiting = null;
+
+  const markReady = () => {
+    if (token !== roundToken) return;
+    if (ready) return;
+    ready = true;
+    clearLoaderTimers();
+    setMediaStatus("");
+    onReady?.();
+  };
+
+  const scheduleAttempt = (delayMs) => {
+    clearLoaderTimers();
+    loaderTimers.delay = setTimeout(() => {
+      if (token !== roundToken) return;
+
+      // reset dur
+      hardResetAudioElement();
+
+      if (attempt === 1) setMediaStatus("⏳ Chargement…");
+      else setMediaStatus(`🔄 Nouvelle tentative (${attempt}/3)…`);
+
+      const finalUrl =
+        attempt === 1 ? url : url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+
+      // charge
+      audioPlayer.preload = "auto";
+      audioPlayer.src = finalUrl;
+      try { audioPlayer.load(); } catch {}
+
+      // anti-stall: si pas prêt au bout de STALL_TIMEOUT_MS => retry
+      loaderTimers.stall = setTimeout(() => {
+        if (token !== roundToken) return;
+        if (ready) return;
+        // si le navigateur n’a pas avancé, on considère stall
+        doRetry("stall");
+      }, STALL_TIMEOUT_MS);
+    }, delayMs);
+  };
+
+  const doRetry = (reason) => {
+    if (token !== roundToken) return;
+    if (ready) return;
+
+    if (attempt === 1) {
+      attempt = 2;
+      scheduleAttempt(RETRY_DELAYS[1]);
+    } else if (attempt === 2) {
+      attempt = 3;
+      scheduleAttempt(RETRY_DELAYS[2]);
+    } else {
+      clearLoaderTimers();
+      setMediaStatus("❌ Media indisponible (serveur ou lien).");
+      onFail?.(reason || "error");
+    }
+  };
+
+  audioPlayer.onwaiting = () => {
+    if (token !== roundToken) return;
+    if (!ready) setMediaStatus("⏳ Chargement…");
+  };
+
+  audioPlayer.onstalled = () => {
+    // parfois pas de onerror => on retry
+    doRetry("stalled");
+  };
+
+  audioPlayer.onerror = () => {
+    doRetry("error");
+  };
+
+  // on se contente de canplay pour considérer “prêt”
+  audioPlayer.oncanplay = () => {
+    markReady();
+  };
+
+  // fallback: certains navigateurs donnent metadata avant canplay, on laisse une chance
+  audioPlayer.onloadedmetadata = () => {
+    if (token !== roundToken) return;
+    // si canplay ne vient pas, le stall timer gère
+  };
+
+  scheduleAttempt(RETRY_DELAYS[0]);
+}
+
+// ====== Round init/reset ======
+function resetIndice() {
+  indice6Used = false;
+  indice3Used = false;
+  indiceActive = false;
+
+  indiceButtonsWrap.style.display = "none";
+  btnIndice6.classList.remove("used");
+  btnIndice3.classList.remove("used");
+  btnIndice6.disabled = false;
+  btnIndice3.disabled = false;
+
+  const old = document.getElementById("indice-options-list");
+  if (old) old.remove();
+}
+
+function resetControls() {
+  tries = 0;
+  failedAnswers = [];
+  failedAttemptsDiv.innerText = "";
+  resultDiv.textContent = "";
+  resultDiv.className = "";
+
+  openingInput.value = "";
+  openingInput.disabled = true;
+
+  suggestionsDiv.innerHTML = "";
+
+  playTry1Btn.disabled = true;
+  playTry2Btn.disabled = true;
+  playTry3Btn.disabled = true;
+
+  nextBtn.style.display = "none";
+
+  resetIndice();
+  stopPlayback();
+
+  // cache player + pas de controls pendant la partie
+  playerWrapper.style.display = "none";
+  audioPlayer.controls = false;
+  audioPlayer.removeAttribute("controls");
+
+  updateScoreBar(3000);
+
+  // label round
+  if (roundLabel) {
+    roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
+  }
+
+  setMediaStatus("");
+}
+
+function startNewRound(pickTry = 0) {
+  // anti boucle infinie si dataset foireux
+  if (pickTry > 12) {
+    alert("❌ Trop de liens indisponibles d'affilée. Essaie d’élargir tes filtres ou reviens plus tard.");
+    showCustomization();
+    return;
+  }
+
+  resetControls();
+
+  currentSong = filteredSongs[Math.floor(Math.random() * filteredSongs.length)];
+  if (!currentSong || !currentSong.url) {
+    startNewRound(pickTry + 1);
+    return;
+  }
+
+  // ✅ nouveau token (annule tous les callbacks/retries précédents)
+  roundToken++;
+
+  // charge avec retries
+  const token = roundToken;
+  loadAudioWithRetries(
+    currentSong.url,
+    token,
+    () => {
+      // prêt: active Début (tries est 0 ici)
+      if (token !== roundToken) return;
+      if (tries === 0) playTry1Btn.disabled = false;
+      openingInput.disabled = true;
+    },
+    () => {
+      // si fail => on choisit une autre song
+      if (token !== roundToken) return;
+      startNewRound(pickTry + 1);
+    }
+  );
+}
+
+// ====== Playback / segments ======
 function playSegment(tryNum) {
   if (!currentSong) return;
 
   if (tryNum !== tries + 1) {
     alert("Vous devez écouter les extraits dans l'ordre.");
+    return;
+  }
+
+  // si le média n’est pas prêt, on bloque
+  if (!audioPlayer.src) {
+    setMediaStatus("⏳ Chargement…");
     return;
   }
 
@@ -387,18 +650,20 @@ function playSegment(tryNum) {
 
   // player caché pendant la partie
   playerWrapper.style.display = "none";
-  audioPlayer.controls = false; // ✅ pas de contrôles pendant la partie
+  audioPlayer.controls = false;
   audioPlayer.removeAttribute("controls");
 
   stopPlayback();
 
-  // (tu gardes ton comportement actuel : re-assign src pour être “robuste”)
-  audioPlayer.src = currentSong.url;
-  audioPlayer.currentTime = currentStart;
+  // ✅ on ne change plus src ici (plus stable)
+  try {
+    audioPlayer.currentTime = currentStart;
+  } catch {}
 
   applyVolume();
 
   audioPlayer.play().catch(() => {
+    setMediaStatus("❌ Impossible de lire ce média.");
     resultDiv.textContent = "❌ Impossible de lire cette vidéo/audio.";
     resultDiv.className = "incorrect";
   });
@@ -410,7 +675,7 @@ function playSegment(tryNum) {
     }, duration * 1000);
   }
 
-  // ✅ états des boutons
+  // ✅ états des boutons (Début doit rester grisé après)
   playTry1Btn.disabled = true;
   playTry2Btn.disabled = tries !== 1;
   playTry3Btn.disabled = tries !== 2;
@@ -467,77 +732,6 @@ function showIndiceOptions(nb) {
   document.getElementById("container").appendChild(list);
 }
 
-function resetIndice() {
-  indice6Used = false;
-  indice3Used = false;
-  indiceActive = false;
-
-  indiceButtonsWrap.style.display = "none";
-  btnIndice6.classList.remove("used");
-  btnIndice3.classList.remove("used");
-  btnIndice6.disabled = false;
-  btnIndice3.disabled = false;
-
-  const old = document.getElementById("indice-options-list");
-  if (old) old.remove();
-}
-
-// ====== Round init/reset ======
-function resetControls() {
-  tries = 0;
-  failedAnswers = [];
-  failedAttemptsDiv.innerText = "";
-  resultDiv.textContent = "";
-  resultDiv.className = "";
-
-  openingInput.value = "";
-  openingInput.disabled = true;
-
-  suggestionsDiv.innerHTML = "";
-
-  playTry1Btn.disabled = true;
-  playTry2Btn.disabled = true;
-  playTry3Btn.disabled = true;
-
-  nextBtn.style.display = "none";
-
-  resetIndice();
-  stopPlayback();
-
-  // cache player + pas de controls pendant la partie
-  playerWrapper.style.display = "none";
-  audioPlayer.controls = false;
-  audioPlayer.removeAttribute("controls");
-
-  updateScoreBar(3000);
-
-  // label round
-  if (roundLabel) {
-    roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
-  }
-}
-
-function startNewRound() {
-  resetControls();
-
-  currentSong = filteredSongs[Math.floor(Math.random() * filteredSongs.length)];
-
-  // prepare
-  audioPlayer.src = currentSong.url;
-  audioPlayer.preload = "metadata";
-  applyVolume();
-
-  // ✅ FIX: ne réactive "Début" QUE si on est vraiment au début du round
-  // (sinon loadedmetadata se relance à chaque playSegment() quand tu remets src)
-  audioPlayer.onloadedmetadata = () => {
-    if (tries === 0) playTry1Btn.disabled = false;
-  };
-
-  audioPlayer.onerror = () => {
-    startNewRound(); // retry another
-  };
-}
-
 // ====== Guess logic ======
 function updateFailedAttempts() {
   failedAttemptsDiv.innerText = failedAnswers.map((e) => `❌ ${e}`).join("\n");
@@ -553,7 +747,6 @@ function finalScore() {
 }
 
 function revealSongAndPlayer() {
-  // reveal uniquement à la fin
   playerWrapper.style.display = "block";
   audioPlayer.controls = true;
   audioPlayer.setAttribute("controls", "controls");
@@ -562,7 +755,6 @@ function revealSongAndPlayer() {
 function endRoundAndMaybeNext(roundScore, won) {
   totalScore += roundScore;
 
-  // si dernier round -> affiche score total, bouton retour perso
   if (currentRound >= totalRounds) {
     const msg = won ? "✅ Série terminée !" : "✅ Série terminée !";
     resultDiv.innerHTML += `<div style="margin-top:10px; font-weight:900; opacity:0.95;">${msg}<br>Score total : <b>${totalScore}</b> / <b>${totalRounds * 3000}</b></div>`;
@@ -571,24 +763,34 @@ function endRoundAndMaybeNext(roundScore, won) {
     nextBtn.textContent = "Retour réglages";
     nextBtn.onclick = () => {
       showCustomization();
-      // on remet le jeu “propre”
       stopPlayback();
       playerWrapper.style.display = "none";
       openingInput.value = "";
       suggestionsDiv.innerHTML = "";
       resultDiv.textContent = "";
       failedAttemptsDiv.textContent = "";
+      setMediaStatus("");
     };
     return;
   }
 
-  // sinon, round suivant
   nextBtn.style.display = "block";
   nextBtn.textContent = "Round suivant";
   nextBtn.onclick = () => {
     currentRound += 1;
-    startNewRound();
+    startNewRound(0);
   };
+}
+
+function blockInputsAll() {
+  openingInput.disabled = true;
+  playTry1Btn.disabled = true;
+  playTry2Btn.disabled = true;
+  playTry3Btn.disabled = true;
+  suggestionsDiv.innerHTML = "";
+  indiceButtonsWrap.style.display = "none";
+  const old = document.getElementById("indice-options-list");
+  if (old) old.remove();
 }
 
 function checkAnswer(selectedTitle) {
@@ -618,7 +820,6 @@ function checkAnswer(selectedTitle) {
   updateFailedAttempts();
 
   if (tries >= 3) {
-    // lost
     resultDiv.innerHTML = `🔔 Réponse : <b>${currentSong.animeTitle}</b><br><em>${formatRevealLine(currentSong)}</em>`;
     resultDiv.className = "incorrect";
 
@@ -630,20 +831,8 @@ function checkAnswer(selectedTitle) {
 
     endRoundAndMaybeNext(0, false);
   } else {
-    // must listen next segment before guessing again
     openingInput.disabled = true;
   }
-}
-
-function blockInputsAll() {
-  openingInput.disabled = true;
-  playTry1Btn.disabled = true;
-  playTry2Btn.disabled = true;
-  playTry3Btn.disabled = true;
-  suggestionsDiv.innerHTML = "";
-  indiceButtonsWrap.style.display = "none";
-  const old = document.getElementById("indice-options-list");
-  if (old) old.remove();
 }
 
 // ====== Autocomplete ======
@@ -775,5 +964,11 @@ fetch("../data/licenses_only.json")
 
     // volume init
     applyVolume();
+
+    if (!CAN_PLAY_WEBM_AUDIO) {
+      previewCountEl.textContent = "⚠️ WebM non supporté sur ce navigateur (Safari/iOS).";
+      previewCountEl.classList.add("bad");
+      applyBtn.disabled = true;
+    }
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
