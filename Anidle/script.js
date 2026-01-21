@@ -31,8 +31,7 @@ function getDisplayTitle(a) {
 }
 
 function getYear(a) {
-  // season ex: "spring 2013"
-  const s = (a.season || "").trim();
+  const s = (a.season || "").trim(); // "spring 2013"
   const parts = s.split(/\s+/);
   const y = parseInt(parts[1] || parts[0] || "0", 10);
   return Number.isFinite(y) ? y : 0;
@@ -58,10 +57,25 @@ function clampYearSliders() {
   }
 }
 
+function clampRoundsValue() {
+  const el = document.getElementById("roundCount");
+  if (!el) return 1;
+  let v = parseInt(el.value, 10);
+  if (!Number.isFinite(v) || v < 1) v = 1;
+  if (v > 50) v = 50;
+  el.value = String(v);
+  return v;
+}
+
 // ========== GLOBAL DATA ==========
 let allAnimes = [];
 let filteredBase = []; // pool après personnalisation
 let targetAnime = null;
+
+// ========== MULTI-ROUNDS STATE ==========
+let totalRounds = 1;
+let currentRound = 1;   // 1..totalRounds
+let totalScore = 0;
 
 // ========== GAME STATE ==========
 let attemptCount = 0;
@@ -121,6 +135,15 @@ function initPersonalisationUI() {
   const yMinVal = document.getElementById("yearMinVal");
   const yMaxVal = document.getElementById("yearMaxVal");
 
+  const roundInput = document.getElementById("roundCount");
+  if (roundInput) {
+    roundInput.addEventListener("input", () => {
+      clampRoundsValue();
+      // pas besoin de preview ici, mais on peut le laisser
+    });
+    clampRoundsValue();
+  }
+
   function syncLabels() {
     clampYearSliders();
     popVal.textContent = pop.value;
@@ -148,6 +171,11 @@ function initPersonalisationUI() {
       alert(`Pas assez de titres pour lancer (${filteredBase.length}/${MIN_REQUIRED}).`);
       return;
     }
+
+    // ✅ multi-rounds: on fixe la "session"
+    totalRounds = clampRoundsValue();
+    currentRound = 1;
+    totalScore = 0;
 
     showGame();
     startNewGame();
@@ -186,12 +214,14 @@ function updatePreview() {
   const btn = document.getElementById("applyFiltersBtn");
 
   const pool = applyFilters();
-  preview.textContent = `📚 Titres disponibles : ${pool.length} ${pool.length >= MIN_REQUIRED ? "(OK)" : "(Min 64)"}`;
+  const ok = pool.length >= MIN_REQUIRED;
 
-  preview.classList.toggle("good", pool.length >= MIN_REQUIRED);
-  preview.classList.toggle("bad", pool.length < MIN_REQUIRED);
+  preview.textContent = `📚 Titres disponibles : ${pool.length} ${ok ? "(OK)" : "(Min 64)"}`;
 
-  btn.disabled = pool.length < MIN_REQUIRED;
+  preview.classList.toggle("good", ok);
+  preview.classList.toggle("bad", !ok);
+
+  btn.disabled = !ok;
 }
 
 // ========== GAME INIT ==========
@@ -203,6 +233,7 @@ function resetScoreBar() {
 }
 
 function startNewGame() {
+  // choisit un anime mystère DANS filteredBase
   targetAnime = filteredBase[Math.floor(Math.random() * filteredBase.length)];
 
   attemptCount = 0;
@@ -222,6 +253,7 @@ function startNewGame() {
   document.getElementById("results").innerHTML = "";
   document.getElementById("counter").textContent = "Tentatives : 0 (-150)";
   document.getElementById("successContainer").style.display = "none";
+  document.getElementById("successContainer").innerHTML = "";
   document.getElementById("animeInput").disabled = false;
 
   ["btnIndiceStudio", "btnIndiceSaison", "btnIndiceGenres", "btnIndiceScore"].forEach((id) => {
@@ -284,6 +316,8 @@ function updateScoreBar() {
   const scoreBarLabel = document.getElementById("score-bar-label");
 
   const indiceCount = Object.values(indicesActivated).filter(Boolean).length;
+
+  // même logique que ton ancien code : 1ère tentative ne retire pas 150
   const tentative = Math.max(0, attemptCount - 1);
 
   let score = MAX_SCORE - tentative * TENTATIVE_COST - indiceCount * INDICE_COST;
@@ -394,7 +428,6 @@ function guessAnime() {
   const results = document.getElementById("results");
 
   if (attemptCount === 1) {
-    // ✅ header aligné : mêmes largeurs que les colonnes
     const header = document.createElement("div");
     header.className = "header-row";
 
@@ -462,28 +495,25 @@ function guessAnime() {
   // Genres
   const cellGenres = document.createElement("div");
   cellGenres.classList.add("cell", "cell-genre");
-  
-  // si c'est le bon anime => tout doit être vert
+
   if (isTitleMatch) {
     cellGenres.classList.add("green");
     cellGenres.innerHTML = allGuessed.length ? allGuessed.join("<br>") : "—";
     row.appendChild(cellGenres);
   } else {
-    // normalisation pour éviter les bugs (espaces/casse/doublons)
     const norm = (s) => String(s || "").trim().toLowerCase();
-  
     const guessedSet = new Set(allGuessed.map(norm).filter(Boolean));
     const targetSet = new Set(allTarget.map(norm).filter(Boolean));
-  
     const common = [...guessedSet].filter((x) => targetSet.has(x));
+
     const isExactSame =
       guessedSet.size === targetSet.size &&
       [...guessedSet].every((x) => targetSet.has(x));
-  
+
     if (isExactSame) cellGenres.classList.add("green");
     else if (common.length > 0) cellGenres.classList.add("orange");
     else cellGenres.classList.add("red");
-  
+
     cellGenres.innerHTML = allGuessed.length ? allGuessed.join("<br>") : "—";
     row.appendChild(cellGenres);
   }
@@ -522,6 +552,7 @@ function guessAnime() {
       const b = document.getElementById(id);
       if (b) b.disabled = true;
     });
+
     showSuccessMessage();
     launchFireworks();
   }
@@ -612,26 +643,65 @@ function launchFireworks() {
   animate();
 }
 
-// ========== VICTOIRE ==========
+// ========== VICTOIRE + MULTI-ROUNDS ==========
+function computeRoundScore() {
+  const indiceCount = Object.values(indicesActivated).filter(Boolean).length;
+  const tentative = Math.max(0, attemptCount - 1);
+  let score = MAX_SCORE - tentative * TENTATIVE_COST - indiceCount * INDICE_COST;
+  score = Math.max(0, Math.min(score, MAX_SCORE));
+  return score;
+}
+
 function showSuccessMessage() {
   const container = document.getElementById("successContainer");
 
-  let roundScore =
-    MAX_SCORE -
-    Math.max(0, attemptCount - 1) * TENTATIVE_COST -
-    Object.values(indicesActivated).filter(Boolean).length * INDICE_COST;
-  if (roundScore < 0) roundScore = 0;
+  const roundScore = computeRoundScore();
+  totalScore += roundScore;
+
+  const hasNext = currentRound < totalRounds;
 
   container.innerHTML = `
     <div id="winMessage" style="margin-bottom: 18px; font-size: 2rem; font-weight: bold; text-align: center;">
       🎇 <span style="font-size:2.3rem;">🥳</span>
       Bravo ! C'était <u>${targetAnime._title}</u> en ${attemptCount} tentative${attemptCount > 1 ? "s" : ""}.
       <span style="font-size:2.3rem;">🎉</span>
-      <div style="margin-top:10px; font-size:1.2rem; opacity:0.9;">Score : <b>${roundScore}</b> / ${MAX_SCORE}</div>
+
+      <div style="margin-top:10px; font-size:1.2rem; opacity:0.92;">
+        Round ${currentRound} / ${totalRounds} — Score du round : <b>${roundScore}</b> / ${MAX_SCORE}
+      </div>
+
+      <div style="margin-top:8px; font-size:1.05rem; opacity:0.9;">
+        Total : <b>${totalScore}</b> / ${totalRounds * MAX_SCORE}
+      </div>
+
+      <div style="margin-top:14px; display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
+        <button id="nextRoundBtn" class="menu-btn" style="padding:0.75rem 1.2rem; font-size:1.05rem;">
+          ${hasNext ? "➡️ Round suivant" : "✅ Terminer"}
+        </button>
+      </div>
     </div>
   `;
+
   container.style.display = "block";
   container.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  const nextBtn = document.getElementById("nextRoundBtn");
+  if (nextBtn) {
+    nextBtn.onclick = () => {
+      if (currentRound < totalRounds) {
+        currentRound += 1;
+        startNewGame(); // ✅ même personnalisation, nouveau mystère
+      } else {
+        // fin session => retour personnalisation
+        showCustomization();
+        // (optionnel) tu peux aussi reset l'écran de jeu
+        document.getElementById("results").innerHTML = "";
+        document.getElementById("aideContainer").innerHTML = "";
+        document.getElementById("suggestions").innerHTML = "";
+        document.getElementById("animeInput").value = "";
+      }
+    };
+  }
 }
 
 // ========== TOOLTIP AIDE ==========
