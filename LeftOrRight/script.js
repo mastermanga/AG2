@@ -138,9 +138,9 @@ let bannedKeyOnce = null;
 
 // ====== STAT THEMES ======
 const STAT_THEMES = [
-  { key: "members", prompt: "Trouver l’anime le plus populaire" }, // members
-  { key: "score",   prompt: "Trouver l’anime le mieux noté" },     // score
-  { key: "year",    prompt: "Trouver l’anime le plus récent" },    // year
+  { key: "members", prompt: "Trouver l’anime le plus populaire" },
+  { key: "score",   prompt: "Trouver l’anime le mieux noté" },
+  { key: "year",    prompt: "Trouver l’anime le plus récent" },
 ];
 
 function themeByKey(k) {
@@ -242,7 +242,7 @@ function pickRandom(pool, avoidKey = null, avoidKey2 = null) {
   return shuffled[0];
 }
 
-// ✅ Anti-égalité stricte : on prend un adversaire dont la valeur != valeur champion sur le thème
+// ✅ Anti-égalité stricte
 function pickChallengerNoTie(pool, champ, themeKey, bannedKey) {
   if (!pool || pool.length < 2 || !champ) return null;
 
@@ -255,7 +255,6 @@ function pickChallengerNoTie(pool, champ, themeKey, bannedKey) {
     getStatValue(it, themeKey) !== champVal
   );
 
-  // si le ban bloque tout, on relâche le ban (mais on garde anti-tie)
   if (candidates.length === 0 && bannedKey) {
     candidates = pool.filter(it =>
       it._key !== champKey &&
@@ -272,11 +271,9 @@ function updateTopLabels() {
   roundLabel.textContent = `Round ${roundIndex} / ${totalRounds}`;
   scoreBox.textContent = `🔥 Score : ${score}`;
 }
-
 function updatePrompt() {
   promptLine.textContent = themeByKey(currentThemeKey).prompt;
 }
-
 function renderDuel() {
   updateTopLabels();
   updatePrompt();
@@ -314,7 +311,6 @@ function startGame() {
   currentThemeKey = null;
   bannedKeyOnce = null;
 
-  // Init champion + thème + challenger (anti-tie obligatoire)
   let ok = false;
   for (let tries = 0; tries < 60 && !ok; tries++) {
     const c = pickRandom(filteredPool);
@@ -354,7 +350,6 @@ function handlePick(side) {
 
   const winSide = winnerSideByTheme(champion, challenger, currentThemeKey);
 
-  // (Normalement impossible car anti-tie, mais sécurité)
   if (winSide === "tie") {
     challenger = pickChallengerNoTie(filteredPool, champion, currentThemeKey, bannedKeyOnce);
     if (!challenger) {
@@ -371,12 +366,11 @@ function handlePick(side) {
   const loser  = (winSide === "left") ? challenger : champion;
 
   if (!correct) {
-    resultDiv.textContent = `❌ Mauvais ! Score final : ${score} / ${Math.max(0, (roundIndex - 1) * POINTS_PER_WIN)}`;
+    resultDiv.textContent = `❌ Mauvais ! Score final : ${score}`;
     endGame();
     return;
   }
 
-  // bon
   score += POINTS_PER_WIN;
   resultDiv.textContent = "✅ Correct !";
 
@@ -386,16 +380,14 @@ function handlePick(side) {
   if ((champion?._key || null) === wasChampionKey) championStreak++;
   else championStreak = 1;
 
-  // anti-boucle 3 wins
   bannedKeyOnce = null;
   if (championStreak >= 3) {
-    bannedKeyOnce = champion?._key || null; // évite de le reprendre direct
-    champion = loser;                       // on garde le perdant
+    bannedKeyOnce = champion?._key || null;
+    champion = loser;
     championStreak = 0;
     resultDiv.textContent += " — 🔁 Swap anti-boucle (3 wins) !";
   }
 
-  // fin si rounds atteints
   if (roundIndex >= totalRounds) {
     updateTopLabels();
     nextBtn.style.display = "block";
@@ -417,7 +409,6 @@ function handlePick(side) {
 
     challenger = pickChallengerNoTie(filteredPool, champion, currentThemeKey, bannedKeyOnce);
     if (!challenger) {
-      // si ce thème ne permet pas d’éviter l’égalité, on change de thème (max 5 essais)
       let found = false;
       let tmpLast = currentThemeKey;
       for (let i = 0; i < 5 && !found; i++) {
@@ -445,7 +436,6 @@ function handlePick(side) {
 
 // ====== INIT UI ======
 function initCustomUI() {
-  // Type pills
   document.querySelectorAll("#typePills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -454,7 +444,6 @@ function initCustomUI() {
     });
   });
 
-  // Sliders sync
   function syncLabels() {
     clampYearSliders();
     popValEl.textContent = popEl.value;
@@ -465,7 +454,6 @@ function initCustomUI() {
   }
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncLabels));
 
-  // Apply
   applyBtn.addEventListener("click", () => {
     filteredPool = applyFilters();
     const minNeeded = Math.max(2, MIN_REQUIRED);
@@ -473,7 +461,6 @@ function initCustomUI() {
     startGame();
   });
 
-  // Picks
   leftPick.addEventListener("click", () => handlePick("left"));
   rightPick.addEventListener("click", () => handlePick("right"));
 
