@@ -556,7 +556,7 @@ header h1 {
 .header-score  { min-width: 110px; max-width: 110px; }
 
 #counter {
-  margin: 0.3rem auto 0.8rem auto;
+  margin: 2rem auto 1rem auto;
   color: #00bcd4;
   font-size: 1.04rem;
   font-weight: 500;
