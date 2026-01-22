@@ -12,6 +12,8 @@ const MAX_SCORE = 3000;
 const REVEAL_STEP = 500;
 const REVEAL_INTERVAL_SEC = 8;
 const MAX_REVEALS = 6;
+const MIN_TITLES_TO_START = 64;
+
 
 // ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
@@ -291,18 +293,20 @@ function applyFilters() {
 // ====== Preview ======
 function updatePreview() {
   const pool = applyFilters();
-  const ok = pool.length > 0;
+  const count = pool.length;
 
-  previewCountEl.textContent = ok
-    ? `👤 Titres disponibles : ${pool.length} (OK)`
-    : `👤 Titres disponibles : 0 (Min 1)`;
+  const ok = count >= MIN_TITLES_TO_START;
+
+  previewCountEl.textContent = `👤 Titres disponibles : ${count} (${ok ? "OK" : "Min 64"})`;
 
   previewCountEl.classList.toggle("good", ok);
   previewCountEl.classList.toggle("bad", !ok);
 
   applyBtn.disabled = !ok;
   applyBtn.classList.toggle("disabled", !ok);
+  applyBtn.setAttribute("aria-disabled", (!ok).toString());
 }
+
 
 // ====== Game flow ======
 function resetRoundUI() {
