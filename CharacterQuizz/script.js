@@ -210,7 +210,6 @@ function currentPotentialScore() {
 
 
 
-// ====== Custom UI init ======
 function initCustomUI() {
   function syncLabels() {
     clampYearSliders();
@@ -228,20 +227,30 @@ function initCustomUI() {
     updatePreview();
   }
 
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) =>
+    el.addEventListener("input", syncLabels)
+  );
 
   // type pills
   document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      btn.setAttribute(
+        "aria-pressed",
+        btn.classList.contains("active") ? "true" : "false"
+      );
       updatePreview();
     });
   });
 
   applyBtn.addEventListener("click", () => {
     filteredAnimes = applyFilters();
-    if (filteredAnimes.length === 0) return;
+
+    // ✅ Règle: il faut au moins 64 titres pour lancer
+    if (filteredAnimes.length < MIN_TITLES_TO_START) {
+      updatePreview(); // remet le bon message + désactive le bouton
+      return;
+    }
 
     totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
     currentRound = 1;
@@ -253,6 +262,7 @@ function initCustomUI() {
 
   syncLabels();
 }
+
 
 // ====== Filters ======
 function applyFilters() {
