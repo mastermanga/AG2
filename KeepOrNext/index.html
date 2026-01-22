@@ -28,9 +28,9 @@
           </span>
 
           <span class="info-tip" id="help-keep" role="tooltip">
-            À chaque tour : la carte de gauche est visible, celle de droite est cachée.
-            Choisis <b>Keep</b> (tu gardes la gauche) ou <b>Next</b> (tu prends la cachée).
-            Ensuite, on révèle les deux — et tu juges toi-même !
+            À chaque tour : gauche visible, droite cachée.
+            Choisis <b>Keep</b> (gauche) ou <b>Next</b> (cachée).
+            Puis on révèle la carte cachée — et tu juges toi-même !
           </span>
         </span>
       </div>
@@ -122,7 +122,7 @@
       <div class="opt-label">Tours</div>
       <div class="opt-col opt-rounds">
         <input id="turnCount" class="round-input" type="number" min="1" max="100" step="1" value="10" />
-        <div class="opt-hint">(1 à 100) — Nombre de choix Keep/Next dans la partie.</div>
+        <div class="opt-hint">(1 à 100) — Nombre de choix Keep/Next.</div>
       </div>
     </div>
 
@@ -160,10 +160,7 @@
         <!-- RIGHT (HIDDEN) -->
         <div class="duel-col">
           <div class="anime-item secret" id="rightCard">
-            <div class="secret-overlay" id="secretOverlay">
-              <div class="secret-big">🎁</div>
-              <div class="secret-text">Carte cachée</div>
-            </div>
+            <div class="sleep-overlay" id="sleepOverlay">💤</div>
 
             <img id="right-img" src="" alt="Cover" style="display:none">
             <p id="right-name" style="display:none;">Nom</p>
@@ -187,12 +184,6 @@
 
       <div id="result" class="result"></div>
       <button id="nextBtn" class="menu-btn" style="display:none;">Tour suivant</button>
-
-      <!-- Recap -->
-      <div id="recapWrap" class="recap-wrap" style="display:none;">
-        <h3 class="recap-title">📜 Récap des choix</h3>
-        <div id="recapList" class="recap-list"></div>
-      </div>
     </div>
   </div>
 
