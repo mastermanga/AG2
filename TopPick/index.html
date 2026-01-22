@@ -137,10 +137,13 @@
       <!-- Panneau info + player -->
       <div class="anime-container">
         <div class="anime-item" id="infoCard">
-          <p id="themeName" class="tp-theme-title">Thème</p>
-          <p id="themeDesc" class="tp-theme-desc"></p>
 
-          <div id="revealStatus" class="preview-count bad">⏳ Révélation en cours…</div>
+          <!-- ✅ Caché jusqu'aux 6 révélés -->
+          <p id="themeName" class="tp-theme-title" style="display:none;">Thème</p>
+          <p id="themeDesc" class="tp-theme-desc" style="display:none;"></p>
+
+          <!-- ✅ Caché pendant la révélation -->
+          <div id="revealStatus" class="preview-count bad" style="display:none;">⏳ Révélation en cours…</div>
           <div id="pickStatus" class="preview-count" style="display:none;"></div>
 
           <!-- Player (Songs) -->
