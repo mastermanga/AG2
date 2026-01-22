@@ -21,12 +21,12 @@
         <span class="info-wrap header-help">
           <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-lor">
             <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+              <path fill="currentColor" d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
             </svg>
           </span>
           <span class="info-tip" id="help-lor" role="tooltip">
             Anime / Opening : choisis ton préféré (le choisi devient champion).<br>
-            Stat : trouve la valeur la plus haute (Popularité/Score/Saison) — 1 erreur = fin (+300 par bon choix).
+            Stat : trouve la valeur la plus haute — 1 erreur = fin (+300 par bon choix).
           </span>
         </span>
       </div>
@@ -114,44 +114,29 @@
 
   <!-- ========================= JEU ========================== -->
   <div id="game-panel" style="display:none;">
-    <div id="game-shell" class="split-layout">
-
-      <!-- Historique -->
-      <div class="ranking-container">
+    <div id="game-shell" class="split-layout split-layout--solo">
+      <div class="anime-container anime-container--wide">
         <div class="mini-pill" id="roundLabel"></div>
         <div id="scoreBox" class="preview-count good" style="display:none;">🔥 Score : 0</div>
-        <ul id="history-list" class="anime-list"></ul>
-      </div>
 
-      <!-- Duel -->
-      <div class="anime-container">
         <div class="anime-item" id="duelZone">
           <p id="promptLine" class="lor-prompt">Choisis…</p>
 
           <div class="lor-duel">
-            <button class="lor-card" id="leftPick" type="button" aria-label="Choisir gauche">
-              <img id="leftImg" alt="Cover gauche" />
+            <div class="lor-card" id="leftPick" role="button" tabindex="0" aria-label="Choisir gauche">
+              <img id="leftImg" class="lor-img" alt="Cover gauche" />
+              <video id="leftVideo" class="lor-video" controls preload="metadata" playsinline></video>
               <span id="leftTitle">Gauche</span>
-            </button>
+            </div>
 
-            <button class="lor-card" id="rightPick" type="button" aria-label="Choisir droite">
-              <img id="rightImg" alt="Cover droite" />
+            <div class="lor-card" id="rightPick" role="button" tabindex="0" aria-label="Choisir droite">
+              <img id="rightImg" class="lor-img" alt="Cover droite" />
+              <video id="rightVideo" class="lor-video" controls preload="metadata" playsinline></video>
               <span id="rightTitle">Droite</span>
-            </button>
-          </div>
-
-          <!-- Opening mode: 1 player (écoute gauche/droite), autoplay gauche -->
-          <div id="listenRow" class="lor-listen" style="display:none;">
-            <div class="opt-pill-group" style="justify-content:center;">
-              <button type="button" class="pill active" id="listenLeftBtn" aria-pressed="true">▶️ Écouter Gauche</button>
-              <button type="button" class="pill" id="listenRightBtn" aria-pressed="false">▶️ Écouter Droite</button>
             </div>
           </div>
 
-          <div id="player-zone" style="display:none;">
-            <video id="songPlayer" controls preload="metadata" playsinline></video>
-          </div>
-
+          <!-- Volume (Opening only) -->
           <div id="volumeRow" class="volume-row" style="display:none;">
             <div class="vol-label"><span class="vol-icon">🔊</span> Volume</div>
             <input id="volumeSlider" type="range" min="0" max="100" value="30" />
