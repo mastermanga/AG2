@@ -12,7 +12,6 @@ body{
   transition:background 0.3s, color 0.3s;
   overflow-x:hidden;
 }
-
 body::before{
   content:"";
   position:fixed;
@@ -69,7 +68,7 @@ header h1{
   cursor:pointer;
   font-weight:bold;
   font-size:1.08rem;
-  transition: background 0.3s, color 0.2s, box-shadow 0.2s, opacity 0.2s;
+  transition: background 0.3s, color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.12s;
   box-shadow: 0 1px 7px #00bcd455;
   opacity:0.93;
   outline:none;
@@ -81,6 +80,7 @@ header h1{
   opacity:1;
   filter: brightness(1.08);
 }
+.menu-btn:active{ transform: scale(0.98); }
 .menu-btn:disabled, .menu-btn.disabled{
   opacity:0.45 !important;
   cursor:not-allowed !important;
@@ -191,16 +191,12 @@ body.light .main-container{
   cursor:pointer;
 }
 
-/* Year block */
+/* Year */
 .year-wrap{ display:flex; flex-direction:column; gap:8px; }
 .year-sliders{ display:flex; gap:12px; align-items:center; }
 
 /* Pills */
-.opt-pill-group{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-}
+.opt-pill-group{ display:flex; gap:10px; flex-wrap:wrap; }
 .pill{
   border: 1.5px solid rgba(0,188,212,0.55);
   background: rgba(0,0,0,0.22);
@@ -212,10 +208,7 @@ body.light .main-container{
   transition: transform 0.15s, box-shadow 0.15s, background 0.15s, border-color 0.15s;
   user-select:none;
 }
-.pill:hover{
-  transform: translateY(-1px);
-  box-shadow: 0 0 16px rgba(0,234,255,0.22);
-}
+.pill:hover{ transform: translateY(-1px); box-shadow: 0 0 16px rgba(0,234,255,0.22); }
 .pill.active{
   background: linear-gradient(120deg, rgba(0,188,212,0.65), rgba(30,136,229,0.55));
   border-color: rgba(0,234,255,0.85);
@@ -231,7 +224,7 @@ body.light .pill.active{
   border-color: rgba(25,118,210,0.55);
 }
 
-/* Preview count */
+/* Preview */
 .preview-count{
   margin-top:14px;
   width:100%;
@@ -275,12 +268,7 @@ body.light .round-input{
   color:#0b1a2a;
   border-color: rgba(25,118,210,0.35);
 }
-
-.start-wrap{
-  display:flex;
-  justify-content:center;
-  margin-top:12px;
-}
+.start-wrap{ display:flex; justify-content:center; margin-top:12px; }
 
 /* ==== GAME LAYOUT ==== */
 .split-layout{
@@ -314,97 +302,116 @@ body.light .split-layout{
   opacity:0.92;
 }
 
-/* Duel row */
-.duel-row{
+/* ✅ Grille 2 colonnes stable */
+.duel-grid{
   width:100%;
-  display:flex;
+  display:grid;
+  grid-template-columns: 1fr 1fr;
   gap: 2.2rem;
-  align-items:flex-start;
-  justify-content:space-between;
-  flex-wrap:wrap;
+  align-items:start;
 }
 .duel-col{
-  flex:1;
-  min-width: 320px;
   display:flex;
   flex-direction:column;
   align-items:center;
   gap: 12px;
 }
 
-/* Item card */
+/* ✅ Carte plus grande */
 .anime-item{
-  width:100%;
+  width: min(640px, 100%);
+  background:#181818;
+  padding: 18px 18px 14px 18px;
+  border-radius: 18px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.28);
   display:flex;
   flex-direction:column;
   align-items:center;
-  background:#181818;
-  padding: 22px 18px 16px 18px;
-  border-radius: 18px;
-  box-shadow: 0 4px 16px #0003;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease, filter 0.18s ease;
 }
 body.light .anime-item{ background:#e4f2fc; }
 
-/* ✅ Images anime ENTIERES (pas zoom) */
-#left-img, #right-img{
-  border-radius:14px;
-  margin-bottom: 14px;
-  max-width: 520px;
-  width: 100%;
-  height: 320px;
-  object-fit: contain;            /* ✅ changement */
-  background: rgba(0,0,0,0.18);   /* bandes discrètes si nécessaire */
+/* ✅ Slot fixe : visible/cachée = même taille */
+.media-slot{
+  width:100%;
+  height: 420px;              /* ✅ plus grand + stable */
+  border-radius: 14px;
+  position:relative;
+  overflow:hidden;
+  background: rgba(0,0,0,0.22);
   box-shadow: 0 2px 14px #1116;
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
 
+/* ✅ Anime image ENTIER (pas zoom) */
+.media-slot img{
+  width:100%;
+  height:100%;
+  object-fit: contain;
+  display:block;
+}
+
+/* Vidéo occupe le slot */
+.media-slot video{
+  width:100%;
+  height:100%;
+  object-fit: cover;
+  display:block;
+  background:#222;
+}
+
+/* Titres */
 #left-name, #right-name{
-  font-size:1.08rem;
+  font-size:1.10rem;
   font-weight:900;
-  margin: 0 0 14px 0;
+  margin: 14px 0 0 0;
   text-align:center;
   letter-spacing: 0.4px;
   line-height: 1.2;
 }
 
-/* Player zone */
-#left-player-zone, #right-player-zone{
-  width:100%;
-  margin-bottom: 12px;
-}
-#leftPlayer, #rightPlayer{
-  width:100%;
-  border-radius: 14px;
-  background:#222;
-  box-shadow: 0 2px 12px #1116;
-}
-
-/* Right hidden: vide + 💤 */
-.secret{
-  position:relative;
-  overflow:hidden;
-}
+/* Right hidden overlay */
 .sleep-overlay{
   position:absolute;
   inset:0;
   display:flex;
   align-items:center;
   justify-content:center;
-  font-size: 3.2rem;
+  font-size: 3.4rem;
   opacity: 0.92;
-  border-radius: 18px;
   background:
     radial-gradient(circle at 30% 20%, rgba(0,234,255,0.18), transparent 55%),
     radial-gradient(circle at 70% 80%, rgba(30,136,229,0.20), transparent 60%),
     rgba(0,0,0,0.30);
   border: 1.5px solid rgba(0,188,212,0.22);
-  filter: drop-shadow(0 0 18px rgba(0,234,255,0.22));
 }
 body.light .sleep-overlay{
   background:
     radial-gradient(circle at 30% 20%, rgba(66,165,245,0.22), transparent 55%),
     radial-gradient(circle at 70% 80%, rgba(0,188,212,0.20), transparent 60%),
-    rgba(255,255,255,0.40);
+    rgba(255,255,255,0.45);
   border: 1.5px solid rgba(25,118,210,0.20);
+}
+
+/* ✅ Effet choix */
+@keyframes pickPop{
+  0%{ transform: scale(1); }
+  45%{ transform: scale(1.02); }
+  100%{ transform: scale(1.01); }
+}
+.anime-item.chosen{
+  animation: pickPop 260ms ease-out;
+  transform: translateY(-2px) scale(1.01);
+  box-shadow:
+    0 0 0 2px rgba(38,255,128,0.35),
+    0 0 28px rgba(38,255,128,0.22),
+    0 14px 46px rgba(0,0,0,0.32);
+}
+.anime-item.rejected{
+  opacity: 0.55;
+  filter: grayscale(0.25) brightness(0.92);
 }
 
 /* ==== VOLUME BAR (Songs) ==== */
@@ -429,7 +436,6 @@ body.light .sleep-overlay{
   min-width: 105px;
 }
 .vol-icon{ filter: drop-shadow(0 0 6px rgba(0,234,255,0.22)); }
-
 #volumeSlider{
   flex:1;
   appearance:none;
@@ -471,13 +477,17 @@ body.light #volumeSlider{
   background: linear-gradient(90deg, #42a5f5 0%, #ffffff 75%);
 }
 
-/* Result */
+/* ✅ Result mini (plus de grosse bannière) */
 .result{
-  margin-top: 6px;
+  margin-top: 2px;
   font-weight:900;
   opacity:0.95;
   text-align:center;
-  max-width: 1100px;
+}
+.result.mini{
+  font-size: 0.98rem;
+  opacity: 0.85;
+  min-height: 1.2em;
 }
 
 /* ==== TOOLTIP HELP ==== */
@@ -487,12 +497,7 @@ body.light #volumeSlider{
   gap:10px;
   flex-shrink:0;
 }
-.info-wrap{
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
+.info-wrap{ position: relative; display: inline-flex; align-items: center; justify-content: center; }
 .info-icon{
   width: 26px;
   height: 26px;
@@ -512,7 +517,6 @@ body.light #volumeSlider{
   transition: transform 0.16s, box-shadow 0.16s, background 0.16s, border-color 0.16s;
 }
 .info-svg{ width:18px; height:18px; display:block; }
-
 .info-wrap:hover .info-icon,
 .info-icon:focus{
   transform: scale(1.08) rotate(-6deg);
@@ -524,7 +528,6 @@ body.light #volumeSlider{
     inset 0 0 0 1px rgba(0, 234, 255, 0.25);
   outline: none;
 }
-
 .info-tip{
   position: absolute;
   top: calc(100% + 10px);
@@ -564,22 +567,6 @@ body.light #volumeSlider{
   visibility:visible;
   transform: translateY(0) scale(1);
 }
-body.light .info-tip{
-  background: linear-gradient(120deg, #e0f7fa 90%, #1565c01a 100%);
-  border: 1.5px solid rgba(66, 165, 245, 0.45);
-  box-shadow: 0 10px 34px rgba(66, 165, 245, 0.35), 0 2.5px 14px rgba(25, 118, 210, 0.18);
-  color:#0b1a2a;
-}
-body.light .info-tip::after{ border-color: transparent transparent #e0f7fa transparent; }
-body.light .info-icon{
-  background: rgba(255, 255, 255, 0.75);
-  color: #1565c0;
-  border: 1.5px solid rgba(25, 118, 210, 0.35);
-  box-shadow:
-    0 0 10px rgba(66, 165, 245, 0.55),
-    0 0 22px rgba(66, 165, 245, 0.30),
-    inset 0 0 0 1px rgba(66, 165, 245, 0.18);
-}
 
 /* ==== FOOTER ==== */
 footer{
@@ -598,15 +585,13 @@ footer{
 body.light footer{ color:#888; }
 
 /* ==== RESPONSIVE ==== */
-@media (max-width: 950px){
-  .split-layout{
-    padding: 1.4rem 0.9rem;
-  }
-  #left-img, #right-img{
-    height: 240px;
-  }
+@media (max-width: 1050px){
+  .split-layout{ padding: 1.4rem 0.9rem; }
+  .duel-grid{ grid-template-columns: 1fr; }
+  .media-slot{ height: 360px; }
 }
 @media (max-width: 600px){
   header h1{ font-size: 1.19rem; }
   .info-tip{ width: min(320px, 86vw); right: 0; }
+  .media-slot{ height: 320px; }
 }
