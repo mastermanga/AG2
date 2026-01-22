@@ -3,8 +3,8 @@
  * - Même personnalisation que Blind Ranking
  * - Chaque round: thème random (Garde 1 / Supprime 1 / Garde 3)
  * - 6 items révélés progressivement
- *   - Anime: 1 reveal / 2s
- *   - Songs: play auto non mute à 45s pendant 15s, stop, suivant...
+ *   - Anime: 1er item à t=0, puis 1 item / 1s
+ *   - Songs: play auto non mute à 45s pendant 15s DE VIDÉO (currentTime), stop, suivant...
  * - Pas de points
  **********************/
 
@@ -12,12 +12,10 @@
 document.getElementById("back-to-menu").addEventListener("click", () => {
   window.location.href = "../index.html";
 });
-
 document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
   localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
-
 window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
 });
@@ -42,11 +40,14 @@ const MIN_REQUIRED = 64;
 
 // Songs preview
 const SONG_START_SEC = 45;
-const SONG_PLAY_SEC = 15;
+const SONG_PLAY_SEC = 15; // 15s DE VIDEO
 
 // retries: 1 essai + 5 retries => 0, 2s, 4s, 6s, 8s, 10s
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const STALL_TIMEOUT_MS = 6000;
+
+// sécurité anti-blocage total (si ça ne joue jamais)
+const MAX_WALL_SNIPPET_MS = 60000;
 
 // Themes
 const THEMES = [
@@ -61,7 +62,6 @@ function normalizeAnimeList(json) {
   if (json && Array.isArray(json.animes)) return json.animes;
   return [];
 }
-
 function getDisplayTitle(a) {
   return (
     a.title_english ||
@@ -72,13 +72,11 @@ function getDisplayTitle(a) {
     "Titre inconnu"
   );
 }
-
 function getYear(a) {
   const s = ((a && a.season) ? String(a.season) : "").trim();
   const m = s.match(/(\d{4})/);
   return m ? parseInt(m[1], 10) : 0;
 }
-
 function clampYearSliders() {
   const minEl = document.getElementById("yearMin");
   const maxEl = document.getElementById("yearMax");
@@ -90,7 +88,6 @@ function clampYearSliders() {
     maxEl.value = b;
   }
 }
-
 function shuffleInPlace(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -98,23 +95,19 @@ function shuffleInPlace(arr) {
   }
   return arr;
 }
-
 function clampInt(n, a, b) {
   n = Number.isFinite(n) ? n : a;
   return Math.max(a, Math.min(b, n));
 }
-
 function safeNum(x) {
   const n = +x;
   return Number.isFinite(n) ? n : 0;
 }
-
 function songTypeLabel(t) {
   if (t === "OP") return "OP";
   if (t === "ED") return "ED";
   return "IN";
 }
-
 function formatSongTitle(s) {
   const type = songTypeLabel(s.songType);
   const num = (s.songNumber ? ` ${s.songNumber}` : "");
@@ -122,13 +115,11 @@ function formatSongTitle(s) {
   const art = (s.songArtists ? ` — ${s.songArtists}` : "");
   return `${s.animeTitle || "Anime"} ${type}${num}${name}${art}`;
 }
-
 function formatItemLabel(it) {
   if (!it) return "";
   if (it.kind === "song") return formatSongTitle(it);
   return it.title || "";
 }
-
 function extractSongsFromAnime(anime) {
   const out = [];
   const song = anime.song || {};
@@ -153,7 +144,6 @@ function extractSongsFromAnime(anime) {
         songName: it.name || "",
         songNumber: safeNum(it.number) || 1,
         songArtists: artists || "",
-
         animeTitle: anime._title,
         animeType: anime._type,
         animeYear: anime._year,
@@ -161,14 +151,12 @@ function extractSongsFromAnime(anime) {
         animeScore: anime._score,
         image: anime.image || "",
         url,
-
         _key: `${b.type}|${it.number || ""}|${it.name || ""}|${url}|${anime.mal_id || ""}`,
       });
     }
   }
   return out;
 }
-
 function pickNFromPool(pool, n) {
   const used = new Set();
   const out = [];
@@ -181,7 +169,6 @@ function pickNFromPool(pool, n) {
   }
   return out;
 }
-
 function randomTheme() {
   return THEMES[Math.floor(Math.random() * THEMES.length)];
 }
@@ -254,8 +241,9 @@ let lockedAfterValidate = false;
 // tokens
 let roundToken = 0;
 let mediaToken = 0;
-let snippetTimer = null;
+
 let revealTimer = null;
+let wallTimer = null;
 
 // ====== UI SHOW/HIDE ======
 function showCustomization() {
@@ -283,12 +271,10 @@ function hardResetMedia() {
   songPlayer.removeAttribute("src");
   songPlayer.load();
 }
-
 function withCacheBuster(url) {
   const sep = url.includes("?") ? "&" : "?";
   return url + sep + "t=" + Date.now();
 }
-
 function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
   let attemptIndex = 0;
   let stallTimer = null;
@@ -366,7 +352,6 @@ function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
 
 // ====== UI INIT ======
 function initCustomUI() {
-  // Pills mode
   document.querySelectorAll("#modePills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
       document.querySelectorAll("#modePills .pill").forEach(b => {
@@ -381,7 +366,6 @@ function initCustomUI() {
     });
   });
 
-  // Type pills
   document.querySelectorAll("#typePills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -390,7 +374,6 @@ function initCustomUI() {
     });
   });
 
-  // Song pills
   document.querySelectorAll("#songPills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -399,7 +382,6 @@ function initCustomUI() {
     });
   });
 
-  // Sliders sync
   function syncLabels() {
     clampYearSliders();
     popValEl.textContent = popEl.value;
@@ -410,7 +392,6 @@ function initCustomUI() {
   }
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncLabels));
 
-  // Apply
   applyBtn.addEventListener("click", () => {
     filteredPool = applyFilters();
     const minNeeded = Math.max(6, MIN_REQUIRED);
@@ -429,7 +410,6 @@ function initCustomUI() {
     startRound();
   });
 
-  // forced mode
   if (forcedMode === "anime" || forcedMode === "songs") {
     currentMode = forcedMode;
     updateModePillsFromState();
@@ -478,7 +458,6 @@ function applyFilters() {
     }));
   }
 
-  // songs mode
   const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map(b => b.dataset.song);
   if (allowedSongs.length === 0) return [];
 
@@ -533,12 +512,13 @@ function updatePreview() {
   applyBtn.classList.toggle("disabled", !ok);
 }
 
-// ====== GAME UI ======
-function stopAllTimers() {
+// ====== ROUND UI ======
+function clearRevealTimer() {
   if (revealTimer) { clearInterval(revealTimer); revealTimer = null; }
-  if (snippetTimer) { clearTimeout(snippetTimer); snippetTimer = null; }
 }
-
+function clearWallTimer() {
+  if (wallTimer) { clearTimeout(wallTimer); wallTimer = null; }
+}
 function stopMedia() {
   mediaToken++;
   try { songPlayer.pause(); } catch {}
@@ -547,7 +527,8 @@ function stopMedia() {
 }
 
 function resetRoundUI() {
-  stopAllTimers();
+  clearRevealTimer();
+  clearWallTimer();
   stopMedia();
 
   revealDone = false;
@@ -557,14 +538,11 @@ function resetRoundUI() {
 
   resultDiv.textContent = "";
 
-  revealStatusEl.style.display = "block";
-  revealStatusEl.classList.add("bad");
-  revealStatusEl.classList.remove("good");
-  revealStatusEl.textContent = "⏳ Révélation en cours…";
-
+  // cacher tout pendant la révélation (pour laisser de la place)
+  themeNameEl.style.display = "none";
+  themeDescEl.style.display = "none";
+  revealStatusEl.style.display = "none";
   pickStatusEl.style.display = "none";
-  pickStatusEl.classList.remove("good");
-  pickStatusEl.classList.remove("bad");
 
   confirmBtn.disabled = true;
   confirmBtn.classList.add("disabled");
@@ -604,7 +582,6 @@ function updatePickStatus() {
   const need = currentTheme.required;
   const got = selectedKeys.size;
 
-  pickStatusEl.style.display = "block";
   pickStatusEl.textContent = (currentTheme.mode === "delete")
     ? `❌ À supprimer : ${got} / ${need}`
     : `✅ À garder : ${got} / ${need}`;
@@ -621,36 +598,41 @@ function markRevealDone() {
   revealDone = true;
   selectionEnabled = true;
 
+  // on montre maintenant le thème + status (une fois les 6 révélés)
+  themeNameEl.style.display = "block";
+  themeDescEl.style.display = "block";
+
+  revealStatusEl.style.display = "block";
   revealStatusEl.classList.remove("bad");
   revealStatusEl.classList.add("good");
   revealStatusEl.textContent = "✅ Révélation terminée — à toi de jouer !";
 
+  pickStatusEl.style.display = "block";
   updatePickStatus();
 }
 
 // ====== REVEAL (ANIME) ======
+// ✅ 1er item à t=0, puis toutes les 1s
 function revealAnimeProgressively(items, localRound) {
   let i = 0;
-  revealTimer = setInterval(() => {
+
+  const step = () => {
     if (localRound !== roundToken) {
-      clearInterval(revealTimer);
-      revealTimer = null;
+      clearRevealTimer();
       return;
     }
-
     if (i >= items.length) {
-      clearInterval(revealTimer);
-      revealTimer = null;
+      clearRevealTimer();
       markRevealDone();
       return;
     }
-
     revealCard(i, items[i], localRound);
     i++;
-  }, 2000);
+  };
 
-  // reveal immédiat du 1er au lancement ? (optional)
-  // -> on reste strict: toutes les 2s, donc la première arrive à T+2s
+  // ✅ important : laisser le DOM peindre les placeholders puis révéler IMMEDIATEMENT
+  requestAnimationFrame(() => step());
+  revealTimer = setInterval(step, 1000);
 }
 
 // ====== REVEAL (SONGS) ======
@@ -658,8 +640,6 @@ async function revealSongsSequence(items, localRound) {
   for (let i = 0; i < items.length; i++) {
     if (localRound !== roundToken) return;
     revealCard(i, items[i], localRound);
-
-    // play snippet
     await playSongSnippet(items[i], localRound).catch(() => {});
   }
   if (localRound !== roundToken) return;
@@ -687,25 +667,19 @@ function revealCard(index, item, localRound) {
   span.textContent = formatItemLabel(item);
   li.appendChild(span);
 
-  // applique style si déjà sélectionné (rare mais ok)
   applySelectionStyles(li);
 }
 
 function applySelectionStyles(li) {
   li.classList.remove("tp-selected-keep", "tp-selected-delete");
   const key = li.dataset.key;
-  if (!key || !selectedKeys.has(key) || !currentTheme) {
-    // remove badge if exists and not validated
-    const badge = li.querySelector(".tp-badge");
-    if (badge && !lockedAfterValidate) badge.remove();
-    return;
-  }
+  if (!key || !selectedKeys.has(key) || !currentTheme) return;
 
   if (currentTheme.mode === "delete") li.classList.add("tp-selected-delete");
   else li.classList.add("tp-selected-keep");
 }
 
-// ====== SONG SNIPPET ======
+// ====== SONG SNIPPET (15s DE VIDÉO) ======
 function playSongSnippet(item, localRound) {
   return new Promise((resolve) => {
     if (currentMode !== "songs" || !item?.url) {
@@ -713,10 +687,7 @@ function playSongSnippet(item, localRound) {
       return;
     }
 
-    // safety: resolve max après ~17s même si player bug
-    const hardTimeout = setTimeout(() => resolve(), (SONG_PLAY_SEC + 2) * 1000);
-
-    stopAllTimers();
+    clearWallTimer();
     stopMedia();
 
     nowPlaying.textContent = `🎵 Extrait : ${formatItemLabel(item)}`;
@@ -724,11 +695,45 @@ function playSongSnippet(item, localRound) {
     mediaToken++;
     const localMedia = mediaToken;
 
-    const cleanupLoad = loadMediaWithRetries(item.url, localRound, localMedia, {
+    // sécurité anti-blocage total
+    wallTimer = setTimeout(() => {
+      cleanupAll();
+      resolve();
+    }, MAX_WALL_SNIPPET_MS);
+
+    let endTime = null;
+    let cleanupLoad = null;
+
+    const onTimeUpdate = () => {
+      if (localRound !== roundToken || localMedia !== mediaToken) return;
+      if (endTime == null) return;
+      if (songPlayer.currentTime >= endTime) stopSnippet();
+    };
+
+    const onEnded = () => stopSnippet();
+
+    const cleanupAll = () => {
+      clearWallTimer();
+      songPlayer.removeEventListener("timeupdate", onTimeUpdate);
+      songPlayer.removeEventListener("ended", onEnded);
+      try { songPlayer.pause(); } catch {}
+      cleanupLoad?.();
+    };
+
+    const stopSnippet = () => {
+      if (localRound !== roundToken || localMedia !== mediaToken) {
+        cleanupAll();
+        resolve();
+        return;
+      }
+      cleanupAll();
+      resolve();
+    };
+
+    cleanupLoad = loadMediaWithRetries(item.url, localRound, localMedia, {
       onReady: () => {
         if (localRound !== roundToken || localMedia !== mediaToken) {
-          clearTimeout(hardTimeout);
-          cleanupLoad?.();
+          cleanupAll();
           resolve();
           return;
         }
@@ -736,31 +741,20 @@ function playSongSnippet(item, localRound) {
         applyVolume();
         songPlayer.muted = false;
 
-        // seek à 45s si possible
+        // seek à 45s
         let start = SONG_START_SEC;
         const dur = songPlayer.duration;
         if (Number.isFinite(dur) && dur > 1) {
           start = Math.min(SONG_START_SEC, Math.max(0, dur - 0.25));
         }
 
+        endTime = start + SONG_PLAY_SEC;
+
+        songPlayer.addEventListener("timeupdate", onTimeUpdate);
+        songPlayer.addEventListener("ended", onEnded);
+
         try { songPlayer.currentTime = start; } catch {}
-
-        // play best effort
         songPlayer.play?.().catch(() => {});
-
-        // stop après 15s
-        snippetTimer = setTimeout(() => {
-          if (localRound !== roundToken || localMedia !== mediaToken) {
-            clearTimeout(hardTimeout);
-            cleanupLoad?.();
-            resolve();
-            return;
-          }
-          try { songPlayer.pause(); } catch {}
-          clearTimeout(hardTimeout);
-          cleanupLoad?.();
-          resolve();
-        }, SONG_PLAY_SEC * 1000);
       }
     });
   });
@@ -770,7 +764,6 @@ function playSongSnippet(item, localRound) {
 choiceList.addEventListener("click", (e) => {
   const li = e.target.closest("li");
   if (!li) return;
-
   if (!selectionEnabled || lockedAfterValidate) return;
   if (li.classList.contains("tp-locked")) return;
   if (li.dataset.revealed !== "1") return;
@@ -780,16 +773,12 @@ choiceList.addEventListener("click", (e) => {
 
   const need = currentTheme.required;
 
-  // toggle selection
-  if (selectedKeys.has(key)) {
-    selectedKeys.delete(key);
-  } else {
-    // cap
+  if (selectedKeys.has(key)) selectedKeys.delete(key);
+  else {
     if (selectedKeys.size >= need) return;
     selectedKeys.add(key);
   }
 
-  // refresh styles
   [...choiceList.querySelectorAll("li")].forEach(applySelectionStyles);
   updatePickStatus();
 });
@@ -803,20 +792,16 @@ confirmBtn.addEventListener("click", () => {
   confirmBtn.disabled = true;
   confirmBtn.classList.add("disabled");
 
-  // stop media propre
-  stopAllTimers();
+  clearRevealTimer();
+  clearWallTimer();
   stopMedia();
 
-  // badges + message
   [...choiceList.querySelectorAll("li")].forEach(li => {
     const key = li.dataset.key;
     if (!key) return;
-
-    // remove old badge
     li.querySelectorAll(".tp-badge").forEach(b => b.remove());
 
-    const isSelected = selectedKeys.has(key);
-    if (!isSelected) return;
+    if (!selectedKeys.has(key)) return;
 
     const badge = document.createElement("div");
     badge.className = "tp-badge";
@@ -824,13 +809,9 @@ confirmBtn.addEventListener("click", () => {
     li.appendChild(badge);
   });
 
-  if (currentTheme.mode === "delete") {
-    resultDiv.textContent = "✅ Validé — le titre sélectionné est supprimé.";
-  } else if (currentTheme.required === 1) {
-    resultDiv.textContent = "✅ Validé — ton favori est gardé.";
-  } else {
-    resultDiv.textContent = "✅ Validé — tes 3 favoris sont gardés.";
-  }
+  if (currentTheme.mode === "delete") resultDiv.textContent = "✅ Validé — le titre sélectionné est supprimé.";
+  else if (currentTheme.required === 1) resultDiv.textContent = "✅ Validé — ton favori est gardé.";
+  else resultDiv.textContent = "✅ Validé — tes 3 favoris sont gardés.";
 
   nextBtn.style.display = "inline-block";
   const isLast = currentRound >= totalRounds;
@@ -843,9 +824,7 @@ confirmBtn.addEventListener("click", () => {
       showCustomization();
       updatePreview();
       if (isParcours) {
-        try {
-          parent.postMessage({ parcoursScore: { label: "TopPick", score: 0, total: 0 } }, "*");
-        } catch {}
+        try { parent.postMessage({ parcoursScore: { label: "TopPick", score: 0, total: 0 } }, "*"); } catch {}
       }
     }
   };
@@ -865,7 +844,6 @@ function startRound() {
     return;
   }
 
-  // pick theme + 6 items
   currentTheme = randomTheme();
   setThemeUI(currentTheme);
 
@@ -879,20 +857,10 @@ function startRound() {
   }
 
   roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
-
   renderPlaceholders();
 
-  // reveal
-  if (currentMode === "songs") {
-    // reveal + preview sequence (1 item / 15s)
-    revealSongsSequence(roundItems, roundToken);
-  } else {
-    // anime: 1 item / 2s
-    revealAnimeProgressively(roundItems, roundToken);
-  }
-
-  // reset pick status
-  updatePickStatus();
+  if (currentMode === "songs") revealSongsSequence(roundItems, roundToken);
+  else revealAnimeProgressively(roundItems, roundToken);
 }
 
 // ====== LOAD DATA ======
@@ -925,7 +893,6 @@ fetch("../data/licenses_only.json")
     showCustomization();
     applyVolume();
 
-    // parcours auto-start
     if (isParcours) {
       filteredPool = applyFilters();
       const minNeeded = Math.max(6, MIN_REQUIRED);
