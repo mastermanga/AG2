@@ -39,8 +39,8 @@ document.addEventListener("click", (e) => {
 const MIN_REQUIRED = 64;
 
 // Songs preview
-const SONG_START_SEC = 45;
-const SONG_PLAY_SEC = 15; // 15s DE VIDEO
+const SONG_START_SEC = 50;
+const SONG_PLAY_SEC = 20; // 15s DE VIDEO
 
 // retries: 1 essai + 5 retries => 0, 2s, 4s, 6s, 8s, 10s
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
