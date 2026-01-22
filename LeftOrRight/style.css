@@ -251,7 +251,7 @@ body.light .pill.active{
   flex-wrap:wrap;
 }
 .round-input{
-  width:92px;
+  width:110px;
   padding:10px 12px;
   border-radius:12px;
   border: 1.5px solid rgba(0,188,212,0.55);
@@ -288,9 +288,7 @@ body.light .split-layout{
   background:#fff;
   box-shadow: 0 0 18px #42a5f555;
 }
-.split-layout--solo{
-  justify-content:center;
-}
+.split-layout--solo{ justify-content:center; }
 
 .anime-container{
   width: 380px;
@@ -298,9 +296,7 @@ body.light .split-layout{
   flex-direction:column;
   align-items:center;
 }
-.anime-container--wide{
-  width: min(820px, 100%);
-}
+.anime-container--wide{ width: min(860px, 100%); }
 
 .mini-pill{
   width: fit-content;
@@ -325,69 +321,6 @@ body.light .split-layout{
   box-shadow: 0 4px 16px #0003;
 }
 body.light .anime-item{ background:#e4f2fc; }
-
-/* ==== VOLUME BAR (Opening only) ==== */
-.volume-row{
-  width:100%;
-  display:flex;
-  align-items:center;
-  gap:12px;
-  justify-content:center;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(0,0,0,0.14);
-  border: 1px solid rgba(0,188,212,0.20);
-  margin: 6px 0 12px 0;
-}
-.vol-label{
-  font-weight:900;
-  opacity:0.95;
-  display:flex;
-  align-items:center;
-  gap:8px;
-  min-width: 105px;
-}
-.vol-icon{ filter: drop-shadow(0 0 6px rgba(0,234,255,0.22)); }
-#volumeSlider{
-  flex:1;
-  appearance:none;
-  height:8px;
-  border-radius:999px;
-  background: linear-gradient(90deg, #00bcd4 0%, #ffffff 75%);
-  outline:none;
-}
-#volumeSlider::-webkit-slider-thumb{
-  appearance:none;
-  width:18px;
-  height:18px;
-  border-radius:999px;
-  background:#0fbcd4;
-  border:2px solid rgba(255,255,255,0.6);
-  box-shadow: 0 0 14px rgba(0,234,255,0.55);
-  cursor:pointer;
-}
-#volumeSlider::-moz-range-thumb{
-  width:18px;
-  height:18px;
-  border-radius:999px;
-  background:#0fbcd4;
-  border:2px solid rgba(255,255,255,0.6);
-  box-shadow: 0 0 14px rgba(0,234,255,0.55);
-  cursor:pointer;
-}
-.vol-val{
-  font-weight:900;
-  opacity:0.95;
-  min-width: 52px;
-  text-align:right;
-}
-body.light .volume-row{
-  background: rgba(255,255,255,0.70);
-  border: 1px solid rgba(25,118,210,0.30);
-}
-body.light #volumeSlider{
-  background: linear-gradient(90deg, #42a5f5 0%, #ffffff 75%);
-}
 
 /* Result */
 .result{
@@ -497,29 +430,29 @@ footer{
 body.light footer{ color:#888; }
 
 /* =========================
-   LEFT OR RIGHT (DUEL UI)
+   HIGHER OR LOWER (DUEL UI)
    ========================= */
-.lor-prompt{
-  font-size: 1.12rem;
+.hol-prompt{
+  font-size: 1.15rem;
   font-weight: 900;
   text-align: center;
   margin: 0 0 14px 0;
   opacity: 0.95;
 }
 
-.lor-duel{
+.hol-duel{
   width: 100%;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 16px;
   margin: 0 auto 10px auto;
   justify-items: center;
   align-items: start;
 }
 
-.lor-card{
+.hol-card{
   width: 100%;
-  max-width: 340px;
+  max-width: 360px;
   border: 1.5px solid rgba(0,188,212,0.35);
   background: rgba(0,0,0,0.22);
   border-radius: 18px;
@@ -530,20 +463,20 @@ body.light footer{ color:#888; }
   text-align: center;
   user-select: none;
 }
-.lor-card:hover{
+.hol-card:hover{
   transform: translateY(-1px);
   box-shadow: 0 0 18px rgba(0,234,255,0.18);
   border-color: rgba(0,234,255,0.65);
 }
-.lor-card:active{ transform: scale(0.99); }
-.lor-card:focus{
+.hol-card:active{ transform: scale(0.99); }
+.hol-card:focus{
   outline: 2px solid rgba(0,234,255,0.35);
   outline-offset: 3px;
 }
 
-.lor-img{
+.hol-img{
   width: 100%;
-  height: 230px;
+  height: 260px;
   object-fit: cover;
   border-radius: 14px;
   background: #222;
@@ -551,18 +484,7 @@ body.light footer{ color:#888; }
   margin-bottom: 10px;
 }
 
-/* Opening videos */
-.lor-video{
-  width: 100%;
-  height: 230px;
-  border-radius: 14px;
-  background:#222;
-  box-shadow: 0 2px 12px #1116;
-  margin-bottom: 10px;
-  display:none; /* affiché seulement en mode opening */
-}
-
-.lor-card span{
+.hol-card span{
   display:block;
   font-size: 1.02rem;
   font-weight: 900;
@@ -570,7 +492,7 @@ body.light footer{ color:#888; }
   word-break: break-word;
 }
 
-body.light .lor-card{
+body.light .hol-card{
   background: rgba(255,255,255,0.75);
   border-color: rgba(25,118,210,0.28);
 }
@@ -584,8 +506,8 @@ body.light .lor-card{
   }
 }
 @media (max-width: 700px){
-  .lor-duel{ grid-template-columns: 1fr; }
-  .lor-img, .lor-video{ height: 250px; }
+  .hol-duel{ grid-template-columns: 1fr; }
+  .hol-img{ height: 260px; }
 }
 @media (max-width: 600px){
   header h1{ font-size: 1.19rem; }
