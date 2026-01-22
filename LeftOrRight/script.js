@@ -1,9 +1,10 @@
 /**********************
- * Left or Right (Anime / Songs)
+ * Left or Right (Anime / Songs) — Duels indépendants
  * - UI/DA identique BlindRanking
  * - Pas d'historique / pas de recap
- * - Anime : duel préférence -> le choisi devient champion (à gauche) + nouvel adversaire
- * - Songs : duel préférence -> 2 vidéos visibles direct (gauche/droite)
+ * - Chaque duel est indépendant : après un duel, les 2 items ne reviennent plus dans la partie
+ * - Anime : 2 covers -> choix libre
+ * - Songs : 2 vidéos visibles direct (gauche/droite)
  *          autoplay best-effort non-mute de la gauche
  *          volume global
  *          anti-bug media + retries: 1 essai + 5 retries (2/4/6/8/10s)
@@ -191,8 +192,11 @@ let filteredPool = [];
 // ====== GAME STATE ======
 let totalDuels = 10;
 let duelIndex = 1;
-let champion = null;   // gauche
-let challenger = null; // droite
+
+let leftItem = null;
+let rightItem = null;
+
+let usedKeys = new Set();
 
 // anti stale media
 let duelToken = 0;
@@ -231,7 +235,6 @@ function withCacheBuster(url) {
   const sep = url.includes("?") ? "&" : "?";
   return url + sep + "t=" + Date.now();
 }
-
 function loadMediaWithRetries(player, url, localDuel, localMedia, { autoplay = true } = {}) {
   let attemptIndex = 0;
   let stallTimer = null;
@@ -344,7 +347,7 @@ function initCustomUI() {
     });
   });
 
-  // Sliders sync
+  // Sliders + rounds sync
   function syncLabels() {
     clampYearSliders();
     popValEl.textContent = popEl.value;
@@ -354,14 +357,16 @@ function initCustomUI() {
     updatePreview();
   }
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncLabels));
+  roundCountEl.addEventListener("input", () => updatePreview());
 
   // Apply
   applyBtn.addEventListener("click", () => {
     filteredPool = applyFilters();
-    const minNeeded = Math.max(2, MIN_REQUIRED);
-    if (filteredPool.length < minNeeded) return;
-
     totalDuels = clampInt(parseInt(roundCountEl.value || "10", 10), 1, 100);
+
+    const need = Math.max(MIN_REQUIRED, totalDuels * 2);
+    if (filteredPool.length < need) return;
+
     startGame();
   });
 
@@ -444,13 +449,14 @@ function updatePreview() {
   }
 
   const pool = applyFilters();
-  const minNeeded = Math.max(2, MIN_REQUIRED);
-  const ok = pool.length >= minNeeded;
-  const label = (currentMode === "songs") ? "Songs" : "Animes";
+  const duelsWanted = clampInt(parseInt(roundCountEl.value || "10", 10), 1, 100);
+  const need = Math.max(MIN_REQUIRED, duelsWanted * 2);
+  const ok = pool.length >= need;
 
+  const label = (currentMode === "songs") ? "Songs" : "Animes";
   previewCountEl.textContent = ok
-    ? `🎮 ${label} disponibles : ${pool.length} (OK)`
-    : `🎮 ${label} disponibles : ${pool.length} (Min ${MIN_REQUIRED})`;
+    ? `🎮 ${label} disponibles : ${pool.length} (OK) — Duels possibles: ${Math.floor(pool.length / 2)}`
+    : `🎮 ${label} disponibles : ${pool.length} (Min ${need})`;
 
   previewCountEl.classList.toggle("good", ok);
   previewCountEl.classList.toggle("bad", !ok);
@@ -458,15 +464,26 @@ function updatePreview() {
   applyBtn.classList.toggle("disabled", !ok);
 }
 
-// ====== PICK HELPERS ======
-function pickRandom(pool, avoidKey = null) {
-  if (!pool || pool.length === 0) return null;
+// ====== PICK UNUSED ======
+function pickUnused(pool) {
   const shuffled = shuffleInPlace([...pool]);
   for (const it of shuffled) {
-    if (avoidKey && it._key === avoidKey) continue;
+    if (!it || !it._key) continue;
+    if (usedKeys.has(it._key)) continue;
+    usedKeys.add(it._key);
     return it;
   }
-  return shuffled[0];
+  return null;
+}
+
+function pickNewPair() {
+  leftItem = pickUnused(filteredPool);
+  if (!leftItem) return false;
+
+  rightItem = pickUnused(filteredPool);
+  if (!rightItem) return false;
+
+  return true;
 }
 
 // ====== GAME ======
@@ -474,7 +491,6 @@ function resetGameUI() {
   duelToken++;
   mediaToken++;
 
-  // stop media
   [leftVid, rightVid].forEach(v => {
     try { v.pause(); } catch {}
     v.removeAttribute("src");
@@ -505,10 +521,8 @@ function updatePrompt() {
 
 function showMediaForMode() {
   const isSongs = currentMode === "songs";
-  // images
   leftImg.style.display = isSongs ? "none" : "block";
   rightImg.style.display = isSongs ? "none" : "block";
-  // videos
   leftVid.style.display = isSongs ? "block" : "none";
   rightVid.style.display = isSongs ? "block" : "none";
 }
@@ -518,14 +532,18 @@ function renderDuel() {
   updatePrompt();
   showMediaForMode();
 
-  leftTitle.textContent = (currentMode === "songs") ? formatSongTitle(champion) : (champion?.title || "");
-  rightTitle.textContent = (currentMode === "songs") ? formatSongTitle(challenger) : (challenger?.title || "");
+  // labels
+  leftTitle.textContent = (currentMode === "songs") ? formatSongTitle(leftItem) : (leftItem?.title || "");
+  rightTitle.textContent = (currentMode === "songs") ? formatSongTitle(rightItem) : (rightItem?.title || "");
 
+  // anime: images
   if (currentMode === "anime") {
-    leftImg.src = champion?.image || "";
-    rightImg.src = challenger?.image || "";
+    leftImg.src = leftItem?.image || "";
+    rightImg.src = rightItem?.image || "";
     resultDiv.textContent = "";
     nextBtn.style.display = "none";
+    leftPick.disabled = false;
+    rightPick.disabled = false;
     return;
   }
 
@@ -533,11 +551,6 @@ function renderDuel() {
   const localDuel = ++duelToken;
   const localMedia = ++mediaToken;
 
-  // poster via image anime (quand possible)
-  leftVid.poster = champion?.image || "";
-  rightVid.poster = challenger?.image || "";
-
-  // reset
   [leftVid, rightVid].forEach(v => {
     try { v.pause(); } catch {}
     v.removeAttribute("src");
@@ -547,9 +560,30 @@ function renderDuel() {
 
   applyVolume();
 
-  // load with retries
-  if (champion?.url) loadMediaWithRetries(leftVid, champion.url, localDuel, localMedia, { autoplay: true });
-  if (challenger?.url) loadMediaWithRetries(rightVid, challenger.url, localDuel, localMedia, { autoplay: false });
+  leftVid.poster = leftItem?.image || "";
+  rightVid.poster = rightItem?.image || "";
+
+  if (leftItem?.url) loadMediaWithRetries(leftVid, leftItem.url, localDuel, localMedia, { autoplay: true });
+  if (rightItem?.url) loadMediaWithRetries(rightVid, rightItem.url, localDuel, localMedia, { autoplay: false });
+
+  resultDiv.textContent = "";
+  nextBtn.style.display = "none";
+  leftPick.disabled = false;
+  rightPick.disabled = false;
+}
+
+function finishGame(message) {
+  // stop media
+  [leftVid, rightVid].forEach(v => {
+    try { v.pause(); } catch {}
+    v.removeAttribute("src");
+    v.load();
+  });
+
+  resultDiv.textContent = message;
+  nextBtn.style.display = "block";
+  nextBtn.textContent = "Retour réglages";
+  nextBtn.onclick = () => { showCustomization(); updatePreview(); };
 }
 
 function startGame() {
@@ -558,25 +592,19 @@ function startGame() {
   setupModeUI();
 
   filteredPool = applyFilters();
-  const minNeeded = Math.max(2, MIN_REQUIRED);
-  if (!filteredPool || filteredPool.length < minNeeded) {
-    resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
-    nextBtn.style.display = "block";
-    nextBtn.textContent = "Retour réglages";
-    nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+  totalDuels = clampInt(parseInt(roundCountEl.value || "10", 10), 1, 100);
+
+  const need = Math.max(MIN_REQUIRED, totalDuels * 2);
+  if (!filteredPool || filteredPool.length < need) {
+    finishGame("❌ Pas assez d’items pour faire autant de duels sans répétition.");
     return;
   }
 
   duelIndex = 1;
+  usedKeys = new Set();
 
-  champion = pickRandom(filteredPool);
-  challenger = pickRandom(filteredPool, champion?._key || null);
-
-  if (!champion || !challenger) {
-    resultDiv.textContent = "❌ Impossible de créer un duel.";
-    nextBtn.style.display = "block";
-    nextBtn.textContent = "Retour réglages";
-    nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+  if (!pickNewPair()) {
+    finishGame("❌ Impossible de créer le premier duel.");
     return;
   }
 
@@ -585,26 +613,22 @@ function startGame() {
 
 // ====== PICK ======
 function handlePick(side) {
-  if (!champion || !challenger) return;
+  if (!leftItem || !rightItem) return;
 
   leftPick.disabled = true;
   rightPick.disabled = true;
 
-  // stop songs sound on pick (plus propre)
   if (currentMode === "songs") {
     try { leftVid.pause(); } catch {}
     try { rightVid.pause(); } catch {}
   }
 
-  const chosen = (side === "left") ? champion : challenger;
-  champion = chosen;
+  const chosen = (side === "left") ? leftItem : rightItem;
+  resultDiv.textContent = `✅ Choix validé : ${currentMode === "songs" ? formatSongTitle(chosen) : (chosen.title || "")}`;
 
-  resultDiv.textContent = "✅ Choix validé !";
-
+  // fin ?
   if (duelIndex >= totalDuels) {
-    nextBtn.style.display = "block";
-    nextBtn.textContent = "Retour réglages";
-    nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+    finishGame("✅ Terminé !");
     return;
   }
 
@@ -612,18 +636,17 @@ function handlePick(side) {
   nextBtn.textContent = "Suivant";
   nextBtn.onclick = () => {
     duelIndex++;
-    challenger = pickRandom(filteredPool, champion?._key || null);
-    if (!challenger) {
-      resultDiv.textContent = "❌ Impossible de piocher un adversaire.";
-      nextBtn.textContent = "Retour réglages";
-      nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+
+    // nouveau duel : 2 nouveaux items (aucune répétition)
+    const ok = pickNewPair();
+    if (!ok) {
+      finishGame("✅ Terminé (plus assez d’items uniques pour continuer).");
       return;
     }
-    renderDuel();
-    leftPick.disabled = false;
-    rightPick.disabled = false;
-    resultDiv.textContent = "";
+
     nextBtn.style.display = "none";
+    resultDiv.textContent = "";
+    renderDuel();
   };
 }
 
