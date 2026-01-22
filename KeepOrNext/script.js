@@ -563,4 +563,341 @@ function updatePreview() {
     : `🎵 ${label} disponibles : ${pool.length} (Min ${minNeeded})`;
 
   previewCountEl.classList.toggle("good", ok);
-  previewCou
+  previewCountEl.classList.toggle("bad", !ok);
+
+  applyBtn.disabled = !ok;
+  applyBtn.classList.toggle("disabled", !ok);
+}
+
+// ====== GAME CORE ======
+function pickUniqueFromPool(pool, count) {
+  const used = new Set();
+  const shuffled = shuffleInPlace([...pool]);
+  const out = [];
+  for (const it of shuffled) {
+    if (out.length >= count) break;
+    if (used.has(it._key)) continue;
+    used.add(it._key);
+    out.push(it);
+  }
+  return out;
+}
+
+function resetGameUI() {
+  decisions = [];
+  currentTurn = 1;
+  nextDealIndex = 2;
+  pendingChosen = null;
+  pendingOther = null;
+
+  recapWrap.style.display = "none";
+  recapList.innerHTML = "";
+
+  resultDiv.textContent = "";
+  nextBtn.style.display = "none";
+
+  keepBtn.disabled = false;
+  nextChoiceBtn.disabled = false;
+
+  stopAllMedia();
+
+  // right hidden by default
+  hideRightCard();
+}
+
+function startGame() {
+  roundToken++;
+  resetGameUI();
+
+  // parcours: si on veut forcer le nombre de tours depuis l'URL
+  if (isParcours) {
+    totalTurns = clampInt(parcoursCount, 1, 100);
+    turnCountEl.value = String(totalTurns);
+  }
+
+  const minNeeded = Math.max(totalTurns + 1, MIN_REQUIRED);
+  if (!filteredPool || filteredPool.length < minNeeded) {
+    resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
+    nextBtn.style.display = "block";
+    nextBtn.textContent = "Retour réglages";
+    nextBtn.onclick = () => {
+      showCustomization();
+      updatePreview();
+    };
+    return;
+  }
+
+  dealQueue = pickUniqueFromPool(filteredPool, totalTurns + 1);
+  if (dealQueue.length < totalTurns + 1) {
+    resultDiv.textContent = "❌ Impossible de sélectionner assez d’items uniques avec ces filtres.";
+    nextBtn.style.display = "block";
+    nextBtn.textContent = "Retour réglages";
+    nextBtn.onclick = () => {
+      showCustomization();
+      updatePreview();
+    };
+    return;
+  }
+
+  currentItem = dealQueue[0];
+  hiddenItem = dealQueue[1];
+  renderTurn();
+}
+
+function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
+  const isSongs = (currentMode === "songs");
+  const isLeft = side === "left";
+
+  const img = isLeft ? leftImg : rightImg;
+  const nameEl = isLeft ? leftName : rightName;
+  const pZone = isLeft ? leftPlayerZone : rightPlayerZone;
+  const player = isLeft ? leftPlayer : rightPlayer;
+
+  // name
+  nameEl.textContent = revealed ? formatItemLabel(item) : "";
+  nameEl.style.display = revealed ? "block" : "none";
+
+  if (isSongs) {
+    // songs: vidéo uniquement (comme blindranking)
+    img.style.display = "none";
+    pZone.style.display = revealed ? "block" : "none";
+
+    if (revealed && item?.url) {
+      // poster + load
+      player.poster = item.image || "";
+      applyVolume();
+
+      if (isLeft) mediaTokenLeft++; else mediaTokenRight++;
+      const localRound = roundToken;
+      const localMedia = isLeft ? mediaTokenLeft : mediaTokenRight;
+
+      try { player.pause(); } catch {}
+      player.removeAttribute("src");
+      player.load();
+
+      player.muted = false;
+      loadMediaWithRetries(player, item.url, localRound, localMedia, { autoplay });
+    } else {
+      try { player.pause(); } catch {}
+      player.removeAttribute("src");
+      player.load();
+    }
+  } else {
+    // anime: image
+    pZone.style.display = "none";
+    try { player.pause(); } catch {}
+    player.removeAttribute("src");
+    player.load();
+
+    if (revealed && item?.image) {
+      img.src = item.image;
+      img.style.display = "block";
+    } else {
+      img.style.display = "none";
+    }
+  }
+}
+
+function hideRightCard() {
+  secretOverlay.style.display = "flex";
+  rightImg.style.display = "none";
+  rightName.style.display = "none";
+  rightPlayerZone.style.display = "none";
+
+  // stop right media
+  mediaTokenRight++;
+  try { rightPlayer.pause(); } catch {}
+  rightPlayer.removeAttribute("src");
+  rightPlayer.load();
+}
+
+function revealRightCard(item) {
+  secretOverlay.style.display = "none";
+  // revealed
+  setCardContent("right", item, { revealed: true, autoplay: true });
+}
+
+function renderTurn() {
+  roundLabel.textContent = `Tour ${currentTurn} / ${totalTurns}`;
+
+  resultDiv.textContent = "";
+  nextBtn.style.display = "none";
+  recapWrap.style.display = "none";
+  pendingChosen = null;
+  pendingOther = null;
+
+  keepBtn.disabled = false;
+  nextChoiceBtn.disabled = false;
+
+  // visible left
+  setCardContent("left", currentItem, { revealed: true, autoplay: true });
+
+  // hide right
+  hideRightCard();
+
+  // volume only songs
+  volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
+  applyVolume();
+}
+
+function handleChoice(choice) {
+  if (!currentItem || !hiddenItem) return;
+
+  // disable choices while revealing
+  keepBtn.disabled = true;
+  nextChoiceBtn.disabled = true;
+
+  // pause both to avoid audio overlap
+  try { leftPlayer.pause(); } catch {}
+  try { rightPlayer.pause(); } catch {}
+
+  // reveal hidden
+  revealRightCard(hiddenItem);
+
+  const chosen = (choice === "keep") ? currentItem : hiddenItem;
+  const other = (choice === "keep") ? hiddenItem : currentItem;
+
+  decisions.push({
+    turn: currentTurn,
+    choice,
+    chosen,
+    other
+  });
+
+  pendingChosen = chosen;
+  pendingOther = other;
+
+  const msg = (choice === "keep")
+    ? `✅ KEEP : tu gardes <b>${formatItemLabel(currentItem)}</b> — la carte cachée était <b>${formatItemLabel(hiddenItem)}</b>.`
+    : `➡️ NEXT : tu prends la cachée <b>${formatItemLabel(hiddenItem)}</b> — tu laisses <b>${formatItemLabel(currentItem)}</b>.`;
+
+  resultDiv.innerHTML = msg;
+
+  const isLast = currentTurn >= totalTurns;
+
+  nextBtn.style.display = "block";
+  if (!isLast) {
+    nextBtn.textContent = "Tour suivant";
+    nextBtn.onclick = () => {
+      // avance: chosen devient la nouvelle carte visible
+      currentItem = pendingChosen;
+      hiddenItem = dealQueue[nextDealIndex];
+      nextDealIndex++;
+
+      currentTurn++;
+      renderTurn();
+    };
+  } else {
+    nextBtn.textContent = "Voir le récap";
+    nextBtn.onclick = () => finishGame();
+  }
+}
+
+function finishGame() {
+  // On affiche le recap
+  recapWrap.style.display = "block";
+  recapList.innerHTML = "";
+
+  for (const d of decisions) {
+    const row = document.createElement("div");
+    row.className = "choice-row";
+
+    const leftCard = document.createElement("div");
+    leftCard.className = "choice-card " + (d.choice === "keep" ? "picked" : "");
+    leftCard.innerHTML = `
+      <div class="tag">${d.choice === "keep" ? "✅ Pick" : "❌ Leave"}</div>
+      <img loading="lazy" decoding="async" src="${(d.choice === "keep" ? d.chosen.image : d.other.image) || ""}" alt="">
+      <span class="label">${d.choice === "keep" ? formatItemLabel(d.chosen) : formatItemLabel(d.other)}</span>
+    `;
+
+    const rightCard = document.createElement("div");
+    rightCard.className = "choice-card " + (d.choice === "next" ? "picked" : "");
+    rightCard.innerHTML = `
+      <div class="tag">${d.choice === "next" ? "✅ Pick" : "❌ Leave"}</div>
+      <img loading="lazy" decoding="async" src="${(d.choice === "next" ? d.chosen.image : d.other.image) || ""}" alt="">
+      <span class="label">${d.choice === "next" ? formatItemLabel(d.chosen) : formatItemLabel(d.other)}</span>
+    `;
+
+    row.appendChild(leftCard);
+    row.appendChild(rightCard);
+    recapList.appendChild(row);
+  }
+
+  // message final
+  const finalPick = decisions.length ? decisions[decisions.length - 1].chosen : null;
+  resultDiv.innerHTML = finalPick
+    ? `✅ Partie terminée — ton choix final après ${totalTurns} tours : <b>${formatItemLabel(finalPick)}</b>.`
+    : `✅ Partie terminée.`;
+
+  // bouton retour
+  nextBtn.style.display = "block";
+  nextBtn.textContent = "Retour réglages";
+  nextBtn.onclick = () => {
+    showCustomization();
+    updatePreview();
+  };
+
+  // stop media
+  stopAllMedia();
+
+  // parcours: on envoie un score neutre (pas de win/lose)
+  if (isParcours) {
+    try {
+      parent.postMessage({
+        parcoursScore: { label: "Keep or Next", score: 0, total: 0 }
+      }, "*");
+    } catch {}
+  }
+}
+
+// ====== LOAD DATA ======
+fetch("../data/licenses_only.json")
+  .then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status} - ${r.statusText}`);
+    return r.json();
+  })
+  .then(json => {
+    const raw = normalizeAnimeList(json);
+
+    allAnimes = (Array.isArray(raw) ? raw : []).map(a => {
+      const title = getDisplayTitle(a);
+      return {
+        ...a,
+        _title: title,
+        _titleLower: title.toLowerCase(),
+        _year: getYear(a),
+        _members: safeNum(a.members),
+        _score: safeNum(a.score),
+        _type: a.type || "Unknown",
+      };
+    });
+
+    allSongs = [];
+    for (const a of allAnimes) allSongs.push(...extractSongsFromAnime(a));
+
+    initCustomUI();
+    updatePreview();
+    showCustomization();
+
+    applyVolume();
+
+    // parcours auto-start
+    if (isParcours) {
+      filteredPool = applyFilters();
+      totalTurns = clampInt(parcoursCount, 1, 100);
+      turnCountEl.value = String(totalTurns);
+
+      const minNeeded = Math.max(totalTurns + 1, MIN_REQUIRED);
+      if (filteredPool.length >= minNeeded) {
+        showGame();
+        startGame();
+      }
+    }
+  })
+  .catch(e => {
+    previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
+    previewCountEl.classList.add("bad");
+    applyBtn.disabled = true;
+    applyBtn.classList.add("disabled");
+    console.error(e);
+  });
