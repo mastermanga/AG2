@@ -23,7 +23,7 @@
           <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-keep">
             <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor"
-                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
             </svg>
           </span>
 
@@ -38,7 +38,7 @@
   </header>
 
   <!-- =========================
-       PERSONNALISATION (AU DÉPART)
+       PERSONNALISATION
   ========================== -->
   <div id="custom-panel" class="main-container">
     <h2>⚙️ Personnalisation</h2>
@@ -100,7 +100,7 @@
       </div>
     </div>
 
-    <!-- Songs (visible seulement si mode = songs) -->
+    <!-- Songs -->
     <div class="opt-row" id="songsRow">
       <div class="opt-label">Songs</div>
       <div class="opt-col">
@@ -121,7 +121,8 @@
     <div class="opt-row">
       <div class="opt-label">Tours</div>
       <div class="opt-col opt-rounds">
-        <input id="turnCount" class="round-input" type="number" min="1" max="100" step="1" value="10" />
+        <!-- ✅ default 1 -->
+        <input id="turnCount" class="round-input" type="number" min="1" max="100" step="1" value="1" />
         <div class="opt-hint">(1 à 100) — Nombre de choix Keep/Next.</div>
       </div>
     </div>
@@ -134,41 +135,41 @@
   </div>
 
   <!-- =========================
-       JEU (CACHÉ AU DÉPART)
+       JEU
   ========================== -->
   <div id="game-panel" style="display:none;">
     <div id="game-shell" class="split-layout">
 
       <div class="mini-pill" id="roundLabel"></div>
 
-      <div class="duel-row">
-        <!-- LEFT (VISIBLE) -->
+      <div class="duel-grid">
+        <!-- LEFT -->
         <div class="duel-col">
           <div class="anime-item" id="leftCard">
-            <img id="left-img" src="" alt="Cover" style="display:none">
-            <p id="left-name">Nom</p>
-
-            <!-- Player (Songs) -->
-            <div id="left-player-zone" style="display:none;">
-              <video id="leftPlayer" controls preload="metadata" playsinline></video>
+            <div class="media-slot">
+              <img id="left-img" src="" alt="Cover" style="display:none">
+              <div id="left-player-zone" style="display:none;">
+                <video id="leftPlayer" controls preload="metadata" playsinline></video>
+              </div>
             </div>
+            <p id="left-name">Nom</p>
           </div>
 
           <button id="keepBtn" class="menu-btn">✅ Keep</button>
         </div>
 
-        <!-- RIGHT (HIDDEN) -->
+        <!-- RIGHT (hidden) -->
         <div class="duel-col">
           <div class="anime-item secret" id="rightCard">
-            <div class="sleep-overlay" id="sleepOverlay">💤</div>
+            <div class="media-slot">
+              <div class="sleep-overlay" id="sleepOverlay">💤</div>
 
-            <img id="right-img" src="" alt="Cover" style="display:none">
-            <p id="right-name" style="display:none;">Nom</p>
-
-            <!-- Player (Songs) -->
-            <div id="right-player-zone" style="display:none;">
-              <video id="rightPlayer" controls preload="metadata" playsinline></video>
+              <img id="right-img" src="" alt="Cover" style="display:none">
+              <div id="right-player-zone" style="display:none;">
+                <video id="rightPlayer" controls preload="metadata" playsinline></video>
+              </div>
             </div>
+            <p id="right-name" style="display:none;">Nom</p>
           </div>
 
           <button id="nextChoiceBtn" class="menu-btn">➡️ Next</button>
@@ -182,13 +183,14 @@
         <div id="volumeVal" class="vol-val">30%</div>
       </div>
 
-      <div id="result" class="result"></div>
+      <!-- ✅ on garde un hint MINIMAL (plus de gros texte) -->
+      <div id="result" class="result mini" aria-live="polite"></div>
+
       <button id="nextBtn" class="menu-btn" style="display:none;">Tour suivant</button>
     </div>
   </div>
 
   <footer>© 2025 mastermanga</footer>
-
   <script src="script.js"></script>
 </body>
 </html>
