@@ -273,18 +273,19 @@ body.light .round-input{
 }
 
 /* ==== GAME LAYOUT ==== */
+/* ✅ + grand pour agrandir cartes + player */
 .split-layout{
   background:#161e27ee;
   border-radius:22px;
   box-shadow: 0 0 32px 5px #00bcd466;
-  max-width: 1400px;
+  max-width: 1550px;          /* <-- plus large */
   width: 98vw;
   margin: 0 auto 1.5rem auto;
   padding: 2rem 2rem;
   display:flex;
   flex-direction:row;
   align-items:flex-start;
-  gap: 2.2rem;
+  gap: 2.4rem;               /* <-- un peu + */
   position:relative;
   z-index:1;
 }
@@ -292,8 +293,9 @@ body.light .split-layout{
   background:#fff;
   box-shadow: 0 0 18px #42a5f555;
 }
-.ranking-container{ width: 62%; min-width: 340px; }
-.anime-container{ width: 380px; display:flex; flex-direction:column; align-items:center; }
+.ranking-container{ width: 64%; min-width: 380px; } /* <-- + large */
+.anime-container{ width: 480px; display:flex; flex-direction:column; align-items:center; } /* <-- + large */
+
 .mini-pill{
   width: fit-content;
   margin: 0 auto 12px auto;
@@ -320,16 +322,16 @@ body.light .split-layout{
   border-radius:18px;
   box-shadow: 0 4px 22px #0003;
   width:100%;
-  max-width: 190px;
+  max-width: 230px;          /* ✅ cartes plus grandes */
   text-align:center;
-  padding: 10px 10px 14px 10px;
+  padding: 12px 12px 14px 12px;
 }
 body.light .anime-list li{ background:#f8f8f8; }
 
 /* Default image (pour autres jeux / listes) */
 .anime-list li img{
   width:100%;
-  height: 150px;
+  height: 185px;             /* ✅ image plus grande */
   object-fit: cover;
   border-radius: 12px;
   background:#222;
@@ -338,14 +340,14 @@ body.light .anime-list li{ background:#f8f8f8; }
 
 .placeholder{
   width:100%;
-  height:150px;
+  height:185px;              /* ✅ placeholder plus grand */
   border-radius:12px;
   background: rgba(255,255,255,0.12);
   opacity:0.18;
 }
 .anime-list li span{
   display:block;
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   margin-top: 10px;
   font-weight: 700;
   color:#f5f5f5;
@@ -354,7 +356,7 @@ body.light .anime-list li{ background:#f8f8f8; }
 }
 body.light .anime-list li span{ color:#111; }
 
-/* Item card */
+/* Item card (droite) */
 .anime-item{
   width:100%;
   display:flex;
@@ -371,6 +373,7 @@ body.light .anime-item{ background:#e4f2fc; }
 #player-zone{ width:100%; margin-top: 10px; }
 #songPlayer{
   width:100%;
+  height: 280px;             /* ✅ vidéo plus grande */
   border-radius: 14px;
   background:#222;
   box-shadow: 0 2px 12px #1116;
@@ -557,11 +560,13 @@ body.light footer{ color:#888; }
   .ranking-container{ width: 100%; min-width: 0; }
   .anime-container{ width: 100%; }
   .anime-list{ grid-template-columns: repeat(2, 1fr); }
+  #songPlayer{ height: 260px; }
 }
 @media (max-width: 600px){
   header h1{ font-size: 1.19rem; }
   .anime-list{ grid-template-columns: repeat(2, 1fr); }
   .info-tip{ width: min(320px, 86vw); right: 0; }
+  #songPlayer{ height: 240px; }
 }
 
 /* =========================
@@ -594,13 +599,13 @@ body.light footer{ color:#888; }
   box-shadow: none !important;
 }
 
-/* ✅ TopPick: image EN ENTIER (pas crop) */
+/* ✅ TopPick: image EN ENTIER (pas crop) + plus grande */
 .topPick-list li img{
   width:100%;
-  height:150px;
-  object-fit: contain;                 /* <- image entière */
+  height:185px;                 /* ✅ */
+  object-fit: contain;
   border-radius: 12px;
-  background: rgba(0,0,0,0.35);        /* letterbox propre */
+  background: rgba(0,0,0,0.35);
   box-shadow: 0 2px 14px #1116;
 }
 
@@ -624,7 +629,7 @@ body.light footer{ color:#888; }
   align-items:center;
   width: 100%;
   margin-top: 12px;
-  flex-wrap: wrap
+  flex-wrap: wrap;
 }
 .tp-badge{
   position:absolute;
