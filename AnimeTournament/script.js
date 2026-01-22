@@ -267,9 +267,9 @@ function setDefaultUI() {
   const yMin = document.getElementById("yearMin");
   const yMax = document.getElementById("yearMax");
 
-  if (pop) pop.value = "25";
-  if (score) score.value = "25";
-  if (yMin) yMin.value = "2000";
+  if (pop) pop.value = "30";
+  if (score) score.value = "100";
+  if (yMin) yMin.value = "1950";
   if (yMax) yMax.value = "2026";
 
   // défaut types: TV + Movie
@@ -338,9 +338,9 @@ function readOptions() {
   const yMinEl = document.getElementById("yearMin");
   const yMaxEl = document.getElementById("yearMax");
 
-  const pop = (parseInt(popEl?.value || "25", 10) || 25) / 100;
-  const score = (parseInt(scoreEl?.value || "25", 10) || 25) / 100;
-  const yMin = parseInt(yMinEl?.value || "2000", 10) || 0;
+  const pop = (parseInt(popEl?.value || "30", 10) || 30) / 100;
+  const score = (parseInt(scoreEl?.value || "100", 10) || 100) / 100;
+  const yMin = parseInt(yMinEl?.value || "1950", 10) || 0;
   const yMax = parseInt(yMaxEl?.value || "2026", 10) || 9999;
 
   // affichage valeurs
