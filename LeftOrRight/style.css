@@ -191,11 +191,7 @@ body.light .main-container{
 .year-sliders{ display:flex; gap:12px; align-items:center; }
 
 /* Pills */
-.opt-pill-group{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-}
+.opt-pill-group{ display:flex; gap:10px; flex-wrap:wrap; }
 .pill{
   border: 1.5px solid rgba(0,188,212,0.55);
   background: rgba(0,0,0,0.22);
@@ -272,7 +268,7 @@ body.light .round-input{
 }
 .start-wrap{ display:flex; justify-content:center; margin-top:12px; }
 
-/* ==== GAME LAYOUT ==== */
+/* ==== GAME LAYOUT (SOLO, CENTRÉ) ==== */
 .split-layout{
   background:#161e27ee;
   border-radius:22px;
@@ -292,16 +288,20 @@ body.light .split-layout{
   background:#fff;
   box-shadow: 0 0 18px #42a5f555;
 }
-.ranking-container{
-  width: 62%;
-  min-width: 340px;
+.split-layout--solo{
+  justify-content:center;
 }
+
 .anime-container{
   width: 380px;
   display:flex;
   flex-direction:column;
   align-items:center;
 }
+.anime-container--wide{
+  width: min(820px, 100%);
+}
+
 .mini-pill{
   width: fit-content;
   margin: 0 auto 12px auto;
@@ -312,52 +312,6 @@ body.light .split-layout{
   font-weight:900;
   opacity:0.92;
 }
-
-/* Ranking grid (history list) */
-.anime-list{
-  display:grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 18px 16px;
-  padding:0;
-  margin:0;
-  list-style:none;
-  justify-items:center;
-}
-.anime-list li{
-  background:#191919;
-  border-radius:18px;
-  box-shadow: 0 4px 22px #0003;
-  width:100%;
-  max-width: 190px;
-  text-align:center;
-  padding: 10px 10px 14px 10px;
-}
-body.light .anime-list li{ background:#f8f8f8; }
-.anime-list li img{
-  width:100%;
-  height: 150px;
-  object-fit: cover;
-  border-radius: 12px;
-  background:#222;
-  box-shadow: 0 2px 14px #1116;
-}
-.placeholder{
-  width:100%;
-  height:150px;
-  border-radius:12px;
-  background: rgba(255,255,255,0.12);
-  opacity:0.18;
-}
-.anime-list li span{
-  display:block;
-  font-size: 0.95rem;
-  margin-top: 10px;
-  font-weight: 700;
-  color:#f5f5f5;
-  line-height: 1.2;
-  word-break: break-word;
-}
-body.light .anime-list li span{ color:#111; }
 
 /* Item card */
 .anime-item{
@@ -372,18 +326,6 @@ body.light .anime-list li span{ color:#111; }
 }
 body.light .anime-item{ background:#e4f2fc; }
 
-/* Player zone */
-#player-zone{
-  width:100%;
-  margin-bottom: 12px;
-}
-#songPlayer{
-  width:100%;
-  border-radius: 14px;
-  background:#222;
-  box-shadow: 0 2px 12px #1116;
-}
-
 /* ==== VOLUME BAR (Opening only) ==== */
 .volume-row{
   width:100%;
@@ -395,7 +337,7 @@ body.light .anime-item{ background:#e4f2fc; }
   border-radius: 14px;
   background: rgba(0,0,0,0.14);
   border: 1px solid rgba(0,188,212,0.20);
-  margin-bottom: 12px;
+  margin: 6px 0 12px 0;
 }
 .vol-label{
   font-weight:900;
@@ -449,7 +391,7 @@ body.light #volumeSlider{
 
 /* Result */
 .result{
-  margin-top: 14px;
+  margin-top: 10px;
   font-weight:900;
   opacity:0.95;
 }
@@ -461,12 +403,7 @@ body.light #volumeSlider{
   gap:10px;
   flex-shrink:0;
 }
-.info-wrap{
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
+.info-wrap{ position: relative; display: inline-flex; align-items: center; justify-content: center; }
 .info-icon{
   width: 26px;
   height: 26px;
@@ -535,9 +472,7 @@ body.light .info-tip{
   box-shadow: 0 10px 34px rgba(66, 165, 245, 0.35), 0 2.5px 14px rgba(25, 118, 210, 0.18);
   color:#0b1a2a;
 }
-body.light .info-tip::after{
-  border-color: transparent transparent #e0f7fa transparent;
-}
+body.light .info-tip::after{ border-color: transparent transparent #e0f7fa transparent; }
 body.light .info-icon{
   background: rgba(255, 255, 255, 0.75);
   color: #1565c0;
@@ -565,10 +500,10 @@ body.light footer{ color:#888; }
    LEFT OR RIGHT (DUEL UI)
    ========================= */
 .lor-prompt{
-  font-size: 1.05rem;
+  font-size: 1.12rem;
   font-weight: 900;
   text-align: center;
-  margin: 0 0 12px 0;
+  margin: 0 0 14px 0;
   opacity: 0.95;
 }
 
@@ -576,11 +511,15 @@ body.light footer{ color:#888; }
   width: 100%;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 14px;
+  margin: 0 auto 10px auto;
+  justify-items: center;
+  align-items: start;
 }
 
 .lor-card{
+  width: 100%;
+  max-width: 340px;
   border: 1.5px solid rgba(0,188,212,0.35);
   background: rgba(0,0,0,0.22);
   border-radius: 18px;
@@ -589,25 +528,22 @@ body.light footer{ color:#888; }
   transition: transform 0.14s, box-shadow 0.14s, border-color 0.14s, filter 0.14s;
   color: inherit;
   text-align: center;
+  user-select: none;
 }
-
 .lor-card:hover{
   transform: translateY(-1px);
   box-shadow: 0 0 18px rgba(0,234,255,0.18);
   border-color: rgba(0,234,255,0.65);
 }
-
 .lor-card:active{ transform: scale(0.99); }
-
-.lor-card:disabled{
-  opacity: 0.6;
-  cursor: default;
-  filter: grayscale(0.2);
+.lor-card:focus{
+  outline: 2px solid rgba(0,234,255,0.35);
+  outline-offset: 3px;
 }
 
-.lor-card img{
+.lor-img{
   width: 100%;
-  height: 160px;
+  height: 230px;
   object-fit: cover;
   border-radius: 14px;
   background: #222;
@@ -615,17 +551,23 @@ body.light footer{ color:#888; }
   margin-bottom: 10px;
 }
 
+/* Opening videos */
+.lor-video{
+  width: 100%;
+  height: 230px;
+  border-radius: 14px;
+  background:#222;
+  box-shadow: 0 2px 12px #1116;
+  margin-bottom: 10px;
+  display:none; /* affiché seulement en mode opening */
+}
+
 .lor-card span{
   display:block;
-  font-size: 0.98rem;
+  font-size: 1.02rem;
   font-weight: 900;
   line-height: 1.2;
   word-break: break-word;
-}
-
-.lor-listen{
-  width: 100%;
-  margin: 2px 0 8px 0;
 }
 
 body.light .lor-card{
@@ -640,14 +582,12 @@ body.light .lor-card{
     gap: 22px;
     padding: 1.4rem 0.9rem;
   }
-  .ranking-container{ width: 100%; min-width: 0; }
-  .anime-container{ width: 100%; }
-  .anime-list{ grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 700px){
+  .lor-duel{ grid-template-columns: 1fr; }
+  .lor-img, .lor-video{ height: 250px; }
 }
 @media (max-width: 600px){
   header h1{ font-size: 1.19rem; }
-  .anime-list{ grid-template-columns: repeat(2, 1fr); }
   .info-tip{ width: min(320px, 86vw); right: 0; }
-  .lor-duel{ grid-template-columns: 1fr; }
-  .lor-card img{ height: 180px; }
 }
