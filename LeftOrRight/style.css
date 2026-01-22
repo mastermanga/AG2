@@ -222,6 +222,14 @@ body.light .pill.active{
   border-color: rgba(25,118,210,0.55);
 }
 
+/* ✅ Pill verrouillé (Mode unique) */
+.pill.locked{
+  pointer-events: none;
+  cursor: default;
+  opacity: 0.98;
+}
+.pill.locked:hover{ transform:none; box-shadow: none; }
+
 /* Preview count */
 .preview-count{
   margin-top:14px;
@@ -439,7 +447,6 @@ body.light footer{ color:#888; }
   margin: 0 0 14px 0;
   opacity: 0.95;
 }
-
 .hol-duel{
   width: 100%;
   display: grid;
@@ -449,7 +456,6 @@ body.light footer{ color:#888; }
   justify-items: center;
   align-items: start;
 }
-
 .hol-card{
   width: 100%;
   max-width: 360px;
@@ -473,7 +479,6 @@ body.light footer{ color:#888; }
   outline: 2px solid rgba(0,234,255,0.35);
   outline-offset: 3px;
 }
-
 .hol-img{
   width: 100%;
   height: 260px;
@@ -483,7 +488,6 @@ body.light footer{ color:#888; }
   box-shadow: 0 2px 14px #1116;
   margin-bottom: 10px;
 }
-
 .hol-card span{
   display:block;
   font-size: 1.02rem;
@@ -491,7 +495,6 @@ body.light footer{ color:#888; }
   line-height: 1.2;
   word-break: break-word;
 }
-
 body.light .hol-card{
   background: rgba(255,255,255,0.75);
   border-color: rgba(25,118,210,0.28);
