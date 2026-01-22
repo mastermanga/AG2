@@ -1,12 +1,13 @@
 /**********************
  * Keep or Next (Anime / Songs)
- * - 2 boutons: Keep / Next
- * - Droite cachée = vide + 💤
- * - Pas de récap
- * - Images anime: contain (CSS)
- * - Tours indépendants: le choix n'influence PAS le tour suivant
- * - Songs: vidéos non mutées + volume global
- * - Loader media + retries (1 + 5 retries 2/4/6/8/10s)
+ * - Default tours = 1
+ * - Cartes + slot media plus grands
+ * - Droite cachée = même taille (slot fixe) + 💤 centré
+ * - Pas de gros texte résultat (juste un mini hint)
+ * - Effet visuel choix : chosen/rejected
+ * - Tours indépendants
+ * - Songs : vidéo non mutée + volume global
+ * - Loader media + retries (0/2/4/6/8/10s)
  **********************/
 
 // ====== MENU & THEME ======
@@ -40,8 +41,6 @@ document.addEventListener("click", (e) => {
 
 // ====== HELPERS ======
 const MIN_REQUIRED = 64;
-
-// retries: 1 essai + 5 retries => 0, 2s, 4s, 6s, 8s, 10s
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const STALL_TIMEOUT_MS = 6000;
 
@@ -143,9 +142,7 @@ function extractSongsFromAnime(anime) {
         songNumber: safeNum(it.number) || 1,
         songArtists: artists || "",
 
-        animeMalId: anime.mal_id ?? null,
         animeTitle: anime._title,
-        animeTitleLower: anime._titleLower,
         animeImage: anime.image || "",
         animeType: anime._type,
         animeYear: anime._year,
@@ -181,6 +178,9 @@ const turnCountEl = document.getElementById("turnCount");
 
 const roundLabel = document.getElementById("roundLabel");
 
+const leftCard = document.getElementById("leftCard");
+const rightCard = document.getElementById("rightCard");
+
 const leftImg = document.getElementById("left-img");
 const leftName = document.getElementById("left-name");
 const leftPlayerZone = document.getElementById("left-player-zone");
@@ -211,13 +211,12 @@ let currentMode = "anime";
 let filteredPool = [];
 
 // ====== GAME STATE ======
-let totalTurns = 10;
+let totalTurns = 1;     // ✅ default 1
 let currentTurn = 1;
 
-let leftItem = null;   // visible
-let rightItem = null;  // hidden
+let leftItem = null;
+let rightItem = null;
 
-// bag / pioche (pour éviter répétitions au max)
 let bag = [];
 let bagIndex = 0;
 
@@ -264,10 +263,8 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
   let done = false;
 
   const cleanup = () => {
-    if (stallTimer) {
-      clearTimeout(stallTimer);
-      stallTimer = null;
-    }
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = null;
     player.onloadedmetadata = null;
     player.oncanplay = null;
     player.onplaying = null;
@@ -291,7 +288,6 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
     if (!isStillValid() || done) return;
     done = true;
     cleanup();
-
     if (autoplay) {
       player.muted = false;
       player.play?.().catch(() => {});
@@ -300,16 +296,13 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
 
   const triggerRetry = () => {
     if (!isStillValid() || done) return;
-
     cleanup();
     attemptIndex++;
-
     if (attemptIndex >= RETRY_DELAYS.length) {
       done = true;
       try { player.pause(); } catch {}
       return;
     }
-
     setTimeout(() => {
       if (!isStillValid() || done) return;
       doAttempt();
@@ -318,48 +311,27 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
 
   const doAttempt = () => {
     if (!isStillValid() || done) return;
-
     const src = attemptIndex === 0 ? url : withCacheBuster(url);
 
     try { hardResetMedia(player); } catch {}
-
     player.preload = "metadata";
     player.muted = false;
     player.src = src;
     player.load();
 
-    player.onloadedmetadata = () => {
-      if (!isStillValid() || done) return;
-      markReady();
-    };
+    player.onloadedmetadata = () => { if (!isStillValid() || done) return; markReady(); };
+    player.oncanplay = () => { if (!isStillValid() || done) return; markReady(); };
 
-    player.oncanplay = () => {
-      if (!isStillValid() || done) return;
-      markReady();
-    };
-
-    player.onwaiting = () => {
-      if (!isStillValid() || done) return;
-      startStallTimer();
-    };
-
-    player.onstalled = () => {
-      if (!isStillValid() || done) return;
-      startStallTimer();
-    };
+    player.onwaiting = () => { if (!isStillValid() || done) return; startStallTimer(); };
+    player.onstalled = () => { if (!isStillValid() || done) return; startStallTimer(); };
 
     player.onplaying = () => {
       if (!isStillValid() || done) return;
-      if (stallTimer) {
-        clearTimeout(stallTimer);
-        stallTimer = null;
-      }
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = null;
     };
 
-    player.onerror = () => {
-      if (!isStillValid() || done) return;
-      triggerRetry();
-    };
+    player.onerror = () => { if (!isStillValid() || done) return; triggerRetry(); };
 
     startStallTimer();
   };
@@ -379,7 +351,7 @@ function stopAllMedia() {
 
 // ====== UI INIT ======
 function initCustomUI() {
-  // Pills mode
+  // Mode pills
   document.querySelectorAll("#modePills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
       document.querySelectorAll("#modePills .pill").forEach(b => {
@@ -388,7 +360,7 @@ function initCustomUI() {
       });
       btn.classList.add("active");
       btn.setAttribute("aria-pressed", "true");
-      currentMode = btn.dataset.mode; // anime | songs
+      currentMode = btn.dataset.mode;
       updateModeVisibility();
       updatePreview();
     });
@@ -412,7 +384,7 @@ function initCustomUI() {
     });
   });
 
-  // Sliders + sync
+  // Sliders
   function syncLabels() {
     clampYearSliders();
     popValEl.textContent = popEl.value;
@@ -422,12 +394,12 @@ function initCustomUI() {
     updatePreview();
   }
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncLabels));
-  turnCountEl.addEventListener("input", () => updatePreview());
+  turnCountEl.addEventListener("input", updatePreview);
 
   // Apply
   applyBtn.addEventListener("click", () => {
     filteredPool = applyFilters();
-    totalTurns = clampInt(parseInt(turnCountEl.value || "10", 10), 1, 100); // ✅ min 1
+    totalTurns = clampInt(parseInt(turnCountEl.value || "1", 10), 1, 100); // ✅ min 1
 
     const minNeeded = Math.max(2, MIN_REQUIRED);
     if (filteredPool.length < minNeeded) return;
@@ -436,7 +408,6 @@ function initCustomUI() {
     startGame();
   });
 
-  // Choice buttons
   keepBtn.addEventListener("click", () => handleChoice("keep"));
   nextChoiceBtn.addEventListener("click", () => handleChoice("next"));
 
@@ -479,7 +450,6 @@ function applyFilters() {
     }));
   }
 
-  // songs mode
   const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map(b => b.dataset.song);
   if (allowedSongs.length === 0) return [];
 
@@ -521,11 +491,10 @@ function updatePreview() {
   }
 
   const pool = applyFilters();
-  const minNeeded = Math.max(2, MIN_REQUIRED); // ✅ on garde la règle 64
-
+  const minNeeded = Math.max(2, MIN_REQUIRED);
   const ok = pool.length >= minNeeded;
-  const label = (currentMode === "songs") ? "Songs" : "Titres";
 
+  const label = (currentMode === "songs") ? "Songs" : "Titres";
   previewCountEl.textContent = ok
     ? `🎵 ${label} disponibles : ${pool.length} (OK)`
     : `🎵 ${label} disponibles : ${pool.length} (Min ${minNeeded})`;
@@ -537,12 +506,11 @@ function updatePreview() {
   applyBtn.classList.toggle("disabled", !ok);
 }
 
-// ====== BAG (pioche) ======
+// ====== BAG ======
 function refillBag() {
   bag = shuffleInPlace([...filteredPool]);
   bagIndex = 0;
 }
-
 function drawOne(excludeKey = null) {
   if (!bag.length || bagIndex >= bag.length) refillBag();
 
@@ -553,7 +521,6 @@ function drawOne(excludeKey = null) {
     if (!excludeKey || it._key !== excludeKey) return it;
   }
 
-  // fallback
   if (!filteredPool.length) return null;
   let it = filteredPool[Math.floor(Math.random() * filteredPool.length)];
   if (excludeKey && it._key === excludeKey && filteredPool.length > 1) {
@@ -561,7 +528,6 @@ function drawOne(excludeKey = null) {
   }
   return it;
 }
-
 function drawPair() {
   const a = drawOne(null);
   const b = drawOne(a?._key || null);
@@ -569,10 +535,17 @@ function drawPair() {
 }
 
 // ====== GAME ======
+function clearChoiceEffects() {
+  leftCard.classList.remove("chosen", "rejected");
+  rightCard.classList.remove("chosen", "rejected");
+}
+
 function resetGameUI() {
   currentTurn = 1;
   leftItem = null;
   rightItem = null;
+
+  clearChoiceEffects();
 
   resultDiv.textContent = "";
   nextBtn.style.display = "none";
@@ -590,7 +563,7 @@ function startGame() {
 
   const minNeeded = Math.max(2, MIN_REQUIRED);
   if (!filteredPool || filteredPool.length < minNeeded) {
-    resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
+    resultDiv.textContent = "❌ Pas assez d’items avec ces filtres.";
     nextBtn.style.display = "block";
     nextBtn.textContent = "Retour réglages";
     nextBtn.onclick = () => {
@@ -660,7 +633,6 @@ function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
 
 function hideRightCard() {
   sleepOverlay.style.display = "flex";
-
   rightImg.style.display = "none";
   rightName.style.display = "none";
   rightPlayerZone.style.display = "none";
@@ -677,18 +649,16 @@ function revealRightCard(item) {
 }
 
 function renderTurn() {
-  roundLabel.textContent = `Tour ${currentTurn} / ${totalTurns}`;
+  clearChoiceEffects();
 
+  roundLabel.textContent = `Tour ${currentTurn} / ${totalTurns}`;
   resultDiv.textContent = "";
   nextBtn.style.display = "none";
 
   keepBtn.disabled = false;
   nextChoiceBtn.disabled = false;
 
-  // gauche visible
   setCardContent("left", leftItem, { revealed: true, autoplay: true });
-
-  // droite cachée
   hideRightCard();
 
   volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
@@ -701,16 +671,21 @@ function handleChoice(choice) {
   keepBtn.disabled = true;
   nextChoiceBtn.disabled = true;
 
-  // éviter double audio quand on révèle
+  // éviter double audio au reveal
   try { leftPlayer.pause(); } catch {}
 
+  // effet visuel choix
+  if (choice === "keep") {
+    leftCard.classList.add("chosen");
+    rightCard.classList.add("rejected");
+    resultDiv.textContent = "✅ KEEP";
+  } else {
+    rightCard.classList.add("chosen");
+    leftCard.classList.add("rejected");
+    resultDiv.textContent = "➡️ NEXT";
+  }
+
   revealRightCard(rightItem);
-
-  const msg = (choice === "keep")
-    ? `✅ KEEP : tu gardes <b>${formatItemLabel(leftItem)}</b> — la carte cachée était <b>${formatItemLabel(rightItem)}</b>.`
-    : `➡️ NEXT : tu prends la cachée <b>${formatItemLabel(rightItem)}</b> — tu laisses <b>${formatItemLabel(leftItem)}</b>.`;
-
-  resultDiv.innerHTML = msg;
 
   const isLast = currentTurn >= totalTurns;
 
@@ -718,7 +693,6 @@ function handleChoice(choice) {
   if (!isLast) {
     nextBtn.textContent = "Tour suivant";
     nextBtn.onclick = () => {
-      // ✅ Tours indépendants : nouvelle paire (le choix n'influence pas)
       stopAllMedia();
 
       const p = drawPair();
@@ -752,7 +726,6 @@ fetch("../data/licenses_only.json")
       return {
         ...a,
         _title: title,
-        _titleLower: title.toLowerCase(),
         _year: getYear(a),
         _members: safeNum(a.members),
         _score: safeNum(a.score),
