@@ -1,13 +1,16 @@
 /**********************
  * Left or Right (Anime / Opening / Stat)
- * - UI identique BlindRanking
- * - Anime & Opening : duel préférence -> le choisi devient champion (à gauche) + nouvel adversaire
- * - Opening : autoplay non-mute de la gauche + anti-bug media + retries (2/4/6/8/10s)
+ * - Pas de récap / historique (aucune liste)
+ * - UI centrée + choix plus grands
+ * - Opening : 2 vidéos direct (gauche/droite)
+ *   - autoplay non-mute sur la gauche
+ *   - anti-bug media + retries 2/4/6/8/10s
  * - Stat :
- *   - thème aléatoire (Popularité / Score / Saison), jamais le même 2 fois d’affilée
- *   - il faut choisir la valeur la + haute ; 1 erreur = fin ; +300 / bon choix
- *   - le plus haut reste champion ; nouvel adversaire
- *   - si un anime gagne 3 duels d’affilée -> on retire le gagnant et on garde le perdant comme champion (anti-boucle)
+ *   - thème aléatoire (Popularité/Score/Saison), jamais le même 2 fois d’affilée
+ *   - pas de stats trop proches
+ *   - +300 par bon choix, 1 erreur = fin
+ *   - si un anime gagne 3 duels d’affilée -> on retire le gagnant et on garde le perdant comme champion
+ *   - pas de rappel des valeurs (ni gauche/droite)
  **********************/
 
 // ====== MENU & THEME ======
@@ -93,11 +96,7 @@ function clampInt(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-function songTypeLabel(t) {
-  if (t === "OP") return "OP";
-  if (t === "ED") return "ED";
-  return "IN";
-}
+function songTypeLabel(t) { return t === "OP" ? "OP" : (t === "ED" ? "ED" : "IN"); }
 function formatSongTitle(s) {
   const type = songTypeLabel(s.songType);
   const num = s.songNumber ? `${s.songNumber}` : "";
@@ -159,28 +158,32 @@ const roundCountEl = document.getElementById("roundCount");
 
 const roundLabel = document.getElementById("roundLabel");
 const scoreBox = document.getElementById("scoreBox");
-const historyList = document.getElementById("history-list");
 
 const promptLine = document.getElementById("promptLine");
 const leftPick = document.getElementById("leftPick");
 const rightPick = document.getElementById("rightPick");
+
 const leftImg = document.getElementById("leftImg");
 const rightImg = document.getElementById("rightImg");
+const leftVideo = document.getElementById("leftVideo");
+const rightVideo = document.getElementById("rightVideo");
+
 const leftTitle = document.getElementById("leftTitle");
 const rightTitle = document.getElementById("rightTitle");
 
 const resultDiv = document.getElementById("result");
 const nextBtn = document.getElementById("nextBtn");
 
-// Opening player area
-const listenRow = document.getElementById("listenRow");
-const listenLeftBtn = document.getElementById("listenLeftBtn");
-const listenRightBtn = document.getElementById("listenRightBtn");
-const playerZone = document.getElementById("player-zone");
-const songPlayer = document.getElementById("songPlayer");
+// Volume (Opening)
 const volumeRow = document.getElementById("volumeRow");
 const volumeSlider = document.getElementById("volumeSlider");
 const volumeVal = document.getElementById("volumeVal");
+
+// évite qu’un clic sur les contrôles vidéo déclenche un choix
+["click","pointerdown","mousedown","touchstart"].forEach(evt => {
+  leftVideo.addEventListener(evt, (e) => e.stopPropagation(), { passive: true });
+  rightVideo.addEventListener(evt, (e) => e.stopPropagation(), { passive: true });
+});
 
 // ====== DATA ======
 let allAnimes = [];
@@ -195,17 +198,13 @@ let totalDuels = 10;
 let duelIndex = 1;
 
 let score = 0; // stat only
-let champion = null;   // toujours affiché à gauche
-let challenger = null; // à droite
+let champion = null;   // gauche
+let challenger = null; // droite
 
-let lastThemeKey = null; // stat only
-let currentThemeKey = null; // stat only
-
-let championStreak = 0; // stat only (victoires consécutives du champion réel)
-let bannedKeyOnce = null; // stat only (anti boucle après swap 3 wins)
-
-// anti-repeat soft
-let usedKeys = new Set();
+let lastThemeKey = null;     // stat only
+let currentThemeKey = null;  // stat only
+let championStreak = 0;      // stat only
+let bannedKeyOnce = null;    // stat only
 
 // tokens anti-bug media
 let duelToken = 0;
@@ -213,20 +212,18 @@ let mediaToken = 0;
 
 // ====== STAT THEMES ======
 const STAT_THEMES = [
-  { key: "members", label: "Popularité", fmt: (v) => Number(v).toLocaleString("fr-FR") },
-  { key: "score",   label: "Score",      fmt: (v) => (Math.round(Number(v) * 100) / 100).toFixed(2) },
-  { key: "year",    label: "Saison",     fmt: (v) => String(v || "?") },
+  { key: "members", label: "Popularité" },
+  { key: "score",   label: "Score" },
+  { key: "year",    label: "Saison" },
 ];
 
 function themeByKey(k) {
   return STAT_THEMES.find(t => t.key === k) || STAT_THEMES[0];
 }
-
 function pickNewTheme(exceptKey) {
   const choices = STAT_THEMES.map(t => t.key).filter(k => k !== exceptKey);
   return choices[Math.floor(Math.random() * choices.length)];
 }
-
 function getStatValue(it, key) {
   if (!it) return 0;
   if (key === "members") return safeNum(it.members);
@@ -234,22 +231,16 @@ function getStatValue(it, key) {
   if (key === "year") return safeNum(it.year);
   return 0;
 }
-
-// évite des stats trop proches
 function minDiffForTheme(key, a, b) {
   const va = getStatValue(a, key);
   const vb = getStatValue(b, key);
   const mx = Math.max(va, vb);
 
-  if (key === "members") {
-    // au moins 50k ou ~7% de la plus grande valeur (pour éviter des duels “quasi identiques”)
-    return Math.max(50000, Math.round(mx * 0.07));
-  }
-  if (key === "score") return 0.15; // 0.15 de diff mini
-  if (key === "year") return 2;     // 2 ans mini
+  if (key === "members") return Math.max(50000, Math.round(mx * 0.07));
+  if (key === "score") return 0.15;
+  if (key === "year") return 2;
   return 0;
 }
-
 function winnerSideByTheme(leftIt, rightIt, key) {
   const L = getStatValue(leftIt, key);
   const R = getStatValue(rightIt, key);
@@ -269,37 +260,40 @@ function showGame() {
 
 // ====== VOLUME ======
 function applyVolume() {
-  if (!songPlayer) return;
   const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "30", 10)));
-  songPlayer.muted = false;
-  songPlayer.volume = v / 100;
   volumeVal.textContent = `${v}%`;
+  const vol = v / 100;
+
+  leftVideo.muted = false;
+  rightVideo.muted = false;
+  leftVideo.volume = vol;
+  rightVideo.volume = vol;
 }
-if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
+volumeSlider.addEventListener("input", applyVolume);
 
 // ====== MEDIA LOADER (retries + anti-stall) ======
-function hardResetMedia() {
-  try { songPlayer.pause(); } catch {}
-  songPlayer.removeAttribute("src");
-  songPlayer.load();
+function hardResetMedia(videoEl) {
+  try { videoEl.pause(); } catch {}
+  videoEl.removeAttribute("src");
+  videoEl.load();
 }
 function withCacheBuster(url) {
   const sep = url.includes("?") ? "&" : "?";
   return url + sep + "t=" + Date.now();
 }
-function loadMediaWithRetries(url, localDuel, localMedia, { autoplay = true } = {}) {
+function loadMediaWithRetries(videoEl, url, localDuel, localMedia, { autoplay = true } = {}) {
   let attemptIndex = 0;
   let stallTimer = null;
   let done = false;
 
   const cleanup = () => {
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
-    songPlayer.onloadedmetadata = null;
-    songPlayer.oncanplay = null;
-    songPlayer.onplaying = null;
-    songPlayer.onwaiting = null;
-    songPlayer.onstalled = null;
-    songPlayer.onerror = null;
+    videoEl.onloadedmetadata = null;
+    videoEl.oncanplay = null;
+    videoEl.onplaying = null;
+    videoEl.onwaiting = null;
+    videoEl.onstalled = null;
+    videoEl.onerror = null;
   };
 
   const isStillValid = () => localDuel === duelToken && localMedia === mediaToken;
@@ -317,8 +311,8 @@ function loadMediaWithRetries(url, localDuel, localMedia, { autoplay = true } = 
     done = true;
     cleanup();
     if (autoplay) {
-      songPlayer.muted = false;
-      songPlayer.play?.().catch(() => {});
+      videoEl.muted = false;
+      videoEl.play?.().catch(() => {});
     }
   };
 
@@ -328,7 +322,7 @@ function loadMediaWithRetries(url, localDuel, localMedia, { autoplay = true } = 
     attemptIndex++;
     if (attemptIndex >= RETRY_DELAYS.length) {
       done = true;
-      try { songPlayer.pause(); } catch {}
+      try { videoEl.pause(); } catch {}
       return;
     }
     setTimeout(() => {
@@ -340,21 +334,22 @@ function loadMediaWithRetries(url, localDuel, localMedia, { autoplay = true } = 
   const doAttempt = () => {
     if (!isStillValid() || done) return;
     const src = attemptIndex === 0 ? url : withCacheBuster(url);
-    try { hardResetMedia(); } catch {}
-    songPlayer.preload = "metadata";
-    songPlayer.muted = false;
-    songPlayer.src = src;
-    songPlayer.load();
+    try { hardResetMedia(videoEl); } catch {}
 
-    songPlayer.onloadedmetadata = () => { if (!isStillValid() || done) return; markReady(); };
-    songPlayer.oncanplay = () => { if (!isStillValid() || done) return; markReady(); };
-    songPlayer.onwaiting = () => { if (!isStillValid() || done) return; startStallTimer(); };
-    songPlayer.onstalled = () => { if (!isStillValid() || done) return; startStallTimer(); };
-    songPlayer.onplaying = () => {
+    videoEl.preload = "metadata";
+    videoEl.muted = false;
+    videoEl.src = src;
+    videoEl.load();
+
+    videoEl.onloadedmetadata = () => { if (!isStillValid() || done) return; markReady(); };
+    videoEl.oncanplay = () => { if (!isStillValid() || done) return; markReady(); };
+    videoEl.onwaiting = () => { if (!isStillValid() || done) return; startStallTimer(); };
+    videoEl.onstalled = () => { if (!isStillValid() || done) return; startStallTimer(); };
+    videoEl.onplaying = () => {
       if (!isStillValid() || done) return;
       if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
     };
-    songPlayer.onerror = () => { if (!isStillValid() || done) return; triggerRetry(); };
+    videoEl.onerror = () => { if (!isStillValid() || done) return; triggerRetry(); };
 
     startStallTimer();
   };
@@ -389,7 +384,6 @@ function initCustomUI() {
     });
   });
 
-  // Sliders sync
   function syncLabels() {
     clampYearSliders();
     popValEl.textContent = popEl.value;
@@ -410,13 +404,18 @@ function initCustomUI() {
     startGame();
   });
 
-  // Duel clicks
-  leftPick.addEventListener("click", () => handlePick("left"));
-  rightPick.addEventListener("click", () => handlePick("right"));
-
-  // Listen buttons (opening)
-  listenLeftBtn.addEventListener("click", () => setListenSide("left"));
-  listenRightBtn.addEventListener("click", () => setListenSide("right"));
+  // Click + clavier
+  const bindPick = (el, side) => {
+    el.addEventListener("click", () => handlePick(side));
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handlePick(side);
+      }
+    });
+  };
+  bindPick(leftPick, "left");
+  bindPick(rightPick, "right");
 
   syncLabels();
 }
@@ -437,28 +436,21 @@ function applyFilters() {
   if (allowedTypes.length === 0) return [];
 
   if (currentMode === "opening") {
-    // openings pool
     let pool = allOpenings.filter(o =>
       o.year >= yearMin && o.year <= yearMax && allowedTypes.includes(o.type)
     );
-
     pool.sort((a, b) => b.members - a.members);
     pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
-
     pool.sort((a, b) => b.score - a.score);
     pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
-
     return pool;
   }
 
-  // anime/stat pool
   let pool = allAnimes.filter(a =>
     a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type)
   );
-
   pool.sort((a, b) => b._members - a._members);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
-
   pool.sort((a, b) => b._score - a._score);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
@@ -505,7 +497,7 @@ function pickRandom(pool, avoidKey = null, avoidKey2 = null) {
   if (!pool || pool.length === 0) return null;
   const shuffled = shuffleInPlace([...pool]);
   for (const it of shuffled) {
-    const k = it._key || it._key === "" ? it._key : it._key;
+    const k = it._key;
     if (avoidKey && k === avoidKey) continue;
     if (avoidKey2 && k === avoidKey2) continue;
     return it;
@@ -516,9 +508,7 @@ function pickRandom(pool, avoidKey = null, avoidKey2 = null) {
 function pickChallengerWithGap(pool, champ, themeKey, bannedKey) {
   if (!pool || pool.length < 2) return null;
   const champKey = champ?._key || null;
-  const need = minDiffForTheme(themeKey, champ, champ);
 
-  // on tente fort, puis on relâche
   const tries = 60;
   for (let i = 0; i < tries; i++) {
     const it = pickRandom(pool, champKey, bannedKey);
@@ -527,43 +517,34 @@ function pickChallengerWithGap(pool, champ, themeKey, bannedKey) {
     const required = minDiffForTheme(themeKey, champ, it);
     if (diff >= required) return it;
   }
-
-  // fallback : accepte presque tout, mais différent
   return pickRandom(pool, champKey, bannedKey);
 }
 
 // ====== GAME ======
-function resetGameUI() {
-  duelToken++;
-  mediaToken++;
-  try { songPlayer.pause(); } catch {}
-  songPlayer.removeAttribute("src");
-  songPlayer.load();
-
-  historyList.innerHTML = "";
-  resultDiv.textContent = "";
-  nextBtn.style.display = "none";
-
-  leftPick.disabled = false;
-  rightPick.disabled = false;
+function stopAllMedia() {
+  try { leftVideo.pause(); } catch {}
+  try { rightVideo.pause(); } catch {}
+  leftVideo.removeAttribute("src");
+  rightVideo.removeAttribute("src");
+  leftVideo.load();
+  rightVideo.load();
 }
 
 function setupModeUI() {
   const isOpening = currentMode === "opening";
   const isStat = currentMode === "stat";
 
-  listenRow.style.display = isOpening ? "block" : "none";
-  playerZone.style.display = isOpening ? "block" : "none";
-  volumeRow.style.display = isOpening ? "flex" : "none";
   scoreBox.style.display = isStat ? "block" : "none";
+  volumeRow.style.display = isOpening ? "flex" : "none";
 
-  if (isOpening) {
-    applyVolume();
-  } else {
-    try { songPlayer.pause(); } catch {}
-    songPlayer.removeAttribute("src");
-    songPlayer.load();
-  }
+  // opening: show videos, hide imgs
+  leftVideo.style.display = isOpening ? "block" : "none";
+  rightVideo.style.display = isOpening ? "block" : "none";
+  leftImg.style.display = isOpening ? "none" : "block";
+  rightImg.style.display = isOpening ? "none" : "block";
+
+  if (!isOpening) stopAllMedia();
+  if (isOpening) applyVolume();
 }
 
 function updateTopLabels() {
@@ -573,12 +554,20 @@ function updateTopLabels() {
 
 function updatePrompt() {
   if (currentMode === "stat") {
-    const t = themeByKey(currentThemeKey);
-    promptLine.textContent = `Thème : ${t.label} — trouve la valeur la plus haute`;
-  } else if (currentMode === "opening") {
-    promptLine.textContent = `Choisis ton Opening préféré (autoplay gauche)`;
+    if (currentThemeKey === "year") {
+      promptLine.textContent = "Trouver l’anime le plus récent";
+    } else if (currentThemeKey === "score") {
+      promptLine.textContent = "Trouver l’anime le mieux noté";
+    } else {
+      promptLine.textContent = "Trouver l’anime le plus populaire";
+    }
+    return;
+  }
+
+  if (currentMode === "opening") {
+    promptLine.textContent = "Choisis ton Opening préféré";
   } else {
-    promptLine.textContent = `Choisis ton Anime préféré`;
+    promptLine.textContent = "Choisis ton Anime préféré";
   }
 }
 
@@ -586,33 +575,35 @@ function renderDuel() {
   updateTopLabels();
   updatePrompt();
 
-  leftImg.src = champion?.image || "";
-  rightImg.src = challenger?.image || "";
   leftTitle.textContent = formatItemLabel(champion);
   rightTitle.textContent = formatItemLabel(challenger);
 
+  leftImg.src = champion?.image || "";
+  rightImg.src = challenger?.image || "";
+
   resultDiv.textContent = "";
   nextBtn.style.display = "none";
-  leftPick.disabled = false;
-  rightPick.disabled = false;
 
-  // Opening : autoplay non-mute gauche
   if (currentMode === "opening") {
-    setListenSide("left", true);
-  } else {
-    // sécurité: stop media
-    try { songPlayer.pause(); } catch {}
-    songPlayer.removeAttribute("src");
-    songPlayer.load();
+    stopAllMedia();
+
+    leftVideo.poster = champion?.image || "";
+    rightVideo.poster = challenger?.image || "";
+
+    duelToken++;
+    mediaToken++;
+    const localDuel = duelToken;
+    const localMedia = mediaToken;
+
+    // gauche autoplay (best-effort)
+    if (champion?.url) loadMediaWithRetries(leftVideo, champion.url, localDuel, localMedia, { autoplay: true });
+    // droite pas d’autoplay (évite 2 sons)
+    if (challenger?.url) loadMediaWithRetries(rightVideo, challenger.url, localDuel, localMedia, { autoplay: false });
   }
 }
 
 function startGame() {
-  resetGameUI();
   showGame();
-  setupModeUI();
-
-  usedKeys = new Set();
   duelIndex = 1;
 
   score = 0;
@@ -631,7 +622,6 @@ function startGame() {
     return;
   }
 
-  // init champ/challenger
   champion = pickRandom(filteredPool);
   if (currentMode === "stat") {
     currentThemeKey = pickNewTheme(lastThemeKey);
@@ -640,76 +630,18 @@ function startGame() {
     challenger = pickRandom(filteredPool, champion?._key || null);
   }
 
+  setupModeUI();
   renderDuel();
-}
-
-// ====== OPENING LISTEN LEFT/RIGHT ======
-let listeningSide = "left";
-
-function setListenSide(side, force = false) {
-  if (currentMode !== "opening") return;
-  if (listeningSide === side && !force) return;
-  listeningSide = side;
-
-  listenLeftBtn.classList.toggle("active", side === "left");
-  listenRightBtn.classList.toggle("active", side === "right");
-  listenLeftBtn.setAttribute("aria-pressed", side === "left" ? "true" : "false");
-  listenRightBtn.setAttribute("aria-pressed", side === "right" ? "true" : "false");
-
-  const it = (side === "left") ? champion : challenger;
-  if (!it || !it.url) return;
-
-  duelToken++;
-  mediaToken++;
-  const localDuel = duelToken;
-  const localMedia = mediaToken;
-
-  songPlayer.poster = it.image || "";
-  songPlayer.muted = false;
-  applyVolume();
-
-  try { songPlayer.pause(); } catch {}
-  songPlayer.removeAttribute("src");
-  songPlayer.load();
-
-  loadMediaWithRetries(it.url, localDuel, localMedia, { autoplay: true });
-}
-
-// ====== HISTORY ======
-function addHistoryEntry({ ok, label, img }) {
-  const li = document.createElement("li");
-
-  const im = document.createElement("img");
-  im.src = img || "";
-  im.alt = "Historique";
-  im.loading = "lazy";
-  im.decoding = "async";
-  li.appendChild(im);
-
-  const sp = document.createElement("span");
-  sp.textContent = label;
-  li.appendChild(sp);
-
-  historyList.appendChild(li);
-}
-
-function revealStatLine(key, L, R) {
-  const t = themeByKey(key);
-  const lv = getStatValue(L, key);
-  const rv = getStatValue(R, key);
-  return `${t.label} — Gauche: ${t.fmt(lv)} | Droite: ${t.fmt(rv)}`;
 }
 
 // ====== PICK ======
 function handlePick(side) {
   if (!champion || !challenger) return;
 
-  leftPick.disabled = true;
-  rightPick.disabled = true;
-
-  // stop opening after click (moins bruyant)
+  // stop audio quand on clique
   if (currentMode === "opening") {
-    try { songPlayer.pause(); } catch {}
+    try { leftVideo.pause(); } catch {}
+    try { rightVideo.pause(); } catch {}
   }
 
   if (currentMode === "stat") {
@@ -721,52 +653,31 @@ function handlePick(side) {
     const winner = (winSide === "left") ? leftIt : rightIt;
     const loser  = (winSide === "left") ? rightIt : leftIt;
 
-    const statLine = revealStatLine(currentThemeKey, leftIt, rightIt);
-
     if (!correct) {
-      // fin immédiate
-      resultDiv.textContent = `❌ Mauvais ! ${statLine}`;
-      addHistoryEntry({
-        ok: false,
-        img: winner?.image || "",
-        label: `Duel ${duelIndex}: ❌ (${themeByKey(currentThemeKey).label})`
-      });
-
+      resultDiv.textContent = "❌ Mauvais !";
       nextBtn.style.display = "block";
       nextBtn.textContent = "Retour réglages";
       nextBtn.onclick = () => { showCustomization(); updatePreview(); };
       return;
     }
 
-    // bon
     score += 300;
-    resultDiv.textContent = `✅ Correct ! ${statLine}`;
+    resultDiv.textContent = "✅ Correct !";
 
-    addHistoryEntry({
-      ok: true,
-      img: winner?.image || "",
-      label: `Duel ${duelIndex}: ✅ (${themeByKey(currentThemeKey).label})`
-    });
-
-    // le plus haut reste (winner)
     const wasChampionKey = champion?._key || null;
     champion = winner;
-    challenger = null;
 
-    // streak : si le champion actuel a gagné encore
     if ((champion?._key || null) === wasChampionKey) championStreak++;
     else championStreak = 1;
 
-    // règle 3 wins -> on retire le gagnant et on garde le perdant
     bannedKeyOnce = null;
     if (championStreak >= 3) {
-      bannedKeyOnce = champion?._key || null; // on évite de le re-piocher tout de suite
+      bannedKeyOnce = champion?._key || null;
       champion = loser;
       championStreak = 0;
       resultDiv.textContent += " — 🔁 Swap anti-boucle (3 wins) !";
     }
 
-    // fin si on a fait tous les duels
     if (duelIndex >= totalDuels) {
       updateTopLabels();
       nextBtn.style.display = "block";
@@ -776,11 +687,9 @@ function handlePick(side) {
         nextBtn.textContent = "Retour réglages";
         nextBtn.onclick = () => { showCustomization(); updatePreview(); };
       };
-      updateTopLabels();
       return;
     }
 
-    // prochain duel : nouveau thème (différent) + nouvel adversaire
     nextBtn.style.display = "block";
     nextBtn.textContent = "Suivant";
     nextBtn.onclick = () => {
@@ -788,6 +697,7 @@ function handlePick(side) {
       lastThemeKey = currentThemeKey;
       currentThemeKey = pickNewTheme(lastThemeKey);
       challenger = pickChallengerWithGap(filteredPool, champion, currentThemeKey, bannedKeyOnce);
+      setupModeUI();
       renderDuel();
     };
 
@@ -795,22 +705,14 @@ function handlePick(side) {
     return;
   }
 
-  // ====== ANIME / OPENING (préférence) ======
+  // ====== ANIME / OPENING : préférence ======
   const chosen = (side === "left") ? champion : challenger;
-  const chosenLabel = formatItemLabel(chosen);
-
-  addHistoryEntry({
-    ok: true,
-    img: chosen?.image || "",
-    label: `Duel ${duelIndex}: ✅ ${chosenLabel}`
-  });
-
-  // le choisi devient champion (à gauche)
   champion = chosen;
 
-  // fin si tous duels joués
+  resultDiv.textContent = "✅ Choix validé !";
+
   if (duelIndex >= totalDuels) {
-    resultDiv.textContent = `✅ Terminé ! Champion final : ${formatItemLabel(champion)}`;
+    resultDiv.textContent = "✅ Terminé !";
     nextBtn.style.display = "block";
     nextBtn.textContent = "Retour réglages";
     nextBtn.onclick = () => { showCustomization(); updatePreview(); };
@@ -821,14 +723,10 @@ function handlePick(side) {
   nextBtn.textContent = "Suivant";
   nextBtn.onclick = () => {
     duelIndex++;
-
-    // nouvel adversaire
     challenger = pickRandom(filteredPool, champion?._key || null);
-
+    setupModeUI();
     renderDuel();
   };
-
-  resultDiv.textContent = "✅ Choix validé !";
 }
 
 // ====== LOAD DATA ======
