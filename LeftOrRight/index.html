@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>📈 Higher or Lower</title>
+  <title>⬅️➡️ Left or Right</title>
   <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -13,20 +13,21 @@
   <header id="main-header">
     <div class="header-row">
       <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
-      <h1>📈 Higher or Lower 📉</h1>
+      <h1>⬅️ Left or Right ➡️</h1>
 
       <div class="header-right">
         <button id="themeToggle" class="toggle-btn">🌓</button>
 
         <span class="info-wrap header-help">
-          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-hol">
+          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-lor2">
             <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
             </svg>
           </span>
-          <span class="info-tip" id="help-hol" role="tooltip">
-            Mode Stat : clique sur l’anime qui a la plus haute valeur (Popularité / Score / Saison).<br>
-            +100 par bon choix — 1 erreur = fin. (Pas d’égalité possible.)
+          <span class="info-tip" id="help-lor2" role="tooltip">
+            Anime : choisis ton préféré — le choisi devient champion (à gauche).<br>
+            Songs : 2 vidéos direct — autoplay gauche (non muté).<br>
+            Pas de score, pas d’historique : juste des duels !
           </span>
         </span>
       </div>
@@ -37,12 +38,13 @@
   <div id="custom-panel" class="main-container">
     <h2>⚙️ Personnalisation</h2>
 
-    <!-- Mode (Stat uniquement) -->
+    <!-- Mode -->
     <div class="opt-row">
       <div class="opt-label">Mode</div>
       <div class="opt-col">
         <div id="modePills" class="opt-pill-group">
-          <button type="button" class="pill active locked" aria-pressed="true" title="Mode unique">Stat</button>
+          <button type="button" class="pill active" data-mode="anime" aria-pressed="true">Anime</button>
+          <button type="button" class="pill" data-mode="songs" aria-pressed="false">Songs</button>
         </div>
       </div>
     </div>
@@ -93,15 +95,27 @@
       </div>
     </div>
 
+    <!-- Songs types (visible seulement si mode = songs) -->
+    <div class="opt-row" id="songsRow">
+      <div class="opt-label">Songs</div>
+      <div class="opt-col">
+        <div id="songPills" class="opt-pill-group">
+          <button type="button" class="pill active" data-song="OP" aria-pressed="true">Opening</button>
+          <button type="button" class="pill" data-song="ED" aria-pressed="false">Ending</button>
+          <button type="button" class="pill" data-song="IN" aria-pressed="false">Insert</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Preview -->
     <div id="previewCount" class="preview-count bad">⏳ Chargement de la base…</div>
 
-    <!-- Rounds -->
+    <!-- Duels -->
     <div class="opt-row">
-      <div class="opt-label">Rounds</div>
+      <div class="opt-label">Duels</div>
       <div class="opt-col opt-rounds">
-        <input id="roundCount" class="round-input" type="number" min="1" max="999" step="1" value="100" />
-        <div class="opt-hint">(1 à 999) — 1 erreur = fin.</div>
+        <input id="roundCount" class="round-input" type="number" min="1" max="100" step="1" value="10" />
+        <div class="opt-hint">(1 à 100) — nombre de duels.</div>
       </div>
     </div>
 
@@ -116,19 +130,31 @@
       <div class="anime-container anime-container--wide">
 
         <div class="mini-pill" id="roundLabel"></div>
-        <div id="scoreBox" class="preview-count good">🔥 Score : 0</div>
+
+        <!-- Volume (Songs only) -->
+        <div id="volumeRow" class="volume-row" style="display:none;">
+          <div class="vol-label"><span class="vol-icon">🔊</span> Volume</div>
+          <input id="volumeSlider" type="range" min="0" max="100" value="30" />
+          <div id="volumeVal" class="vol-val">30%</div>
+        </div>
 
         <div class="anime-item" id="duelZone">
-          <p id="promptLine" class="hol-prompt">Trouver…</p>
+          <p id="promptLine" class="lor-prompt">Choisis…</p>
 
-          <div class="hol-duel">
-            <button class="hol-card" id="leftPick" type="button" aria-label="Choisir gauche">
-              <img id="leftImg" class="hol-img" alt="Cover gauche" />
+          <div class="lor-duel">
+            <button class="lor-card" id="leftPick" type="button" aria-label="Choisir gauche">
+              <div class="lor-media">
+                <img id="leftImg" class="lor-img" alt="Cover gauche" />
+                <video id="leftVid" class="lor-vid" controls playsinline preload="metadata"></video>
+              </div>
               <span id="leftTitle">Gauche</span>
             </button>
 
-            <button class="hol-card" id="rightPick" type="button" aria-label="Choisir droite">
-              <img id="rightImg" class="hol-img" alt="Cover droite" />
+            <button class="lor-card" id="rightPick" type="button" aria-label="Choisir droite">
+              <div class="lor-media">
+                <img id="rightImg" class="lor-img" alt="Cover droite" />
+                <video id="rightVid" class="lor-vid" controls playsinline preload="metadata"></video>
+              </div>
               <span id="rightTitle">Droite</span>
             </button>
           </div>
