@@ -200,6 +200,10 @@ let revealsShown = 0;      // nombre d’indices déjà révélés
 
 let gameEnded = false;
 
+let globalPopRank = new Map(); // Map<animeObject, rank>
+let globalPopTotal = 0;
+
+
 // ====== Stopwords / extraction "3 mots" ======
 const STOP = new Set([
   "a","à","au","aux","avec","ce","ces","cet","cette","dans","de","des","du","elle","en","et","eux","il","ils",
@@ -335,15 +339,15 @@ function formatSeason(seasonStr) {
   return `${fr} ${y}`;
 }
 
-function computePopularityTopPercent(anime, pool) {
-  const arr = [...pool].sort((a,b) => (b._members - a._members));
-  const idx = arr.findIndex(x => x === anime);
-  if (idx < 0) return "";
-  const rank = idx + 1;
-  const pct = (rank / Math.max(arr.length, 1)) * 100;
-  const top = Math.min(100, Math.max(5, Math.ceil(pct / 5) * 5));
+function computePopularityTopPercent(anime) {
+  const rank = globalPopRank.get(anime);
+  if (!rank || !globalPopTotal) return "";
+
+  const pct = (rank / globalPopTotal) * 100;
+  const top = Math.min(100, Math.max(5, Math.ceil(pct / 5) * 5)); // arrondi par 5%
   return `Top ${top}%`;
 }
+
 
 function pickRandomCharacterName(anime) {
   const a = Array.isArray(anime.characters) ? anime.characters : [];
@@ -383,7 +387,7 @@ function buildRevealPool(anime) {
   const sc = Number.isFinite(+anime.score) ? +anime.score : 0;
   if (sc > 0) items.push({ kind: "SCORE", label: "Score", value: sc.toFixed(2) });
 
-  const topPct = computePopularityTopPercent(anime, filteredAnimes);
+  const topPct = computePopularityTopPercent(anime);
   if (topPct) items.push({ kind: "POPULARITY", label: "Popularité", value: topPct });
 
   const ch = pickRandomCharacterName(anime);
@@ -839,6 +843,12 @@ fetch("../data/licenses_only.json")
         _type: a.type || "Unknown",
       };
     });
+
+    // === Pré-calcul popularité globale (base complète) ===
+    const sortedByMembers = [...allAnimes].sort((a, b) => b._members - a._members);
+    globalPopTotal = sortedByMembers.length;
+    globalPopRank = new Map();
+    sortedByMembers.forEach((a, i) => globalPopRank.set(a, i + 1));
 
     initCustomUI();
     updatePreview();
