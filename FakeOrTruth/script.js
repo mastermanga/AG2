@@ -1,24 +1,24 @@
 /**********************
- * Sound Match — Sync A/V
+ * Fake Or Truth — Sync A/V (AUTO START)
  * - Vidéo = Song A ; Audio = Song B
- * - Une seule écoute : start 45s, durée 30s
+ * - Auto-start dès que A+B prêts
+ * - Une seule écoute : 45s -> 75s (30s)
  * - Réponse : Match / Pas match
- * - Reveal : vidéo A AVEC son vrai audio (contrôles)
+ * - Reveal : vidéo A AVEC son vrai audio (controls)
  * - Distribution :
  *    1/3 A = B
  *    1/3 A != B & anime différent
  *    1/3 A != B mais même anime (si possible sinon fallback anime différent)
- * - Anti-bug média : retries + stall + sync start (ne démarre que si les 2 sont prêts)
+ * - Loader robuste : retry “pair” (A+B) + anti-loop
  **********************/
 
 const MAX_SCORE = 3000;
 const MIN_REQUIRED_SONGS = 64;
 
-// retry / anti-stall
+// retry pair (A+B)
 const RETRY_DELAYS = [0, 2000, 6000];
-const STALL_TIMEOUT_MS = 6000;
+const LOAD_TIMEOUT_MS = 14000;
 
-// ✅ Une seule écoute
 const LISTEN_START = 45;
 const LISTEN_DURATION = 30;
 
@@ -92,6 +92,11 @@ function pickRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+function withCacheBuster(url) {
+  const sep = url.includes("?") ? "&" : "?";
+  return url + sep + "t=" + Date.now();
+}
+
 // ====== Songs extraction ======
 function extractSongsFromAnime(anime) {
   const songs = [];
@@ -158,7 +163,6 @@ const previewCountEl = document.getElementById("previewCount");
 const applyBtn = document.getElementById("applyFiltersBtn");
 const roundCountEl = document.getElementById("roundCount");
 
-const playOnceBtn = document.getElementById("playOnce");
 const btnMatch = document.getElementById("btnMatch");
 const btnNoMatch = document.getElementById("btnNoMatch");
 
@@ -172,7 +176,7 @@ const audioPlayer = document.getElementById("audioPlayer");
 const volumeSlider = document.getElementById("volumeSlider");
 const volumeVal = document.getElementById("volumeVal");
 
-// ====== Status “anti-bug” ======
+// ====== Status ======
 let mediaStatusEl = document.getElementById("mediaStatus");
 function ensureMediaStatusEl() {
   if (mediaStatusEl) return mediaStatusEl;
@@ -199,7 +203,7 @@ function setMediaStatus(msg) {
   el.textContent = msg || "";
 }
 
-// ====== Support WebM ======
+// ====== WebM support ======
 const CAN_PLAY_WEBM = (() => {
   const v = document.createElement("video");
   if (!v.canPlayType) return false;
@@ -214,7 +218,7 @@ let allAnimes = [];
 let allSongs = [];
 let filteredSongs = [];
 
-// ====== Session (Rounds) ======
+// ====== Session ======
 let totalRounds = 1;
 let currentRound = 1;
 let totalScore = 0;
@@ -224,12 +228,35 @@ let videoSong = null; // A
 let audioSong = null; // B
 let isMatch = false;
 
-let listenUsed = false;
-let roundReady = false;
-
-// tokens anti-bug
+let listenLocked = true;   // tant que lecture pas faite
 let roundToken = 0;
-let mediaToken = 0;
+
+// ====== Score bar ======
+function getScoreBarColor(score) {
+  if (score >= 2500) return "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
+  if (score >= 1500) return "linear-gradient(90deg,#fff96a,#ffc34b 90%)";
+  if (score >= 1000) return "linear-gradient(90deg,#ffb347,#fd654c 90%)";
+  if (score > 0) return "linear-gradient(90deg,#fd654c,#cb202d 90%)";
+  return "linear-gradient(90deg,#444,#333 90%)";
+}
+function updateScoreBar(forceScore = null) {
+  const bar = document.getElementById("score-bar");
+  const label = document.getElementById("score-bar-label");
+  const score = forceScore === null ? MAX_SCORE : forceScore;
+  const percent = Math.max(0, Math.min(100, (score / MAX_SCORE) * 100));
+  label.textContent = `${score} / ${MAX_SCORE}`;
+  bar.style.width = percent + "%";
+  bar.style.background = getScoreBarColor(score);
+}
+
+// ====== Volume ======
+function applyVolume() {
+  if (!audioPlayer || !volumeSlider) return;
+  const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "50", 10)));
+  audioPlayer.volume = v / 100;
+  if (volumeVal) volumeVal.textContent = `${v}%`;
+}
+if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
 
 // ====== UI show/hide ======
 function showCustomization() {
@@ -241,391 +268,20 @@ function showGame() {
   gamePanel.style.display = "block";
 }
 
-// ====== Score bar ======
-function getScoreBarColor(score) {
-  if (score >= 2500) return "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
-  if (score >= 1500) return "linear-gradient(90deg,#fff96a,#ffc34b 90%)";
-  if (score >= 1000) return "linear-gradient(90deg,#ffb347,#fd654c 90%)";
-  if (score > 0) return "linear-gradient(90deg,#fd654c,#cb202d 90%)";
-  return "linear-gradient(90deg,#444,#333 90%)";
-}
-
-function updateScoreBar(forceScore = null) {
-  const bar = document.getElementById("score-bar");
-  const label = document.getElementById("score-bar-label");
-
-  const score = forceScore === null ? MAX_SCORE : forceScore;
-  const percent = Math.max(0, Math.min(100, (score / MAX_SCORE) * 100));
-  label.textContent = `${score} / ${MAX_SCORE}`;
-  bar.style.width = percent + "%";
-  bar.style.background = getScoreBarColor(score);
-}
-
-// ====== Volume (audio B pendant le jeu) ======
-function applyVolume() {
-  if (!audioPlayer || !volumeSlider) return;
-  const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "50", 10)));
-  audioPlayer.volume = v / 100;
-  if (volumeVal) volumeVal.textContent = `${v}%`;
-}
-if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
-
-// ====== Segment limiter (basé sur currentTime) ======
-function createLimiter(mediaEl) {
-  return {
-    el: mediaEl,
-    active: false,
-    endTime: 0,
-    handlerTimeUpdate: null,
-    handlerSeeked: null,
-  };
-}
-const limiterVideo = createLimiter(videoPlayer);
-const limiterAudio = createLimiter(audioPlayer);
-
-function clearLimiter(lim) {
-  if (!lim.active) return;
-  if (lim.handlerTimeUpdate) lim.el.removeEventListener("timeupdate", lim.handlerTimeUpdate);
-  if (lim.handlerSeeked) lim.el.removeEventListener("seeked", lim.handlerSeeked);
-  lim.active = false;
-  lim.endTime = 0;
-  lim.handlerTimeUpdate = null;
-  lim.handlerSeeked = null;
-}
-
-function armLimiter(lim, startTime, durationSec) {
-  clearLimiter(lim);
-  if (durationSec == null) return;
-
-  const endTime = startTime + durationSec;
-  lim.active = true;
-  lim.endTime = endTime;
-
-  const onTimeUpdate = () => {
-    if (!lim.active) return;
-    if (lim.el.currentTime >= lim.endTime - 0.05) {
-      try { lim.el.pause(); } catch {}
-      clearLimiter(lim);
-      // on ne clear pas le status ici : on peut afficher "réponds maintenant"
-    }
-  };
-
-  const onSeeked = () => {
-    if (!lim.active) return;
-    if (lim.el.currentTime >= lim.endTime - 0.05) {
-      try { lim.el.pause(); } catch {}
-      clearLimiter(lim);
-    }
-  };
-
-  lim.handlerTimeUpdate = onTimeUpdate;
-  lim.handlerSeeked = onSeeked;
-
-  lim.el.addEventListener("timeupdate", onTimeUpdate);
-  lim.el.addEventListener("seeked", onSeeked);
-}
-
-// ====== MEDIA loader (retries + anti-stall) ======
-function hardResetMedia(el) {
-  clearLimiter(el === videoPlayer ? limiterVideo : limiterAudio);
+// ====== Playback helpers ======
+function hardReset(el) {
   try { el.pause(); } catch {}
   el.removeAttribute("src");
   el.load();
 }
 
-function withCacheBuster(url) {
-  const sep = url.includes("?") ? "&" : "?";
-  return url + sep + "t=" + Date.now();
-}
-
-function loadMediaWithRetries(el, url, localRound, localMedia, onReady, onFail, { preloadOnly = false } = {}) {
-  let attemptIndex = 0;
-  let stallTimer = null;
-  let done = false;
-
-  const cleanup = () => {
-    if (stallTimer) {
-      clearTimeout(stallTimer);
-      stallTimer = null;
-    }
-    el.onloadedmetadata = null;
-    el.oncanplay = null;
-    el.onplaying = null;
-    el.onwaiting = null;
-    el.onstalled = null;
-    el.onerror = null;
-  };
-
-  const isStillValid = () => localRound === roundToken && localMedia === mediaToken;
-
-  const startStallTimer = () => {
-    if (stallTimer) clearTimeout(stallTimer);
-    stallTimer = setTimeout(() => {
-      if (!isStillValid() || done) return;
-      triggerRetry("🔄 Rechargement (stall)...");
-    }, STALL_TIMEOUT_MS);
-  };
-
-  const markReady = () => {
-    if (!isStillValid() || done) return;
-    done = true;
-    cleanup();
-    if (typeof onReady === "function") onReady();
-  };
-
-  const triggerRetry = (msg) => {
-    if (!isStillValid() || done) return;
-
-    cleanup();
-    attemptIndex++;
-
-    if (attemptIndex >= RETRY_DELAYS.length) {
-      done = true;
-      if (typeof onFail === "function") onFail();
-      return;
-    }
-
-    setMediaStatus(msg || `🔄 Nouvelle tentative (${attemptIndex + 1}/${RETRY_DELAYS.length})...`);
-    setTimeout(() => {
-      if (!isStillValid() || done) return;
-      doAttempt();
-    }, RETRY_DELAYS[attemptIndex]);
-  };
-
-  const doAttempt = () => {
-    if (!isStillValid() || done) return;
-
-    const src = attemptIndex === 0 ? url : withCacheBuster(url);
-
-    try { hardResetMedia(el); } catch {}
-
-    setMediaStatus(attemptIndex === 0 ? "⏳ Chargement..." : `🔄 Nouvelle tentative (${attemptIndex + 1}/${RETRY_DELAYS.length})...`);
-
-    el.preload = "metadata";
-    el.src = src;
-    el.load();
-
-    el.onloadedmetadata = () => {
-      if (!isStillValid() || done) return;
-      if (preloadOnly) return markReady();
-      markReady();
-    };
-
-    el.oncanplay = () => {
-      if (!isStillValid() || done) return;
-      if (preloadOnly) return markReady();
-      markReady();
-    };
-
-    el.onwaiting = () => {
-      if (!isStillValid() || done) return;
-      startStallTimer();
-    };
-
-    el.onstalled = () => {
-      if (!isStillValid() || done) return;
-      startStallTimer();
-    };
-
-    el.onplaying = () => {
-      if (!isStillValid() || done) return;
-      if (stallTimer) {
-        clearTimeout(stallTimer);
-        stallTimer = null;
-      }
-    };
-
-    el.onerror = () => {
-      if (!isStillValid() || done) return;
-      triggerRetry();
-    };
-
-    startStallTimer();
-  };
-
-  attemptIndex = 0;
-  doAttempt();
-  return cleanup;
-}
-
-// ====== Sync helpers (LE POINT IMPORTANT) ======
-function waitOnce(el, evt, timeoutMs, isValid) {
-  return new Promise((resolve, reject) => {
-    let timer = null;
-
-    const done = (ok) => {
-      cleanup();
-      ok ? resolve(true) : reject(new Error("event-failed"));
-    };
-
-    const onEvt = () => {
-      if (!isValid()) return done(false);
-      done(true);
-    };
-
-    const cleanup = () => {
-      el.removeEventListener(evt, onEvt);
-      if (timer) clearTimeout(timer);
-      timer = null;
-    };
-
-    el.addEventListener(evt, onEvt, { once: true });
-
-    timer = setTimeout(() => {
-      if (!isValid()) return done(false);
-      done(false);
-    }, timeoutMs);
-  });
-}
-
-async function ensureSeekAndCanPlay(el, startTime, localRound, localMedia) {
-  const isValid = () => localRound === roundToken && localMedia === mediaToken;
-
-  // seek
-  try { el.currentTime = startTime; } catch {}
-
-  // attendre seeked (si jamais)
-  try {
-    await waitOnce(el, "seeked", 9000, isValid);
-  } catch {
-    // si seeked n'arrive pas, on continue mais on re-check canplay
-  }
-
-  // attendre buffer suffisant sur la position seekée
-  if (el.readyState >= 3) return true;
-
-  try {
-    await waitOnce(el, "canplay", 9000, isValid);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// ====== Custom UI init ======
-function initCustomUI() {
-  function syncLabels() {
-    clampYearSliders();
-    popValEl.textContent = popEl.value;
-    scoreValEl.textContent = scoreEl.value;
-    yearMinValEl.textContent = yearMinEl.value;
-    yearMaxValEl.textContent = yearMaxEl.value;
-    updatePreview();
-  }
-
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
-
-  // type pills (au moins 1)
-  document.querySelectorAll("#typePills .pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-
-      const any = document.querySelectorAll("#typePills .pill.active").length > 0;
-      if (!any) {
-        btn.classList.add("active");
-        btn.setAttribute("aria-pressed", "true");
-      }
-
-      updatePreview();
-    });
-  });
-
-  // song pills (au moins 1)
-  document.querySelectorAll("#songPills .pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-
-      const any = document.querySelectorAll("#songPills .pill.active").length > 0;
-      if (!any) {
-        btn.classList.add("active");
-        btn.setAttribute("aria-pressed", "true");
-      }
-
-      updatePreview();
-    });
-  });
-
-  applyBtn.addEventListener("click", () => {
-    filteredSongs = applyFilters();
-    if (filteredSongs.length < MIN_REQUIRED_SONGS) return;
-
-    totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
-    currentRound = 1;
-    totalScore = 0;
-
-    showGame();
-    startNewRound();
-  });
-
-  syncLabels();
-}
-
-// ====== Filters ======
-function applyFilters() {
-  const popPercent = parseInt(popEl.value, 10);
-  const scorePercent = parseInt(scoreEl.value, 10);
-  const yearMin = parseInt(yearMinEl.value, 10);
-  const yearMax = parseInt(yearMaxEl.value, 10);
-
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
-  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
-
-  if (allowedTypes.length === 0 || allowedSongs.length === 0) return [];
-
-  let pool = allSongs.filter((s) => {
-    return (
-      s.animeYear >= yearMin &&
-      s.animeYear <= yearMax &&
-      allowedTypes.includes(s.animeType) &&
-      allowedSongs.includes(s.songType)
-    );
-  });
-
-  pool.sort((a, b) => b.animeMembers - a.animeMembers);
-  pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
-
-  pool.sort((a, b) => b.animeScore - a.animeScore);
-  pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
-
-  return pool;
-}
-
-// ====== Preview ======
-function updatePreview() {
-  if (!allSongs.length) {
-    previewCountEl.textContent = "⏳ Chargement de la base…";
-    previewCountEl.classList.add("bad");
-    previewCountEl.classList.remove("good");
-    applyBtn.disabled = true;
-    return;
-  }
-
-  const pool = applyFilters();
-  const ok = pool.length >= MIN_REQUIRED_SONGS;
-
-  previewCountEl.textContent = ok
-    ? `🎵 Songs disponibles : ${pool.length} (OK)`
-    : `🎵 Songs disponibles : ${pool.length} (Min ${MIN_REQUIRED_SONGS})`;
-
-  previewCountEl.classList.toggle("good", ok);
-  previewCountEl.classList.toggle("bad", !ok);
-
-  applyBtn.disabled = !ok;
-  applyBtn.classList.toggle("disabled", !ok);
-}
-
-// ====== Playback helpers ======
 function stopPlayback() {
-  clearLimiter(limiterVideo);
-  clearLimiter(limiterAudio);
   try { videoPlayer.pause(); } catch {}
   try { audioPlayer.pause(); } catch {}
 }
 
 function lockPlayersForGame() {
-  // Pendant le jeu : vidéo muette, audio B actif
+  // jeu : vidéo muette, audio B ok
   videoPlayer.muted = true;
   videoPlayer.controls = false;
   videoPlayer.removeAttribute("controls");
@@ -633,27 +289,109 @@ function lockPlayersForGame() {
   audioPlayer.muted = false;
   audioPlayer.controls = false;
   audioPlayer.removeAttribute("controls");
-
-  // audio caché
   audioPlayer.style.display = "none";
 
   applyVolume();
 }
 
 function revealVideoAWithItsAudio() {
-  // ✅ Reveal demandé : vidéo A avec SON AUDIO À LUI
-  clearLimiter(limiterVideo);
-  clearLimiter(limiterAudio);
-
-  try { audioPlayer.pause(); } catch {}
+  // reveal : vidéo A avec son audio
+  stopPlayback();
   try { audioPlayer.removeAttribute("src"); audioPlayer.load(); } catch {}
 
   videoPlayer.muted = false;
   videoPlayer.controls = true;
   videoPlayer.setAttribute("controls", "controls");
+  try { videoPlayer.currentTime = 0; } catch {}
+}
 
-  // on remet au début pour que le joueur puisse comparer
-  try { videoPlayer.pause(); videoPlayer.currentTime = 0; } catch {}
+// ====== Promises events ======
+function waitEvent(el, okEvent, badEvents, timeoutMs, localToken) {
+  return new Promise((resolve, reject) => {
+    let timer = null;
+
+    const cleanup = () => {
+      el.removeEventListener(okEvent, onOk);
+      badEvents.forEach((ev) => el.removeEventListener(ev, onBad));
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+
+    const valid = () => localToken === roundToken;
+
+    const onOk = () => {
+      if (!valid()) return;
+      cleanup();
+      resolve(true);
+    };
+
+    const onBad = () => {
+      if (!valid()) return;
+      cleanup();
+      reject(new Error("media-error"));
+    };
+
+    el.addEventListener(okEvent, onOk, { once: true });
+    badEvents.forEach((ev) => el.addEventListener(ev, onBad, { once: true }));
+
+    timer = setTimeout(() => {
+      if (!valid()) return;
+      cleanup();
+      reject(new Error("timeout"));
+    }, timeoutMs);
+  });
+}
+
+async function seekSafe(el, t, localToken) {
+  if (localToken !== roundToken) return false;
+
+  // clamp si duration connue
+  const dur = Number.isFinite(el.duration) ? el.duration : NaN;
+  let target = t;
+  if (Number.isFinite(dur)) target = Math.max(0, Math.min(dur - 0.25, t));
+
+  try { el.currentTime = target; } catch {}
+
+  // attendre seeked (ou canplay si seeked ne vient pas)
+  try {
+    await waitEvent(el, "seeked", ["error"], 9000, localToken);
+    return true;
+  } catch {
+    // fallback : si readyState ok, on accepte
+    return el.readyState >= 3;
+  }
+}
+
+// ====== Segment stop “ensemble” ======
+let segmentActive = false;
+let segmentEnd = 0;
+function clearSegment() {
+  segmentActive = false;
+  segmentEnd = 0;
+  videoPlayer.removeEventListener("timeupdate", onSegmentTick);
+  audioPlayer.removeEventListener("timeupdate", onSegmentTick);
+}
+function onSegmentTick() {
+  if (!segmentActive) return;
+  const tv = videoPlayer.currentTime || 0;
+  const ta = audioPlayer.currentTime || 0;
+  const t = Math.max(tv, ta);
+  if (t >= segmentEnd - 0.05) {
+    try { videoPlayer.pause(); } catch {}
+    try { audioPlayer.pause(); } catch {}
+    clearSegment();
+    setMediaStatus("✅ À toi : Match ou Pas match ?");
+    listenLocked = false;
+    btnMatch.disabled = false;
+    btnNoMatch.disabled = false;
+  }
+}
+function armSegment(start, dur) {
+  clearSegment();
+  segmentActive = true;
+  segmentEnd = start + dur;
+  videoPlayer.addEventListener("timeupdate", onSegmentTick);
+  audioPlayer.addEventListener("timeupdate", onSegmentTick);
 }
 
 // ====== Tirage 1/3 - 1/3 - 1/3 ======
@@ -666,7 +404,6 @@ function pickDifferentAnimeSong(base) {
     if (cand.animeTitleLower === base.animeTitleLower) continue;
     return cand;
   }
-  // fallback
   return pickRandom(filteredSongs);
 }
 
@@ -675,8 +412,7 @@ function pickSameAnimeDifferentSong(base) {
     (s.animeMalId && base.animeMalId && s.animeMalId === base.animeMalId) &&
     s.url !== base.url
   );
-  if (same.length) return pickRandom(same);
-  return null;
+  return same.length ? pickRandom(same) : null;
 }
 
 function choosePair() {
@@ -685,29 +421,18 @@ function choosePair() {
 
   const r = Math.floor(Math.random() * 3); // 0,1,2
 
-  // 0 => match
-  if (r === 0) {
-    return { A, B: A, isMatch: true, rule: "match" };
-  }
-
-  // 2 => même anime mais song différent (si possible)
+  if (r === 0) return { A, B: A, isMatch: true };
   if (r === 2) {
     const Bsame = pickSameAnimeDifferentSong(A);
-    if (Bsame) return { A, B: Bsame, isMatch: false, rule: "sameAnimeDifferentSong" };
-    // fallback => anime différent
-    const Bdiff = pickDifferentAnimeSong(A);
-    return { A, B: Bdiff, isMatch: false, rule: "differentAnime" };
+    if (Bsame) return { A, B: Bsame, isMatch: false };
+    return { A, B: pickDifferentAnimeSong(A), isMatch: false };
   }
-
-  // 1 => anime différent
-  const B = pickDifferentAnimeSong(A);
-  return { A, B, isMatch: false, rule: "differentAnime" };
+  return { A, B: pickDifferentAnimeSong(A), isMatch: false };
 }
 
-// ====== Round init/reset ======
+// ====== Reset / Round ======
 function resetControls() {
-  listenUsed = false;
-  roundReady = false;
+  listenLocked = true;
 
   resultDiv.textContent = "";
   resultDiv.className = "";
@@ -715,12 +440,11 @@ function resetControls() {
   btnMatch.disabled = true;
   btnNoMatch.disabled = true;
 
-  playOnceBtn.disabled = true;
-
   nextBtn.style.display = "none";
   nextBtn.onclick = null;
 
   stopPlayback();
+  clearSegment();
   lockPlayersForGame();
 
   updateScoreBar(MAX_SCORE);
@@ -731,7 +455,8 @@ function resetControls() {
 
 function startNewRound() {
   roundToken++;
-  mediaToken++;
+  const localToken = roundToken;
+
   resetControls();
 
   if (!CAN_PLAY_WEBM) {
@@ -746,124 +471,122 @@ function startNewRound() {
   audioSong = pair.B;
   isMatch = pair.isMatch;
 
-  const localRound = roundToken;
-  const localMedia = mediaToken;
+  // AUTO START
+  autoStartPlayback(localToken);
+}
 
-  // ✅ préchargement des 2 (on n’active le bouton écoute QUE quand les 2 sont prêts)
-  setMediaStatus("⏳ Préchargement A + B...");
-  let readyCount = 0;
-  let failed = false;
+// ====== ✅ AUTO START LOADER “PAIR” ======
+async function autoStartPlayback(localToken) {
+  // on tente A+B ensemble
+  for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+    if (localToken !== roundToken) return;
 
-  const onReadyOne = () => {
-    if (failed) return;
-    readyCount++;
-    if (readyCount >= 2) {
-      if (localRound !== roundToken || localMedia !== mediaToken) return;
-      roundReady = true;
-      setMediaStatus("✅ Prêt ! Clique sur Écouter.");
-      playOnceBtn.disabled = false;
-      lockPlayersForGame();
+    if (attempt > 0) {
+      setMediaStatus(`🔄 Rechargement… (${attempt + 1}/${RETRY_DELAYS.length})`);
+      await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
+      if (localToken !== roundToken) return;
+    } else {
+      setMediaStatus("⏳ Chargement A + B…");
     }
-  };
 
-  const onFailAny = () => {
-    if (failed) return;
-    failed = true;
-    if (localRound !== roundToken || localMedia !== mediaToken) return;
-    setMediaStatus("❌ Erreur média. Changement...");
-    startNewRound();
-  };
+    try {
+      // reset
+      hardReset(videoPlayer);
+      hardReset(audioPlayer);
 
-  loadMediaWithRetries(videoPlayer, videoSong.url, localRound, localMedia, onReadyOne, onFailAny, { preloadOnly: true });
-  loadMediaWithRetries(audioPlayer, audioSong.url, localRound, localMedia, onReadyOne, onFailAny, { preloadOnly: true });
-}
+      // src (bust à partir de la 2e tentative)
+      const vsrc = attempt === 0 ? videoSong.url : withCacheBuster(videoSong.url);
+      const asrc = attempt === 0 ? audioSong.url : withCacheBuster(audioSong.url);
 
-// ====== ✅ Lecture unique (sync) ======
-async function playOnceSync() {
-  if (!roundReady || listenUsed) return;
-  if (!videoSong || !audioSong) return;
+      videoPlayer.preload = "auto";
+      audioPlayer.preload = "auto";
+      videoPlayer.src = vsrc;
+      audioPlayer.src = asrc;
+      videoPlayer.load();
+      audioPlayer.load();
 
-  listenUsed = true;
-  playOnceBtn.disabled = true;
-  btnMatch.disabled = true;
-  btnNoMatch.disabled = true;
+      // attendre metadata des 2
+      await Promise.all([
+        waitEvent(videoPlayer, "loadedmetadata", ["error"], LOAD_TIMEOUT_MS, localToken),
+        waitEvent(audioPlayer, "loadedmetadata", ["error"], LOAD_TIMEOUT_MS, localToken),
+      ]);
 
-  // nouveau token “segment”
-  mediaToken++;
-  const localRound = roundToken;
-  const localMedia = mediaToken;
+      if (localToken !== roundToken) return;
 
-  setMediaStatus("⏳ Synchronisation (seek 45s)...");
-  stopPlayback();
-  lockPlayersForGame();
+      // seek 45s sur les 2
+      setMediaStatus("⏳ Buffer (45s)…");
+      const okSeek = await Promise.all([
+        seekSafe(videoPlayer, LISTEN_START, localToken),
+        seekSafe(audioPlayer, LISTEN_START, localToken),
+      ]);
+      if (!okSeek[0] || !okSeek[1]) throw new Error("seek-failed");
+      if (localToken !== roundToken) return;
 
-  // reload (sans buster) mais avec anti-bug si besoin
-  let okV = false, okA = false;
+      lockPlayersForGame();
+      applyVolume();
 
-  await new Promise((resolve) => {
-    let got = 0;
-    const doneOne = () => { got++; if (got === 2) resolve(); };
+      // arm segment stop
+      armSegment(LISTEN_START, LISTEN_DURATION);
 
-    loadMediaWithRetries(videoPlayer, videoSong.url, localRound, localMedia, () => { okV = true; doneOne(); }, () => { okV = false; doneOne(); }, { preloadOnly: false });
-    loadMediaWithRetries(audioPlayer, audioSong.url, localRound, localMedia, () => { okA = true; doneOne(); }, () => { okA = false; doneOne(); }, { preloadOnly: false });
-  });
+      // try play
+      setMediaStatus("▶️ Lecture…");
+      const pV = videoPlayer.play();
+      const pA = audioPlayer.play();
 
-  if (localRound !== roundToken || localMedia !== mediaToken) return;
+      const res = await Promise.allSettled([pV, pA]);
+      if (localToken !== roundToken) return;
 
-  if (!okV || !okA) {
-    setMediaStatus("❌ Impossible de charger A/B. Changement...");
-    startNewRound();
-    return;
+      const rejected = res.some(r => r.status === "rejected");
+      if (!rejected) {
+        // petit “nudge” anti-désync
+        setTimeout(() => {
+          if (localToken !== roundToken) return;
+          const dv = (audioPlayer.currentTime || 0) - (videoPlayer.currentTime || 0);
+          if (Math.abs(dv) > 0.12) {
+            try { audioPlayer.currentTime = videoPlayer.currentTime; } catch {}
+          }
+        }, 700);
+
+        // pendant la lecture, on peut déjà répondre (si tu veux)
+        btnMatch.disabled = false;
+        btnNoMatch.disabled = false;
+        listenLocked = false;
+        return; // ✅ succès, on sort
+      }
+
+      // autoplay bloqué => fallback “clique n’importe où”
+      setMediaStatus("▶️ Clique n’importe où pour lancer");
+      const container = document.getElementById("container");
+      const onTap = async () => {
+        container.removeEventListener("click", onTap);
+        if (localToken !== roundToken) return;
+        try {
+          await Promise.all([videoPlayer.play(), audioPlayer.play()]);
+          setMediaStatus("▶️ Lecture…");
+          btnMatch.disabled = false;
+          btnNoMatch.disabled = false;
+          listenLocked = false;
+        } catch {
+          // si vraiment impossible, on retente un autre duel
+          startNewRound();
+        }
+      };
+      container.addEventListener("click", onTap, { once: true });
+      return;
+    } catch {
+      // tente suivante
+    }
   }
 
-  // ✅ étape CRITIQUE : seek + canplay pour LES 2 avant de lancer
-  setMediaStatus("⏳ Buffer des 2 médias...");
-  const [canV, canA] = await Promise.all([
-    ensureSeekAndCanPlay(videoPlayer, LISTEN_START, localRound, localMedia),
-    ensureSeekAndCanPlay(audioPlayer, LISTEN_START, localRound, localMedia),
-  ]);
-
-  if (localRound !== roundToken || localMedia !== mediaToken) return;
-
-  if (!canV || !canA) {
-    setMediaStatus("❌ Buffer insuffisant. Changement...");
-    startNewRound();
-    return;
-  }
-
-  // Limiteurs 30s
-  armLimiter(limiterVideo, LISTEN_START, LISTEN_DURATION);
-  armLimiter(limiterAudio, LISTEN_START, LISTEN_DURATION);
-
-  // Jeu : vidéo muette, audio B actif
-  videoPlayer.muted = true;
-  audioPlayer.muted = false;
-  applyVolume();
-
-  setMediaStatus("▶️ Lecture (30s)...");
-  const p1 = videoPlayer.play();
-  const p2 = audioPlayer.play();
-
-  await Promise.allSettled([p1, p2]);
-
-  if (localRound !== roundToken || localMedia !== mediaToken) return;
-
-  // Autoriser réponse (après démarrage)
-  btnMatch.disabled = false;
-  btnNoMatch.disabled = false;
-
-  // Quand ça s’arrête (limiter), on laisse répondre
-  setTimeout(() => {
-    if (localRound !== roundToken || localMedia !== mediaToken) return;
-    setMediaStatus("✅ À toi : Match ou pas match ?");
-  }, 600); // juste pour laisser le status de lecture apparaître
+  // échec total => on change de duel
+  setMediaStatus("❌ Trop lent / indisponible. Changement…");
+  startNewRound();
 }
 
-// ====== Guess logic ======
+// ====== Answer ======
 function blockInputsAll() {
   btnMatch.disabled = true;
   btnNoMatch.disabled = true;
-  playOnceBtn.disabled = true;
 }
 
 function endRoundAndMaybeNext(roundScore) {
@@ -898,22 +621,22 @@ function endRoundAndMaybeNext(roundScore) {
 
 function checkAnswer(userSaysMatch) {
   if (!videoSong || !audioSong) return;
-  if (!listenUsed) return;
+
+  // si tu veux forcer "doit avoir entendu", décommente :
+  // if (listenLocked) return;
 
   const good = (userSaysMatch === isMatch);
 
   stopPlayback();
-
-  // ✅ Reveal demandé : vidéo A avec SON audio
+  clearSegment();
   revealVideoAWithItsAudio();
-
   blockInputsAll();
 
   if (good) {
     const score = MAX_SCORE;
     resultDiv.innerHTML = `
       🎉 Bonne réponse !<br>
-      <b>${isMatch ? "✅ MATCH" : "❌ PAS MATCH"}</b>
+      <b>${isMatch ? "✅ TRUTH (MATCH)" : "❌ FAKE (NO MATCH)"}</b>
       <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
       <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
       <div style="margin-top:8px;">Score : <b>${score}</b> / 3000</div>
@@ -927,7 +650,7 @@ function checkAnswer(userSaysMatch) {
 
   resultDiv.innerHTML = `
     ❌ Mauvaise réponse.<br>
-    Réponse correcte : <b>${isMatch ? "✅ MATCH" : "❌ PAS MATCH"}</b>
+    Réponse correcte : <b>${isMatch ? "✅ TRUTH (MATCH)" : "❌ FAKE (NO MATCH)"}</b>
     <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
     <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
     <div style="margin-top:8px;">Score : <b>0</b> / 3000</div>
@@ -937,8 +660,6 @@ function checkAnswer(userSaysMatch) {
   endRoundAndMaybeNext(0);
 }
 
-// ====== Buttons ======
-playOnceBtn.addEventListener("click", playOnceSync);
 btnMatch.addEventListener("click", () => checkAnswer(true));
 btnNoMatch.addEventListener("click", () => checkAnswer(false));
 
@@ -998,6 +719,111 @@ function launchFireworks() {
   animate();
 }
 
+// ====== Custom UI init ======
+function initCustomUI() {
+  function syncLabels() {
+    clampYearSliders();
+    popValEl.textContent = popEl.value;
+    scoreValEl.textContent = scoreEl.value;
+    yearMinValEl.textContent = yearMinEl.value;
+    yearMaxValEl.textContent = yearMaxEl.value;
+    updatePreview();
+  }
+
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
+
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      const any = document.querySelectorAll("#typePills .pill.active").length > 0;
+      if (!any) {
+        btn.classList.add("active");
+        btn.setAttribute("aria-pressed", "true");
+      }
+      updatePreview();
+    });
+  });
+
+  document.querySelectorAll("#songPills .pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      const any = document.querySelectorAll("#songPills .pill.active").length > 0;
+      if (!any) {
+        btn.classList.add("active");
+        btn.setAttribute("aria-pressed", "true");
+      }
+      updatePreview();
+    });
+  });
+
+  applyBtn.addEventListener("click", () => {
+    filteredSongs = applyFilters();
+    if (filteredSongs.length < MIN_REQUIRED_SONGS) return;
+
+    totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
+    currentRound = 1;
+    totalScore = 0;
+
+    showGame();
+    startNewRound();
+  });
+
+  syncLabels();
+}
+
+// ====== Filters + Preview ======
+function applyFilters() {
+  const popPercent = parseInt(popEl.value, 10);
+  const scorePercent = parseInt(scoreEl.value, 10);
+  const yearMin = parseInt(yearMinEl.value, 10);
+  const yearMax = parseInt(yearMaxEl.value, 10);
+
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
+  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
+
+  if (!allowedTypes.length || !allowedSongs.length) return [];
+
+  let pool = allSongs.filter((s) => (
+    s.animeYear >= yearMin &&
+    s.animeYear <= yearMax &&
+    allowedTypes.includes(s.animeType) &&
+    allowedSongs.includes(s.songType)
+  ));
+
+  pool.sort((a, b) => b.animeMembers - a.animeMembers);
+  pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
+
+  pool.sort((a, b) => b.animeScore - a.animeScore);
+  pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
+
+  return pool;
+}
+
+function updatePreview() {
+  if (!allSongs.length) {
+    previewCountEl.textContent = "⏳ Chargement de la base…";
+    previewCountEl.classList.add("bad");
+    previewCountEl.classList.remove("good");
+    applyBtn.disabled = true;
+    return;
+  }
+
+  const pool = applyFilters();
+  const ok = pool.length >= MIN_REQUIRED_SONGS;
+
+  previewCountEl.textContent = ok
+    ? `🎵 Songs disponibles : ${pool.length} (OK)`
+    : `🎵 Songs disponibles : ${pool.length} (Min ${MIN_REQUIRED_SONGS})`;
+
+  previewCountEl.classList.toggle("good", ok);
+  previewCountEl.classList.toggle("bad", !ok);
+
+  applyBtn.disabled = !ok;
+  applyBtn.classList.toggle("disabled", !ok);
+}
+
 // ====== Load dataset ======
 fetch("../data/licenses_only.json")
   .then((r) => {
@@ -1028,6 +854,7 @@ fetch("../data/licenses_only.json")
     showCustomization();
     applyVolume();
     lockPlayersForGame();
+    updateScoreBar(MAX_SCORE);
   })
   .catch((e) => {
     previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
