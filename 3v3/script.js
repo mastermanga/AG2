@@ -1,17 +1,15 @@
 /**********************
  * TopPick 3v3 (Anime / Songs)
  * - Règle UNIQUE: choisir la meilleure ligne
- * - Thème “contenu” auto (année/studio/tag/score/pop + songYear + artiste)
- *   - 1 fois sur 5 => Libre
- * - 6 items révélés EN ALTERNANCE :
- *   L1#1 → L2#1 → L1#2 → L2#2 → L1#3 → L2#3
+ * - Thème “contenu” auto tiré UNIFORMÉMENT (Libre inclus)
+ * - + Thème FIRST_LETTER (sélecteur intelligent)
+ * - Reveal alterné : L1#1 → L2#1 → L1#2 → L2#2 → L1#3 → L2#3
  * - Anime: 1 item / 1s
- * - Songs: play auto non mute à 45s pendant 30s (currentTime)
+ * - Songs: play auto non mute à 45s pendant 30s
  * - Anti doublons songs par anime:
  *   - 4 impossible
  *   - 3 très rare
  *   - 2 rare
- *   - si pool "thème contenu" trop petit -> on agrandit au pool filtré global (sans thème)
  **********************/
 
 // ====== MENU & THEME ======
@@ -44,7 +42,7 @@ document.addEventListener("click", (e) => {
 // ====== CONST ======
 const MIN_REQUIRED = 64;
 
-// Songs preview (✅ nouveau)
+// Songs preview
 const SONG_START_SEC = 45;
 const SONG_PLAY_SEC = 30;
 
@@ -54,9 +52,6 @@ const STALL_TIMEOUT_MS = 6000;
 
 // sécurité anti-blocage total
 const MAX_WALL_SNIPPET_MS = 60000;
-
-// 1 fois sur 5 : pas de filtre contenu
-const FREE_THEME_PROBA = 0.20;
 
 // ✅ RÈGLE UNIQUE
 const RULE = {
@@ -137,7 +132,77 @@ function formatItemLabel(it) {
   return it.title || "";
 }
 
-// ✅ songs extraction (avec animeMalId)
+// ====== FIRST LETTER (SMART) ======
+function normalizeQuotes(s) {
+  return (s || "")
+    .replace(/[“”«»]/g, '"')
+    .replace(/[’‘]/g, "'")
+    .trim();
+}
+function stripLeadingPunctAndSpaces(s) {
+  return (s || "").replace(/^[\s\(\[\{<"']+/, "").trim();
+}
+function removeLeadingArticles(s) {
+  let t = normalizeQuotes(s).trim();
+
+  // on enlève la ponctuation qui traîne au début
+  t = stripLeadingPunctAndSpaces(t);
+
+  // articles multi-langues + formes contractées (L', D', etc.)
+  const patterns = [
+    /^the\s+/i,
+    /^a\s+/i,
+    /^an\s+/i,
+    /^le\s+/i,
+    /^la\s+/i,
+    /^les\s+/i,
+    /^un\s+/i,
+    /^une\s+/i,
+    /^des\s+/i,
+    /^l'\s*/i,
+    /^d'\s*/i,
+    /^du\s+/i,
+    /^de\s+/i,
+    /^der\s+/i,
+    /^die\s+/i,
+    /^das\s+/i,
+    /^el\s+/i,
+    /^los\s+/i,
+    /^las\s+/i,
+  ];
+
+  // on applique en boucle (au cas où: "The 'X'", etc.)
+  let changed = true;
+  let safety = 0;
+  while (changed && safety++ < 6) {
+    changed = false;
+    t = stripLeadingPunctAndSpaces(t);
+
+    for (const p of patterns) {
+      if (p.test(t)) {
+        t = t.replace(p, "");
+        changed = true;
+        break;
+      }
+    }
+  }
+
+  return stripLeadingPunctAndSpaces(t);
+}
+function smartFirstLetter(title) {
+  const raw = removeLeadingArticles(title || "");
+  if (!raw) return "";
+
+  // premier caractère alphanum (lettre/num)
+  const m = raw.match(/[A-Za-z0-9]/);
+  if (!m) return "";
+
+  const ch = m[0];
+  if (/[0-9]/.test(ch)) return "#";       // pour les titres qui commencent par un chiffre
+  return ch.toUpperCase();
+}
+
+// ====== songs extraction (avec animeMalId) ======
 function extractSongsFromAnime(anime) {
   const out = [];
   const song = anime.song || {};
@@ -166,7 +231,7 @@ function extractSongsFromAnime(anime) {
         artistsArr,
         songYear,
 
-        animeMalId: anime.mal_id || anime.license_id || 0, // ✅ AJOUT
+        animeMalId: anime.mal_id || anime.license_id || 0,
         animeTitle: anime._title,
         animeType: anime._type,
         animeYear: anime._year,
@@ -201,14 +266,10 @@ function pickNFromPool(pool, n) {
    ANTI-DOUBLONS SONGS (4 IMPOSSIBLE)
    - 2 rare
    - 3 très rare
-   - 4 impossible
-   - si fail : on agrandit le pool (on retente sur pool global filtré)
    ========================== */
-
 function songGroupKey(it) {
   return String(it.animeMalId || it.animeTitle || "unknown");
 }
-
 function groupSongsByAnime(pool) {
   const m = new Map();
   for (const s of pool) {
@@ -219,33 +280,28 @@ function groupSongsByAnime(pool) {
   for (const [k, arr] of m) shuffleInPlace(arr);
   return m;
 }
-
-// phases: (2 rare) / (3 très rare) / cap4=0
 const DUP_PHASES = [
-  { p2: 0.18, p3: 0.04 }, // strict : 2 rare, 3 très rare
-  { p2: 0.28, p3: 0.08 }, // encore rare
-  { p2: 0.40, p3: 0.12 }, // si pool concentré
-  { p2: 0.55, p3: 0.18 }, // dernier recours, mais cap 3 toujours
+  { p2: 0.18, p3: 0.04 },
+  { p2: 0.28, p3: 0.08 },
+  { p2: 0.40, p3: 0.12 },
+  { p2: 0.55, p3: 0.18 },
 ];
-
 function acceptDup(nextCount, phase) {
-  // nextCount = nombre après ajout
   if (nextCount <= 1) return true;
   if (nextCount === 2) return Math.random() < phase.p2;
   if (nextCount === 3) return Math.random() < phase.p3;
   return false; // 4+ impossible
 }
-
 function tryPickSongsNo4(pool, n) {
   const by = groupSongsByAnime(pool);
   const keys = shuffleInPlace([...by.keys()]);
   if (!keys.length) return null;
 
-  // D'abord: 1 par anime, max diversité
   const picked = [];
-  const counts = new Map(); // key -> count
-  const usedKeys = new Set(); // song _key
+  const counts = new Map();
+  const usedKeys = new Set();
 
+  // 1) 1 par anime
   for (const k of keys) {
     if (picked.length >= n) break;
     const arr = by.get(k);
@@ -258,10 +314,10 @@ function tryPickSongsNo4(pool, n) {
   }
   if (picked.length >= n) return picked;
 
-  // Ensuite: ajouter doublons selon phases, cap 3 strict
+  // 2) doublons rares, cap 3
   for (const phase of DUP_PHASES) {
     let safety = 0;
-    while (picked.length < n && safety++ < 800) {
+    while (picked.length < n && safety++ < 900) {
       const candidates = keys.filter(k => {
         const c = counts.get(k) || 0;
         const arr = by.get(k);
@@ -269,12 +325,12 @@ function tryPickSongsNo4(pool, n) {
       });
       if (!candidates.length) break;
 
-      // pour éviter de spammer 1 seul anime, on parcourt dans un ordre random
       shuffleInPlace(candidates);
 
       let progressed = false;
       for (const k of candidates) {
         if (picked.length >= n) break;
+
         const c = counts.get(k) || 0;
         const nextC = c + 1;
         if (!acceptDup(nextC, phase)) continue;
@@ -291,35 +347,31 @@ function tryPickSongsNo4(pool, n) {
         picked.push(it);
         counts.set(k, nextC);
         progressed = true;
-
-        // on ajoute au plus 1 par tour pour garder l'effet "rare"
-        break;
+        break; // 1 ajout max par tour
       }
-
       if (!progressed) break;
     }
-
     if (picked.length >= n) return picked;
   }
 
   return null;
 }
-
 function pickSongsWithPolicy(poolTheme, poolGlobal, n) {
-  // 1) essaie sur pool thème
   let res = tryPickSongsNo4(poolTheme, n);
   if (res && res.length === n) return res;
 
-  // 2) agrandit le pool (pool global filtré)
   res = tryPickSongsNo4(poolGlobal, n);
   if (res && res.length === n) return res;
 
-  // 3) on refuse plutôt que 4 du même anime
   return null;
 }
 
 /* ==========================
-   AUTO “THEME CONTENU”
+   AUTO “THEME CONTENU” (UNIFORME)
+   - Libre inclus comme un thème normal
+   - FIRST_LETTER inclus
+   - On choisit 1 critère au hasard (uniforme)
+   - Puis on essaie plusieurs seeds MAIS en gardant le même critère
    ========================== */
 function norm(s){ return (s || "").toString().trim().toLowerCase(); }
 function hasTag(it, tag) {
@@ -347,50 +399,58 @@ function nearbyPool(pool, getNum, target, want = 6) {
   }
   return arr.slice(L, R + 1);
 }
-function pickRoundContentThemeAuto(basePool, mode) {
+
+function pickRoundContentThemeUniform(basePool, mode) {
   const MIN = 6;
-  const MAX_TRIES = 60;
+  const MAX_SEED_TRIES = 70;
 
   const getAnimeYear = (it) => mode === "songs" ? (it.animeYear || 0) : (it.year || 0);
   const getSongYear  = (it) => (it.songYear || it.animeYear || 0);
   const getStudio    = (it) => mode === "songs" ? (it.animeStudio || "") : (it.studio || "");
   const getScore     = (it) => mode === "songs" ? (it.animeScore || 0) : (it.score || 0);
   const getPop       = (it) => mode === "songs" ? (it.animeMembers || 0) : (it.members || 0);
+  const getTitleForLetter = (it) => mode === "songs" ? (it.animeTitle || "") : (it.title || "");
 
-  const criteriaAnime = ["YEAR","STUDIO","TAG","SCORE_NEAR","POP_NEAR"];
-  const criteriaSongs = ["YEAR","SONG_YEAR","STUDIO","TAG","SCORE_NEAR","POP_NEAR","ARTIST"];
+  // ✅ LISTES AVEC "FREE" + "FIRST_LETTER"
+  const criteriaAnime = ["FREE","YEAR","STUDIO","TAG","SCORE_NEAR","POP_NEAR","FIRST_LETTER"];
+  const criteriaSongs = ["FREE","YEAR","SONG_YEAR","STUDIO","TAG","SCORE_NEAR","POP_NEAR","ARTIST","FIRST_LETTER"];
   const list = (mode === "songs") ? criteriaSongs : criteriaAnime;
 
-  for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+  // ✅ Tirage uniforme
+  const chosenCrit = list[Math.floor(Math.random() * list.length)];
+
+  // FREE est immédiatement valide
+  if (chosenCrit === "FREE") return { label: "Libre", pool: basePool, crit: "FREE" };
+
+  for (let attempt = 0; attempt < MAX_SEED_TRIES; attempt++) {
     const seed = basePool[Math.floor(Math.random() * basePool.length)];
     if (!seed) break;
 
-    const crit = list[Math.floor(Math.random() * list.length)];
     let pool = [];
     let label = "Libre";
 
-    if (crit === "YEAR") {
+    if (chosenCrit === "YEAR") {
       const y = getAnimeYear(seed);
       if (!y) continue;
       pool = basePool.filter(it => getAnimeYear(it) === y);
       label = `Année anime : ${y}`;
     }
 
-    if (crit === "SONG_YEAR" && mode === "songs") {
+    if (chosenCrit === "SONG_YEAR" && mode === "songs") {
       const y = getSongYear(seed);
       if (!y) continue;
       pool = basePool.filter(it => getSongYear(it) === y);
       label = `Année song : ${y}`;
     }
 
-    if (crit === "STUDIO") {
+    if (chosenCrit === "STUDIO") {
       const st = getStudio(seed);
       if (!st) continue;
       pool = basePool.filter(it => includesStudio(getStudio(it), st));
       label = `Studio : ${st}`;
     }
 
-    if (crit === "TAG") {
+    if (chosenCrit === "TAG") {
       const tags = Array.isArray(seed.tags) ? seed.tags : [];
       if (!tags.length) continue;
       const t = tags[Math.floor(Math.random() * tags.length)];
@@ -398,21 +458,21 @@ function pickRoundContentThemeAuto(basePool, mode) {
       label = `Tag : ${t}`;
     }
 
-    if (crit === "SCORE_NEAR") {
+    if (chosenCrit === "SCORE_NEAR") {
       const sc = getScore(seed);
       if (!sc) continue;
       pool = nearbyPool(basePool, getScore, sc, MIN);
       label = `Score proche`;
     }
 
-    if (crit === "POP_NEAR") {
+    if (chosenCrit === "POP_NEAR") {
       const pop = getPop(seed);
       if (!pop) continue;
       pool = nearbyPool(basePool, getPop, pop, MIN);
       label = `Popularité proche`;
     }
 
-    if (crit === "ARTIST" && mode === "songs") {
+    if (chosenCrit === "ARTIST" && mode === "songs") {
       const arts = Array.isArray(seed.artistsArr) ? seed.artistsArr.filter(Boolean) : [];
       if (!arts.length) continue;
       const a = arts[Math.floor(Math.random() * arts.length)];
@@ -422,10 +482,18 @@ function pickRoundContentThemeAuto(basePool, mode) {
       label = `Artiste : ${a}`;
     }
 
-    if (pool.length >= MIN) return { label, pool, crit };
+    if (chosenCrit === "FIRST_LETTER") {
+      const letter = smartFirstLetter(getTitleForLetter(seed));
+      if (!letter) continue;
+      pool = basePool.filter(it => smartFirstLetter(getTitleForLetter(it)) === letter);
+      label = `Lettre : ${letter}`;
+    }
+
+    if (pool.length >= MIN) return { label, pool, crit: chosenCrit };
   }
 
-  return { label: "Libre", pool: basePool, crit: "FREE" };
+  // fallback rare: on garde le round mais en Libre
+  return { label: "Libre", pool: basePool, crit: "FREE_FALLBACK" };
 }
 
 /* ==========================
@@ -493,13 +561,12 @@ let currentRound = 1;
 
 let currentContentTheme = null;
 
-// 3v3
 let teamItemsA = [];
 let teamItemsB = [];
 
 let revealDone = false;
 let selectionEnabled = false;
-let selectedTeam = null; // 0 ou 1
+let selectedTeam = null;
 let lockedAfterValidate = false;
 
 // tokens
@@ -691,7 +758,6 @@ function updateModePillsFromState() {
   });
   updateModeVisibility();
 }
-
 function updateModeVisibility() {
   songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
 }
@@ -746,7 +812,7 @@ function applyFilters() {
     kind: "song",
     _key: `song|${s._key}`,
 
-    animeMalId: s.animeMalId || 0, // ✅ AJOUT
+    animeMalId: s.animeMalId || 0,
 
     animeTitle: s.animeTitle || "Anime",
     songName: s.songName || "",
@@ -1064,8 +1130,6 @@ function onTeamClick(team) {
 
 teamRowA.addEventListener("click", () => onTeamClick(0));
 teamRowB.addEventListener("click", () => onTeamClick(1));
-
-// accessibilité clavier
 teamRowA.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTeamClick(0); } });
 teamRowB.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTeamClick(1); } });
 
@@ -1124,16 +1188,10 @@ function startRound() {
     return;
   }
 
-  // 1 fois sur 5 : Libre
-  if (Math.random() < FREE_THEME_PROBA) {
-    currentContentTheme = { label: "Libre", pool: filteredPool, crit: "FREE" };
-  } else {
-    currentContentTheme = pickRoundContentThemeAuto(filteredPool, currentMode);
-  }
-
+  // ✅ Thème contenu UNIFORME (Libre inclus)
+  currentContentTheme = pickRoundContentThemeUniform(filteredPool, currentMode);
   setThemeUI(currentContentTheme);
 
-  // pool thème (si ok) sinon pool global
   const themePool = (currentContentTheme?.pool && currentContentTheme.pool.length >= 6)
     ? currentContentTheme.pool
     : filteredPool;
@@ -1141,7 +1199,6 @@ function startRound() {
   let picks = null;
 
   if (currentMode === "songs") {
-    // ✅ tirage avec politique anti-doublons (4 impossible)
     picks = pickSongsWithPolicy(themePool, filteredPool, 6);
     if (!picks) {
       resultDiv.textContent =
