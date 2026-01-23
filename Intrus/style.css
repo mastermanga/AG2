@@ -458,15 +458,7 @@ body.light .anime-item{ background:#e4f2fc; }
   margin-top: 12px;
   flex-wrap: wrap;
 }
-
 .result{ margin-top: 14px; font-weight:900; opacity:0.95; }
-
-.now-playing{
-  font-weight:900;
-  margin: 0 0 8px 0;
-  opacity:0.92;
-  text-align:center;
-}
 
 /* ==== VOLUME BAR (Songs) ==== */
 .volume-row{
@@ -531,6 +523,22 @@ body.light #volumeSlider{
   background: linear-gradient(90deg, #42a5f5 0%, #ffffff 75%);
 }
 
+/* ✅ PLAYER HIDDEN (empêche la vidéo de pop) */
+.player-hidden{
+  position: fixed;
+  left: -99999px;
+  top: -99999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.player-hidden video{
+  width: 1px !important;
+  height: 1px !important;
+}
+
 /* ==== TOOLTIP HELP ==== */
 .header-right{
   display:inline-flex;
@@ -538,25 +546,14 @@ body.light #volumeSlider{
   gap:10px;
   flex-shrink:0;
 }
-.info-wrap{
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
+.info-wrap{ position: relative; display: inline-flex; align-items: center; justify-content: center; }
 .info-icon{
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  width: 26px; height: 26px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
   background: rgba(18, 30, 39, 0.55);
   border: 1.5px solid rgba(255, 255, 255, 0.35);
   box-shadow: 0 0 10px rgba(0, 234, 255, 0.55), 0 0 24px rgba(0, 188, 212, 0.35), inset 0 0 0 1px rgba(0, 234, 255, 0.18);
-  color: #eaffff;
-  cursor: help;
-  user-select: none;
+  color: #eaffff; cursor: help; user-select: none;
   transition: transform 0.16s, box-shadow 0.16s, background 0.16s, border-color 0.16s;
 }
 .info-svg{ width:18px; height:18px; display:block; }
@@ -582,7 +579,6 @@ body.light #volumeSlider{
   font-size: 0.95rem;
   font-weight: 500;
   line-height: 1.25;
-  letter-spacing: 0.1px;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
