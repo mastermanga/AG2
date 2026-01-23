@@ -2,16 +2,20 @@
  * Synopsis (Mots-clés)
  * - Dataset: ../data/licenses_only.json (synopsis FR)
  * - 3 indices: Hardcore -> Moyen -> Facile
- * - Chaque erreur débloque l’indice suivant (score -1000)
+ * - 5 à 8 mots-clés par indice (snackable)
+ * - Hardcore: général (genres/thèmes + concepts)
+ * - Moyen: plus clair (noms concrets) + 0-1 mot fort possible
+ * - Facile: très informatif + mots forts autorisés (sauf titre)
  * - Synopsis complet visible uniquement après la réponse
- * - Mots-clés filtrés (stopwords FR + anti-verbes)
- * - Facile: +1 "nom fort" secondaire (hors top_characters)
  **********************/
 
 const MAX_SCORE = 3000;
 const STEP_SCORES = [3000, 2000, 1000, 0];
-const MAX_STEPS = 3;
 const MIN_TITLES_TO_START = 64;
+
+const HARDCORE_TARGET = 6; // 5-8
+const MEDIUM_TARGET = 7;   // 5-8
+const EASY_TARGET = 8;     // 5-8
 
 // ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
@@ -103,6 +107,15 @@ function setRangePct(el) {
   el.style.setProperty("--pct", `${Math.max(0, Math.min(100, pct))}%`);
 }
 
+function cleanSynopsis(s) {
+  const raw = String(s || "");
+  return raw
+    .replace(/\[.*?\]/g, "")
+    .replace(/MAL Rewrite/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 // ====== Score bar ======
 const scoreBar = document.getElementById("score-bar");
 const scoreBarLabel = document.getElementById("score-bar-label");
@@ -123,78 +136,48 @@ function setScoreBar(score) {
   scoreBarLabel.textContent = `${s} / ${MAX_SCORE}`;
 }
 
-// ====== Stopwords / filtres (anti "soit / qu'il / envie" etc.) ======
-const STOP_FR = new Set([
-  // articles / pronoms / prépositions
+// ====== Lexique & filtres ======
+// On privilégie des "noms" : mots qui suivent déterminants/prépositions (après tokenisation spéciale).
+const DET_SET = new Set([
+  "le","la","les","un","une","des","du","de","d","l","ce","cet","cette","ces",
+  "mon","ma","mes","son","sa","ses","notre","nos","votre","vos","leur","leurs"
+]);
+
+const PREP_SET = new Set([
+  "de","d","du","des","en","dans","sur","sous","avec","sans","pour","contre","vers","chez","a","à","au","aux"
+]);
+
+// stopwords basiques + mots “structure” (évite verbes/liaisons)
+const STOP = new Set([
   "a","à","au","aux","avec","ce","ces","cet","cette","dans","de","des","du","elle","en","et","eux","il","ils",
   "je","la","le","les","leur","leurs","lui","ma","mais","me","même","mes","moi","mon","ne","nos","notre","nous",
   "on","ou","par","pas","pour","qu","que","qui","sa","se","ses","son","sur","ta","te","tes","toi","ton","tu",
   "un","une","vos","votre","vous","y","d","l","s","c","t","j",
-  // formes fréquentes inutiles
   "ainsi","alors","après","avant","aussi","bien","car","cependant","comme","contre","donc","encore","ensuite",
-  "entre","fait","fois","grâce","ici","là","leur","malgré","moins","plus","peu","plutôt","puis","quand","sans",
-  "selon","sous","tant","toute","toutes","tout","tous","très","vers",
-  // verbes / auxiliaires (conjugués courants)
-  "être","est","sont","étaient","était","été","serait","sera","soit","soyons","ayant","avoir","a","ont","avait",
-  "eut","peut","peuvent","pouvoir","doit","doivent","devoir","fait","faire","va","vont","aller","vient","venir",
-  "reste","rester","devient","devenir","semble","sembler","permet","permettre","continue","continuer",
-  "commence","commencer","fin","finit","finir","trouve","trouver","prend","prendre","donne","donner",
-  "voit","voir","sait","savoir","peine","envie",
-  // morceaux parasites fréquents
-  "quil","quelle","quelles","quels","quelles","quil","quelle","quelles","quels","quelles",
+  "entre","ici","là","malgré","moins","plus","peu","plutôt","puis","quand","sans","selon","sous","tant",
+  "toute","toutes","tout","tous","très","vers","souvent","toujours","désormais",
+  // très fréquents mais pas utiles comme mots-clés
+  "jour","jours","vie","monde","gens","personne","personnes","chose","choses","temps","nouveau","nouvelle",
+  "nombreux","nombreuse","nombreuses","réellement","plusieurs","certain","certaine","certaines","certains",
+  // verbes ultra fréquents
+  "être","est","sont","étaient","était","été","sera","serait","avoir","a","ont","avait","fait","faire",
+  "peut","peuvent","doit","doivent","va","vont","vient","venir","reste","rester","devient","devenir",
+  "semble","sembler","continue","continuer","commence","commencer","finit","finir",
+  "passe","passer","poursuit","poursuivre","cherche","chercher","trouve","trouver",
+  "découvre","découvrir","produit","produire","renvoie","renvoyer","retrouve","retrouver",
 ]);
 
-const GENERIC_BAD = new Set([
-  // trop vagues et peu utiles en mots-clés
-  "histoire","monde","jour","jours","vie","gens","personne","personnes","chose","choses","temps","nouveau",
-  "nouvelle","nouveaux","grand","grande","petit","petite","groupe","série","route","simple","intense",
-  "récemment","désormais","toujours","souvent","autre","autres","premier","première","dernier","dernière",
+// mots qui restent utiles même s’ils ne suivent pas un déterminant
+const ALWAYS_KEEP = new Set([
+  "shogi","boxe","boxing","volleyball","volley","alchimie","titans","titan","pirate","pirates","trésor",
+  "magie","démon","démons","vampire","zombie","robot","robots","mecha","temps","voyage","enquête",
+  "meurtre","assassinat","survie","militaire","école","lycée","collège","université","tokyo",
 ]);
 
-function cleanSynopsis(s) {
-  const raw = String(s || "");
-  return raw
-    .replace(/\[.*?\]/g, "")              // [Écrit par ...]
-    .replace(/MAL Rewrite/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+// suffixes qui sentent trop l’adverbe / adjectif “faible”
+const BAD_SUFFIX_RE = /(ment|ements|eusement|euse|euses|eux|ante|antes|ants|ant|ique|iques|able|ibles|ible)$/i;
 
-function extractProperNouns(original) {
-  // mots qui apparaissent avec majuscule (hors début de phrase approximatif)
-  const text = String(original || "");
-  const matches = text.match(/\b[A-ZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ][a-zàâäçéèêëîïôöùûüÿœæ-]{2,}\b/g) || [];
-  const set = new Set();
-  for (const m of matches) {
-    set.add(normalizeGuess(m));
-  }
-  return set;
-}
-
-function tokenizeFrench(text) {
-  // récupère mots + mots composés simples
-  const matches = String(text || "").match(/[A-Za-zÀ-ÖØ-öø-ÿœæŒÆ-]+/g) || [];
-  return matches.map(w => w.trim()).filter(Boolean);
-}
-
-function normalizeTokenForFilter(tok) {
-  // enlève apostrophes/élisions courantes
-  let t = tok.toLowerCase();
-  t = t.replace(/^([ldjtmnscq]|qu|jusqu|lorsqu|puisqu|quoiqu)['’]/, "");
-  t = t.replace(/['’]/g, ""); // enlève apostrophes restantes
-  t = t.replace(/^-+|-+$/g, "");
-  return t.trim();
-}
-
-function buildTitleWordSet(title) {
-  const t = normalizeGuess(title);
-  const words = t.split(" ").filter(w => w.length >= 4);
-  return new Set(words);
-}
-
-// ====== Génération des 3 niveaux de mots-clés ======
-const hintsCache = new Map(); // key: mal_id (ou titre), value: {hardcore, medium, easy, strongName, fullSynopsis}
-
+// ====== Mapping genres / themes (Hardcore) ======
 const GENRE_MAP = {
   "Action": "action",
   "Drama": "drame",
@@ -221,46 +204,203 @@ function mapGenreTheme(w) {
   return GENRE_MAP[w] || String(w).toLowerCase();
 }
 
-function pickSecondaryStrongName(anime, titleWordSet) {
+// ====== Tokenisation spéciale (pour récupérer l’, d’, etc.) ======
+function preprocessForTokenize(text) {
+  // "l’humanité" -> "l' humanité" / "d’accord" -> "d' accord"
+  return String(text || "")
+    .replace(/(\b(?:l|d|j|t|m|n|s|c|qu|jusqu|lorsqu|puisqu|quoiqu))['’](?=[A-Za-zÀ-ÖØ-öø-ÿœæŒÆ])/gi, "$1' ");
+}
+
+function tokenizeWords(text) {
+  const t = preprocessForTokenize(text);
+  return t.match(/[A-Za-zÀ-ÖØ-öø-ÿœæŒÆ]+/g) || [];
+}
+
+function buildTitleBlockSet(anime) {
+  const titles = anime._titlesAll || [anime._title].filter(Boolean);
+  const set = new Set();
+  for (const tt of titles) {
+    const n = normalizeGuess(tt);
+    n.split(" ").forEach(w => {
+      if (w && w.length >= 4) set.add(w);
+    });
+  }
+  // ajoute aussi le nom animethemes s’il existe dans data brute
+  if (anime.animethemes && anime.animethemes.name) {
+    const n = normalizeGuess(anime.animethemes.name);
+    n.split(" ").forEach(w => { if (w && w.length >= 4) set.add(w); });
+  }
+  return set;
+}
+
+function extractProperNouns(original) {
+  const text = String(original || "");
+  const matches = text.match(/\b[A-ZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ][A-Za-zÀ-ÖØ-öø-ÿœæŒÆ-]{2,}\b/g) || [];
+  const out = [];
+  for (const m of matches) {
+    const n = normalizeGuess(m);
+    if (n && n.length >= 4) out.push(m.trim());
+  }
+  // dédoublonne en gardant forme originale la plus courte
+  const map = new Map();
+  for (const x of out) {
+    const k = normalizeGuess(x);
+    if (!map.has(k) || x.length < map.get(k).length) map.set(k, x);
+  }
+  return [...map.values()];
+}
+
+// ====== Noun-ish extraction ======
+function isGoodKeywordToken(norm, titleBlockSet) {
+  if (!norm) return false;
+  if (norm.length < 4) return false;
+  if (STOP.has(norm)) return false;
+  if (titleBlockSet.has(norm)) return false;
+  if (BAD_SUFFIX_RE.test(norm) && !ALWAYS_KEEP.has(norm)) return false;
+  return true;
+}
+
+function buildNounCountsFromSynopsis(fullSynopsis, titleBlockSet) {
+  const words = tokenizeWords(fullSynopsis);
+  const norms = words.map(w => normalizeGuess(w));
+  const counts = new Map();
+
+  for (let i = 0; i < norms.length; i++) {
+    const w = norms[i];
+    if (!w) continue;
+
+    const prev = norms[i - 1] || "";
+    const prevIsDetOrPrep = DET_SET.has(prev) || PREP_SET.has(prev);
+
+    // On garde surtout si précédé par déterminant/préposition, ou mot "domaine" always_keep
+    if (!prevIsDetOrPrep && !ALWAYS_KEEP.has(w)) continue;
+
+    if (!isGoodKeywordToken(w, titleBlockSet) && !ALWAYS_KEEP.has(w)) continue;
+
+    // évite quelques mots trop génériques restants
+    if (["classe","maison","école","lycée","collège"].includes(w) && !ALWAYS_KEEP.has(w)) {
+      // "école/lycée/collège" peuvent rester, mais "classe/maison" sont souvent trop faibles
+      if (w === "classe" || w === "maison") continue;
+    }
+
+    counts.set(w, (counts.get(w) || 0) + 1);
+  }
+
+  return counts;
+}
+
+function pickTopFromCounts(counts, excludeSet, max, minLen = 4) {
+  const arr = [...counts.entries()]
+    .filter(([k]) => k.length >= minLen)
+    .filter(([k]) => !excludeSet.has(k))
+    .sort((a, b) => {
+      // score: fréquence + longueur
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return b[0].length - a[0].length;
+    })
+    .map(([k]) => k);
+
+  return arr.slice(0, max);
+}
+
+// ====== Concepts (Hardcore/Moyen) ======
+const CONCEPT_RULES = [
+  ["organisation", ["organisation","agence","corps","unité","groupe","société","institut","laboratoire"]],
+  ["secret", ["secret","mystère","caché","mystérieux"]],
+  ["danger", ["danger","menace","catastrophe","mort","risque"]],
+  ["quête", ["quête","objectif","mission","recherche","trésor"]],
+  ["conflit", ["guerre","combat","bataille","affrontement"]],
+  ["survie", ["survie","survivre","échapper"]],
+  ["enquête", ["enquête","inspecteur","police","indices","crime","meurtre"]],
+  ["temps", ["temps","passé","futur","timeline","temporel"]],
+  ["sport", ["sport","match","tournoi","boxe","shogi","volley"]],
+  ["école", ["école","lycée","collège","classe"]],
+  ["science", ["scientifique","invention","expérience","machine","technologie"]],
+  ["famille", ["famille","parents","mère","père","sœur","frère"]],
+  ["rédemption", ["rédemption","pardon","regrets","culpabilité"]],
+];
+
+function detectConcepts(textNorm, max = 4) {
+  const found = [];
+  for (const [label, triggers] of CONCEPT_RULES) {
+    if (found.length >= max) break;
+    if (triggers.some(t => textNorm.includes(normalizeGuess(t)))) {
+      found.push(normalizeGuess(label));
+    }
+  }
+  return found;
+}
+
+// ====== Mots forts ======
+function pickSecondaryStrongName(anime, titleBlockSet) {
   const chars = Array.isArray(anime.characters) ? anime.characters : [];
   const top = Array.isArray(anime.top_characters) ? anime.top_characters : [];
   const topSet = new Set(top.map(c => normalizeGuess(c?.name || "")));
 
-  // 1) priorité : characters (secondaires), en excluant ceux présents dans top_characters
   let pool = chars
     .map(c => String(c?.name || "").trim())
     .filter(n => n.length >= 4)
     .filter(n => !topSet.has(normalizeGuess(n)))
     .filter(n => {
       const nw = normalizeGuess(n);
-      // évite d'avoir un mot très proche du titre
-      for (const w of titleWordSet) if (nw.includes(w)) return false;
+      // évite titre
+      for (const w of titleBlockSet) if (nw.includes(w)) return false;
       return true;
     });
 
-  // 2) fallback : top_characters mais on évite les 2 premiers (souvent le MC)
   if (pool.length === 0 && top.length >= 4) {
     pool = top.slice(2).map(c => String(c?.name || "").trim()).filter(n => n.length >= 4);
   }
-
   if (pool.length === 0) return "";
 
   shuffleInPlace(pool);
   return pool[0];
 }
 
-function pickKeywordsFromCounts(counts, excludeSet, max, minLen = 4) {
-  const entries = [...counts.entries()]
-    .filter(([k, v]) => k.length >= minLen)
-    .filter(([k]) => !excludeSet.has(k))
-    .sort((a, b) => {
-      // score: freq d'abord puis longueur
-      if (b[1] !== a[1]) return b[1] - a[1];
-      return b[0].length - a[0].length;
-    })
-    .map(([k]) => k);
+function pickProperNouns(originalSynopsis, titleBlockSet, max) {
+  const props = extractProperNouns(originalSynopsis);
+  const cleaned = [];
+  for (const p of props) {
+    const n = normalizeGuess(p);
+    if (!n || n.length < 4) continue;
+    if (STOP.has(n)) continue;
+    if (titleBlockSet.has(n)) continue;
+    // évite trucs trop communs en majuscule (ex: "Ever", "Now" si synopsis EN)
+    if (["ever","now","having","after"].includes(n)) continue;
+    cleaned.push(p);
+  }
+  // dédoublonne par normalisation
+  const seen = new Set();
+  const out = [];
+  for (const p of cleaned) {
+    const k = normalizeGuess(p);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(p);
+    if (out.length >= max) break;
+  }
+  return out;
+}
 
-  return entries.slice(0, max);
+// ====== Cache hints ======
+const hintsCache = new Map();
+
+function padWithBlanks(arr, minLen) {
+  while (arr.length < minLen) arr.push("----");
+  return arr;
+}
+
+function uniqueKeepOrder(arr) {
+  const seen = new Set();
+  const out = [];
+  for (const x of arr) {
+    const k = normalizeGuess(x);
+    if (!k) { out.push(x); continue; }
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(x);
+  }
+  return out;
 }
 
 function buildHintsForAnime(anime) {
@@ -268,125 +408,108 @@ function buildHintsForAnime(anime) {
   if (hintsCache.has(key)) return hintsCache.get(key);
 
   const fullSynopsis = cleanSynopsis(anime.synopsis || "");
-  const titleWordSet = buildTitleWordSet(anime._title || "");
-  const properNouns = extractProperNouns(anime.synopsis || "");
+  const textNorm = normalizeGuess(fullSynopsis);
+  const titleBlockSet = buildTitleBlockSet(anime);
 
-  // base tokens
-  const rawTokens = tokenizeFrench(fullSynopsis);
-  const filteredTokens = [];
+  const counts = buildNounCountsFromSynopsis(fullSynopsis, titleBlockSet);
 
-  for (const tok of rawTokens) {
-    const nf = normalizeTokenForFilter(tok);
-    const ng = normalizeGuess(nf);
-
-    if (!nf) continue;
-    if (nf.length < 4) continue;
-
-    // stop words / generic
-    if (STOP_FR.has(nf) || STOP_FR.has(ng)) continue;
-    if (GENERIC_BAD.has(nf) || GENERIC_BAD.has(ng)) continue;
-
-    // évite mots du titre
-    if (titleWordSet.has(ng)) continue;
-
-    // évite noms propres
-    if (properNouns.has(ng)) continue;
-
-    // évite chiffres
-    if (/\d/.test(nf)) continue;
-
-    filteredTokens.push(ng);
-  }
-
-  // counts
-  const counts = new Map();
-  for (const t of filteredTokens) counts.set(t, (counts.get(t) || 0) + 1);
-
-  // Hardcore: très général -> genres/themes + concepts trouvés
+  // === Hardcore ===
   const hardcore = [];
+
+  // 1) genres/themes (max 3-4)
   const g = Array.isArray(anime.genres) ? anime.genres : [];
   const th = Array.isArray(anime.themes) ? anime.themes : [];
   const gen = [...g, ...th].map(mapGenreTheme).filter(Boolean);
 
-  // prendre 4-6 genres/themes max
   for (const w of gen) {
     const nw = normalizeGuess(w);
-    if (!nw || STOP_FR.has(nw) || GENERIC_BAD.has(nw)) continue;
+    if (!nw) continue;
+    if (STOP.has(nw)) continue;
     if (!hardcore.includes(nw)) hardcore.push(nw);
-    if (hardcore.length >= 6) break;
+    if (hardcore.length >= 4) break;
   }
 
-  // compléter avec concepts très généraux détectés dans le synopsis
-  const textLow = normalizeGuess(fullSynopsis);
-  const conceptRules = [
-    ["organisation", ["organisation","corps","unité","agence","gouvernement","société","groupe"]],
-    ["secret", ["secret","mystère","caché","mystérieux"]],
-    ["danger", ["danger","menace","risque","mort","catastrophe"]],
-    ["quête", ["quête","objectif","mission","trésor","recherche"]],
-    ["conflit", ["guerre","combat","conflit","affrontement","bataille"]],
-    ["survie", ["survie","survivre","échapper","fuir"]],
-    ["expérience", ["expérience","scientifique","invention","laboratoire"]],
-    ["pouvoir", ["pouvoir","don","capacité","aptitude"]],
-  ];
-
-  for (const [label, triggers] of conceptRules) {
-    if (hardcore.length >= 8) break;
-    if (triggers.some(t => textLow.includes(normalizeGuess(t)))) {
-      const nl = normalizeGuess(label);
-      if (!hardcore.includes(nl) && !STOP_FR.has(nl) && !GENERIC_BAD.has(nl)) hardcore.push(nl);
-    }
+  // 2) concepts (max 3-4)
+  const concepts = detectConcepts(textNorm, 4);
+  for (const c of concepts) {
+    if (!hardcore.includes(c) && hardcore.length < HARDCORE_TARGET) hardcore.push(c);
   }
 
-  // si pas assez, on complète avec mots très fréquents mais “ok”
-  const hardcoreSet = new Set(hardcore);
-  if (hardcore.length < 8) {
-    const add = pickKeywordsFromCounts(counts, hardcoreSet, 8 - hardcore.length, 5);
-    for (const a of add) {
-      if (!hardcore.includes(a)) hardcore.push(a);
-      if (hardcore.length >= 8) break;
-    }
+  // 3) fill si nécessaire avec des noms assez "généraux"
+  if (hardcore.length < HARDCORE_TARGET) {
+    const exclude = new Set(hardcore);
+    const add = pickTopFromCounts(counts, exclude, HARDCORE_TARGET - hardcore.length, 5);
+    hardcore.push(...add);
   }
 
-  // Moyen: mots plus utiles, MAIS différents du hardcore (exclusion)
-  const medium = pickKeywordsFromCounts(counts, new Set(hardcore), 10, 5);
+  // clamp 5-8
+  const hardcoreFinal = padWithBlanks(uniqueKeepOrder(hardcore).slice(0, 8), 5).slice(0, HARDCORE_TARGET);
 
-  // Easy: plus spécifique (inclut quelques bigrams)
-  const easySetExclude = new Set([...hardcore, ...medium]);
+  // === Moyen ===
+  // Moyen peut réutiliser des termes du Hardcore si besoin, mais doit être plus clair + 0-1 mot fort.
+  const medium = [];
 
-  // bigrams depuis tokens filtrés (sans stopwords déjà)
-  const bigramCounts = new Map();
-  for (let i = 0; i < filteredTokens.length - 1; i++) {
-    const a = filteredTokens[i];
-    const b = filteredTokens[i + 1];
-    if (!a || !b) continue;
-    if (a.length < 4 || b.length < 4) continue;
-    const phrase = `${a} ${b}`;
-    if (phrase.length > 28) continue;
-    if (easySetExclude.has(a) || easySetExclude.has(b)) continue; // force nouveauté
-    bigramCounts.set(phrase, (bigramCounts.get(phrase) || 0) + 1);
+  // 1) prendre 1-2 termes du hardcore (les plus informatifs) si dispo
+  for (const w of hardcoreFinal) {
+    if (w === "----") continue;
+    if (medium.length >= 2) break;
+    medium.push(w);
   }
 
-  const bigrams = [...bigramCounts.entries()]
-    .sort((x, y) => y[1] - x[1])
-    .map(([p]) => p)
-    .slice(0, 4);
+  // 2) ajouter des noms concrets du synopsis (nouns), plus spécifiques
+  const mediumExclude = new Set(); // on n'interdit pas les overlaps, mais on évite les doublons
+  for (const w of medium) mediumExclude.add(normalizeGuess(w));
 
-  const easyTokens = pickKeywordsFromCounts(counts, easySetExclude, 12, 6);
-  const easy = [...bigrams, ...easyTokens].slice(0, 12);
+  const mediumAdds = pickTopFromCounts(counts, mediumExclude, MEDIUM_TARGET - medium.length, 5);
+  medium.push(...mediumAdds);
 
-  // placeholders si vraiment trop court
-  while (hardcore.length < 7) hardcore.push("----");
-  while (medium.length < 8) medium.push("----");
-  while (easy.length < 10) easy.push("----");
+  // 3) autoriser 0-1 mot fort (nom propre utile), si ça ne contient pas le titre
+  const props1 = pickProperNouns(anime.synopsis || "", titleBlockSet, 1);
+  if (props1.length && medium.length < MEDIUM_TARGET) {
+    medium.unshift(props1[0]); // en premier, ça aide la lecture
+  }
 
-  // Nom fort (secondaire) uniquement en Facile
-  const strongName = pickSecondaryStrongName(anime, titleWordSet);
+  const mediumFinal = padWithBlanks(uniqueKeepOrder(medium).slice(0, 8), 5).slice(0, MEDIUM_TARGET);
+
+  // === Facile ===
+  // Très informatif : mots forts autorisés (dans la limite 8) sauf titre.
+  const easy = [];
+
+  // 1) noms forts: secondaire + 1-2 noms propres (ex: Tokyo, SERN) + éventuellement un 2e perso
+  const strongName = pickSecondaryStrongName(anime, titleBlockSet);
+  if (strongName) easy.push(strongName);
+
+  const props = pickProperNouns(anime.synopsis || "", titleBlockSet, 2);
+  easy.push(...props);
+
+  // un autre nom de perso (si dispo) pour rendre facile vraiment facile (toujours sans titre)
+  const moreStrong = [];
+  const chars = Array.isArray(anime.characters) ? anime.characters : [];
+  for (const c of chars) {
+    const nm = String(c?.name || "").trim();
+    const nn = normalizeGuess(nm);
+    if (!nm || nn.length < 4) continue;
+    if (titleBlockSet.has(nn)) continue;
+    if (strongName && normalizeGuess(strongName) === nn) continue;
+    // on évite d'en mettre trop : 1 max (on garde le jeu)
+    moreStrong.push(nm);
+    if (moreStrong.length >= 1) break;
+  }
+  if (moreStrong.length) easy.push(...moreStrong);
+
+  // 2) ajouter des noms concrets (même si overlap), jusqu'à EASY_TARGET
+  const easyExclude = new Set();
+  for (const w of easy) easyExclude.add(normalizeGuess(w));
+
+  const easyAdds = pickTopFromCounts(counts, easyExclude, EASY_TARGET - easy.length, 4);
+  easy.push(...easyAdds);
+
+  const easyFinal = padWithBlanks(uniqueKeepOrder(easy).slice(0, 8), 5).slice(0, EASY_TARGET);
 
   const hints = {
-    hardcore,
-    medium,
-    easy,
-    strongName,
+    hardcore: hardcoreFinal,
+    medium: mediumFinal,
+    easy: easyFinal,
     fullSynopsis,
   };
 
@@ -552,7 +675,6 @@ function setBadgeAndStep() {
 
 function renderKeywords() {
   keywordsWrap.innerHTML = "";
-
   if (!currentHints) return;
 
   let list = [];
@@ -560,24 +682,13 @@ function renderKeywords() {
   else if (hintStep === 1) list = currentHints.medium || [];
   else list = currentHints.easy || [];
 
-  // Facile : +1 nom fort (secondaire)
-  const strong = (hintStep === 2 && currentHints.strongName) ? currentHints.strongName : "";
+  // clamp sécurité 5-8
+  const show = list.slice(0, 8);
 
-  const finalList = [...list];
-
-  // Ajoute le nom fort en premier (si présent), pour qu’il “aide” mais sans en mettre 10
-  if (strong) finalList.unshift(strong);
-
-  // Limite pour éviter un mur
-  const maxShow = hintStep === 0 ? 8 : hintStep === 1 ? 11 : 13;
-  const clipped = finalList.slice(0, maxShow);
-
-  clipped.forEach((w) => {
+  show.forEach((w) => {
     const pill = document.createElement("span");
     pill.className = "keyword-pill";
     pill.textContent = w;
-
-    if (strong && w === strong) pill.classList.add("strong");
     keywordsWrap.appendChild(pill);
   });
 
@@ -605,7 +716,6 @@ function resetRoundUI() {
 
   setScoreBar(STEP_SCORES[0]);
 
-  // supprime un reveal précédent
   document.querySelectorAll(".reveal-details").forEach(el => el.remove());
 }
 
@@ -706,7 +816,6 @@ function checkGuess() {
   }
 
   const g = normalizeGuess(guess);
-
   const acceptable = currentAnime._titlesNorm || [];
   const ok = acceptable.includes(g);
 
@@ -715,8 +824,8 @@ function checkGuess() {
     return;
   }
 
-  // mauvaise réponse -> débloque indice suivant
-  if (hintStep < MAX_STEPS - 1) {
+  // mauvaise réponse -> indice suivant
+  if (hintStep < 2) {
     hintStep += 1;
     setScoreBar(STEP_SCORES[hintStep] ?? 0);
     renderKeywords();
@@ -732,16 +841,12 @@ function checkGuess() {
     return;
   }
 
-  // déjà en Facile -> perdre
   loseRound();
 }
 
 submitBtn.addEventListener("click", checkGuess);
-
 input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) {
-    checkGuess();
-  }
+  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) checkGuess();
 });
 
 // ====== Autocomplete ======
@@ -757,9 +862,7 @@ input.addEventListener("input", function () {
   if (!val) return;
 
   const titles = [...new Set(filteredAnimes.map(a => a._title))];
-  const matches = titles
-    .filter(t => t.toLowerCase().includes(val))
-    .slice(0, 7);
+  const matches = titles.filter(t => t.toLowerCase().includes(val)).slice(0, 7);
 
   matches.forEach((title) => {
     const div = document.createElement("div");
@@ -774,9 +877,8 @@ input.addEventListener("input", function () {
     suggestions.appendChild(div);
   });
 
-  // autorise submit uniquement si titre exact (évite fautes)
-  const exact = titles.map(t => t.toLowerCase()).includes(val);
-  submitBtn.disabled = !exact;
+  // submit seulement si titre exact (évite approximations)
+  submitBtn.disabled = !titles.map(t => t.toLowerCase()).includes(val);
 });
 
 // ====== Tooltip ======
