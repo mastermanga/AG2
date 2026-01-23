@@ -3,10 +3,11 @@
  * - 4 items, 1 intrus
  * - Anime: A direct, puis +1 image / seconde, puis thème + choix
  * - Songs: écoute A→D (player caché), puis thème + choix
+ * - Après réponse en Songs: on révèle image + label complet sur les 4 cartes
  *
- * THEMES CONTENU (✅ modifiés)
- * - Anime: YEAR, STUDIO, POP25, SCOREBIN (TAG supprimé)
- * - Songs: LICENSE, YEAR, ARTIST, SONG_TYPE (STUDIO supprimé)
+ * THEMES CONTENU
+ * - Anime: YEAR, STUDIO, POP25, SCOREBIN
+ * - Songs: LICENSE, YEAR, ARTIST, SONG_TYPE
  *
  * Thème affiché: UNIQUEMENT le nom (pas de valeur).
  **********************/
@@ -120,14 +121,29 @@ function computePopBands(items, getMembers){
   const n = arr.length || 1;
   const bandByKey = new Map();
   for (let i = 0; i < arr.length; i++) {
-    const pct = i / n; // 0..(n-1)/n
+    const pct = i / n;
     const band = Math.min(3, Math.floor(pct * 4));
     bandByKey.set(arr[i]._key, band);
   }
   return bandByKey;
 }
 
-// ====== songs extraction ======
+// ====== SONG LABEL FORMAT ======
+function songTypeLabel(t){
+  if (t === "OP") return "OP";
+  if (t === "ED") return "ED";
+  return "IN";
+}
+function formatSongFullLabel(s){
+  const anime = s.animeTitle || "Anime";
+  const type = songTypeLabel(s.songType);
+  const num = s.songNumber ? ` ${s.songNumber}` : "";
+  const name = s.songName ? ` — ${s.songName}` : "";
+  const artists = s.songArtists ? ` — ${s.songArtists}` : "";
+  return `${anime} ${type}${num}${name}${artists}`;
+}
+
+// ====== songs extraction (✅ ajoute image + artists string) ======
 function extractSongsFromAnime(anime) {
   const out = [];
   const song = anime.song || {};
@@ -146,6 +162,7 @@ function extractSongsFromAnime(anime) {
       if (!url || typeof url !== "string" || url.length < 6) continue;
 
       const artistsArr = Array.isArray(it.artists) ? it.artists.filter(Boolean) : [];
+      const songArtists = artistsArr.join(", ");
       const songYear = getYearFromSeasonStr(it.season, anime._year);
 
       out.push({
@@ -154,6 +171,7 @@ function extractSongsFromAnime(anime) {
         songName: it.name || "",
         songNumber: safeNum(it.number) || 1,
         artistsArr,
+        songArtists,
         songYear,
 
         animeTitle: anime._title,
@@ -161,7 +179,8 @@ function extractSongsFromAnime(anime) {
         animeYear: anime._year,
         animeMembers: anime._members,
         animeScore: anime._score,
-        animeStudio: anime._studio || "",
+
+        image: anime.image || "",
 
         licenseId,
         url,
@@ -228,9 +247,9 @@ let currentRound = 1;
 let scoreCorrect = 0;
 let scoreTotal = 0;
 
-let currentThemeKey = null;     // e.g. POP25
+let currentThemeKey = null;
 let currentIntrusIndex = 0;
-let roundItems = [];           // 4 items
+let roundItems = [];
 let selectionEnabled = false;
 let answered = false;
 
@@ -387,7 +406,7 @@ function updateRoundLabel() {
   roundLabel.textContent = `Round ${currentRound} / ${totalRounds} — Score ${scoreCorrect}/${scoreTotal}`;
 }
 
-// ====== THEME DISPLAY (✅ only theme name) ======
+// ====== THEME DISPLAY (only theme name) ======
 const THEME_LABELS = {
   // Anime
   YEAR: "Année",
@@ -396,8 +415,10 @@ const THEME_LABELS = {
   SCOREBIN: "Score",
   // Songs
   LICENSE: "Licence",
+  YEAR_SONG: "Année",
   ARTIST: "Artiste",
   SONG_TYPE: "Type",
+  YEAR: "Année",
 };
 function showThemeOnly(themeKey) {
   const label = THEME_LABELS[themeKey] || "Thème";
@@ -457,6 +478,7 @@ function applyFilters() {
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
+  // ✅ on garde aussi les infos d’affichage pour reveal après réponse
   return pool.map(s => ({
     kind: "song",
     _key: s._key,
@@ -464,11 +486,17 @@ function applyFilters() {
     licenseId: s.licenseId || 0,
 
     songType: s.songType,
+    songName: s.songName || "",
+    songNumber: s.songNumber || 1,
+    songArtists: s.songArtists || "",
     artistsArr: Array.isArray(s.artistsArr) ? s.artistsArr : [],
+
     songYear: s.songYear || 0,
     animeYear: s.animeYear || 0,
 
-    // pour filtres/stats internes si besoin
+    animeTitle: s.animeTitle || "Anime",
+    image: s.image || "",
+
     animeMembers: s.animeMembers || 0,
     animeScore: s.animeScore || 0,
   }));
@@ -603,16 +631,10 @@ function pickFrom(arr, n, forbidKeysSet = null){
   }
   return out;
 }
-function anyDifferent(arr, predicate){
-  if (arr.length < 2) return false;
-  const first = predicate(arr[0]);
-  return arr.some(x => predicate(x) !== first);
-}
 
 function buildRoundAnime(pool){
   const THEMES = ["YEAR", "STUDIO", "POP25", "SCOREBIN"];
   const MAX_TRIES = 120;
-
   const popBands = computePopBands(pool, it => it.members);
 
   for (let t = 0; t < MAX_TRIES; t++) {
@@ -643,7 +665,6 @@ function buildRoundAnime(pool){
     }
 
     if (themeKey === "POP25") {
-      // group by band
       const g = new Map();
       for (const it of pool) {
         const band = popBands.get(it._key);
@@ -674,14 +695,12 @@ function buildRoundAnime(pool){
     const intrusIndex = items.findIndex(x => x._key === intrus._key);
     if (intrusIndex < 0) continue;
 
-    // petit anti-repeat global (si possible)
     const newCount = items.filter(x => !usedKeysGlobal.has(x._key)).length;
     if (usedKeysGlobal.size > 0 && newCount < 2 && pool.length > 120) continue;
 
     return { items, intrusIndex, themeKey };
   }
 
-  // fallback: random 4 (intrus random) — rare
   const items = pickFrom(pool, 4);
   return { items, intrusIndex: Math.floor(Math.random() * 4), themeKey: "YEAR" };
 }
@@ -689,7 +708,6 @@ function buildRoundAnime(pool){
 function buildRoundSongs(pool){
   const THEMES = ["LICENSE", "YEAR", "ARTIST", "SONG_TYPE"];
   const MAX_TRIES = 140;
-
   const getYearVal = (s) => (s.songYear || s.animeYear || 0);
 
   for (let t = 0; t < MAX_TRIES; t++) {
@@ -731,7 +749,6 @@ function buildRoundSongs(pool){
     }
 
     if (themeKey === "ARTIST") {
-      // map artist -> songs containing it
       const map = new Map();
       for (const s of pool) {
         const arts = Array.isArray(s.artistsArr) ? s.artistsArr.filter(Boolean) : [];
@@ -837,6 +854,33 @@ function revealAnimeCard(i) {
   if (title) title.textContent = it.title || "";
 }
 
+// ✅ reveal songs details AFTER answer
+function revealSongCardAfterAnswer(i) {
+  const it = roundItems[i];
+  const li = choiceList.querySelector(`li[data-index="${i}"]`);
+  if (!li || !it) return;
+
+  // remplace la box par une cover image
+  const oldBox = li.querySelector(".intrus-song-box");
+  if (oldBox) {
+    const cover = document.createElement("div");
+    cover.className = "intrus-cover";
+    cover.innerHTML = "";
+
+    const img = document.createElement("img");
+    img.src = it.image || "";
+    img.alt = it.animeTitle || `Song ${LETTERS[i]}`;
+    img.loading = "lazy";
+    img.decoding = "async";
+    cover.appendChild(img);
+
+    oldBox.replaceWith(cover);
+  }
+
+  const title = li.querySelector(".intrus-title");
+  if (title) title.textContent = formatSongFullLabel(it);
+}
+
 function enableChoiceButtons() {
   selectionEnabled = true;
   answered = false;
@@ -868,8 +912,7 @@ function startRevealAnime(localRound) {
     revealStatusEl.textContent = `🖼️ Révélation : ${idx} / 4`;
   };
 
-  // A direct
-  step();
+  step(); // A direct
   revealTimer = setInterval(step, 1000);
 }
 
@@ -975,6 +1018,11 @@ function onPick(index) {
 
   updateRoundLabel();
 
+  // ✅ APRÈS RÉPONSE : reveal songs (image + label complet)
+  if (currentMode === "songs") {
+    for (let i = 0; i < 4; i++) revealSongCardAfterAnswer(i);
+  }
+
   const chosenLi = choiceList.querySelector(`li[data-index="${index}"]`);
   if (chosenLi) chosenLi.classList.add("intrus-picked");
 
@@ -989,7 +1037,6 @@ function onPick(index) {
     resultDiv.textContent = "❌ Raté…";
   }
 
-  // anti-repeat global (marque)
   for (const it of roundItems) usedKeysGlobal.add(it._key);
 
   nextBtn.style.display = "inline-block";
@@ -1000,7 +1047,6 @@ function onPick(index) {
       currentRound++;
       startRound();
     } else {
-      // parcours report
       if (isParcours) {
         try { parent.postMessage({ parcoursScore: { label: "Intrus", score: scoreCorrect, total: scoreTotal } }, "*"); } catch {}
       }
@@ -1016,11 +1062,6 @@ function startRound() {
   resetRoundUI();
   updateRoundLabel();
 
-  // remove previous highlights
-  [...choiceList.querySelectorAll("li")].forEach(li => {
-    li.classList.remove("intrus-picked","intrus-correct","intrus-wrong");
-  });
-
   const minNeeded = Math.max(8, MIN_REQUIRED);
   if (!filteredPool || filteredPool.length < minNeeded) {
     resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
@@ -1030,7 +1071,6 @@ function startRound() {
     return;
   }
 
-  // build round
   let built;
   if (currentMode === "songs") built = buildRoundSongs(filteredPool);
   else built = buildRoundAnime(filteredPool);
@@ -1041,7 +1081,6 @@ function startRound() {
 
   renderInitialCards();
 
-  // reveal
   if (currentMode === "songs") startRevealSongs(roundToken);
   else startRevealAnime(roundToken);
 }
@@ -1072,7 +1111,6 @@ fetch("../data/licenses_only.json")
     allSongs = [];
     for (const a of allAnimes) allSongs.push(...extractSongsFromAnime(a));
 
-    // init player hard rules
     try {
       songPlayer.controls = false;
       songPlayer.muted = false;
