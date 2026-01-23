@@ -1,39 +1,44 @@
 /**********************
  * Fake Or Truth — Anti-bug media (A pinned) + Sync improvements
+ * ✅ Extrait: 0s → 20s
  * ✅ 6 tentatives: 0,2,4,6,8,10s
- * ✅ Buffer gating (ahead) sur A ET B avant start
- * ✅ Tentative 0: charge A+B en parallèle
+ * ✅ Buffer-ahead adaptatif: 1.2s puis 0.7s après 2 tentatives
+ * ✅ Warmup muet 0.25s après pin (si possible)
  * ✅ Start muted + attendre progression des 2 + snap sync + unmute audio seulement
- * ✅ Min-delay "Synchronisation..." pour uniformiser (A=B ne démarre pas "trop vite")
- * ✅ Correction de désync: snap + micro playbackRate temporaire (vidéo mute)
- * ✅ Stall FIX: watchdog "le temps n'avance plus"
- * ✅ Si échec total -> duel fini, joueur clique "Round suivant"
+ * ✅ Score: 1000 points / round
  **********************/
 
-const MAX_SCORE = 3000;
+const MAX_SCORE = 1000;
 const MIN_REQUIRED_SONGS = 64;
 
-const LISTEN_START = 45;
-const LISTEN_DURATION = 30;
+const LISTEN_START = 0;
+const LISTEN_DURATION = 20;
 
 // ✅ 6 tentatives
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 
 const LOAD_TIMEOUT_MS = 16000;
-const SEEK_TIMEOUT_MS = 10000;
+const SEEK_TIMEOUT_MS = 8000;
 
-// ✅ gating buffer
-const BUFFER_AHEAD_SEC = 1.5;     // on exige 1.5s de buffer après 45s sur A et B
-const BUFFER_WAIT_MS = 6500;      // temps max pour attendre le buffer avant de considérer retry
+// ✅ buffer gating adaptatif
+const BUFFER_AHEAD_PRIMARY = 1.2;
+const BUFFER_AHEAD_FALLBACK = 0.7;
+const BUFFER_AHEAD_DROP_AFTER = 2; // >= 2 tentatives -> fallback
 
-// ✅ uniformiser l'expérience (A=B ne "part" pas instant)
-const MIN_SYNC_DELAY_MS = 550;
+const BUFFER_WAIT_MS = 5500;
+
+// ✅ warmup
+const WARMUP_SEC = 0.25;
+const WARMUP_TIMEOUT_MS = 1200;
+
+// ✅ uniformiser
+const MIN_SYNC_DELAY_MS = 450;
 
 // ✅ start gating (progress)
-const START_ADVANCE_DELTA = 0.10; // on attend que les deux aient avancé au moins 0.10s
-const START_ADVANCE_TIMEOUT_MS = 4500;
+const START_ADVANCE_DELTA = 0.10;
+const START_ADVANCE_TIMEOUT_MS = 3500;
 
-// ✅ stall "réel"
+// stall léger (moins agressif maintenant que start=0)
 const STALL_TIMEOUT_MS = 14000;
 const STALL_POLL_MS = 500;
 
@@ -129,9 +134,14 @@ async function waitBufferAhead(el, baseT, aheadSec, maxWaitMs, localToken) {
   while (performance.now() < end) {
     if (localToken !== roundToken) return false;
     if (el.readyState >= 3 && isTimeBuffered(el, baseT, aheadSec)) return true;
-    await delay(120);
+    await delay(110);
   }
-  return el.readyState >= 3 && isTimeBuffered(el, baseT, Math.min(0.25, aheadSec));
+  return el.readyState >= 3 && isTimeBuffered(el, baseT, Math.min(0.20, aheadSec));
+}
+
+function computeAhead() {
+  const severity = Math.max(pinnedA.attempt, pinnedB.attempt);
+  return severity >= BUFFER_AHEAD_DROP_AFTER ? BUFFER_AHEAD_FALLBACK : BUFFER_AHEAD_PRIMARY;
 }
 
 // ====== Songs extraction ======
@@ -262,10 +272,9 @@ function showGame() {
 
 // ====== Score bar ======
 function getScoreBarColor(score) {
-  if (score >= 2500) return "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
-  if (score >= 1500) return "linear-gradient(90deg,#fff96a,#ffc34b 90%)";
-  if (score >= 1000) return "linear-gradient(90deg,#ffb347,#fd654c 90%)";
-  if (score > 0) return "linear-gradient(90deg,#fd654c,#cb202d 90%)";
+  if (score >= MAX_SCORE * 0.85) return "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
+  if (score >= MAX_SCORE * 0.6) return "linear-gradient(90deg,#fff96a,#ffc34b 90%)";
+  if (score > 0) return "linear-gradient(90deg,#ffb347,#fd654c 90%)";
   return "linear-gradient(90deg,#444,#333 90%)";
 }
 function updateScoreBar(forceScore = null) {
@@ -310,15 +319,12 @@ function lockForRound() {
 }
 function revealVideoAWithAudio() {
   stopPlayback();
-
-  // éviter double audio
   try { audioPlayer.removeAttribute("src"); audioPlayer.load(); } catch {}
 
   videoPlayer.muted = false;
   videoPlayer.controls = true;
   videoPlayer.setAttribute("controls", "controls");
 
-  // reveal au même endroit (45s)
   try { videoPlayer.currentTime = LISTEN_START; } catch {}
 }
 
@@ -359,9 +365,63 @@ function waitEvent(el, okEvent, badEvents, timeoutMs, localToken) {
   });
 }
 
+// ====== Warmup muet ======
+async function warmupPlayMuted(el, localToken) {
+  if (localToken !== roundToken) return false;
+
+  const prevMuted = el.muted;
+  const prevRate = el.playbackRate;
+
+  try {
+    el.muted = true;
+    el.playbackRate = 1.0;
+
+    // tentative de play muet (souvent autorisé)
+    const p = el.play();
+    if (p && typeof p.then === "function") await p;
+
+    const target = (LISTEN_START || 0) + WARMUP_SEC;
+    const end = performance.now() + WARMUP_TIMEOUT_MS;
+
+    while (performance.now() < end) {
+      if (localToken !== roundToken) return false;
+      if ((el.currentTime || 0) >= target) break;
+      await delay(50);
+    }
+
+    try { el.pause(); } catch {}
+    try { el.currentTime = LISTEN_START; } catch {}
+
+    return true;
+  } catch {
+    // si autoplay/warmup bloqué, on ignore (pas grave)
+    try { el.pause(); } catch {}
+    try { el.currentTime = LISTEN_START; } catch {}
+    return false;
+  } finally {
+    el.muted = prevMuted;
+    el.playbackRate = prevRate;
+  }
+}
+
 // ====== Seek & pin ======
 async function ensurePinnedAt(el, t, localToken) {
   if (localToken !== roundToken) return false;
+
+  // cas start=0 : ne pas attendre "seeked" (souvent pas émis)
+  if (t <= 0.01) {
+    try { el.pause(); } catch {}
+    // attendre un état jouable
+    if (el.readyState >= 3 && isTimeBuffered(el, 0, 0.20)) return true;
+    try {
+      await waitEvent(el, "canplay", ["error"], SEEK_TIMEOUT_MS, localToken);
+    } catch {
+      return false;
+    }
+    try { el.pause(); } catch {}
+    try { el.currentTime = 0; } catch {}
+    return el.readyState >= 3;
+  }
 
   if (el.readyState >= 3 && isTimeBuffered(el, t, 0.20)) {
     try { el.pause(); } catch {}
@@ -370,8 +430,9 @@ async function ensurePinnedAt(el, t, localToken) {
 
   try { el.currentTime = t; } catch {}
 
+  // seeked peut ne pas arriver si clamp, donc on ne bloque pas trop
   try {
-    await waitEvent(el, "seeked", ["error"], SEEK_TIMEOUT_MS, localToken);
+    await waitEvent(el, "seeked", ["error"], Math.min(2500, SEEK_TIMEOUT_MS), localToken);
   } catch {}
 
   if (localToken !== roundToken) return false;
@@ -418,6 +479,9 @@ async function loadAndPin(el, url, attempt, label, localToken) {
   const okPin = await ensurePinnedAt(el, LISTEN_START, localToken);
   if (!okPin || localToken !== roundToken) return false;
 
+  // warmup muet (améliore la stabilité du premier play)
+  await warmupPlayMuted(el, localToken);
+
   try { el.pause(); } catch {}
   return true;
 }
@@ -449,8 +513,9 @@ function handleStall(localToken) {
   stopPlayback();
   clearSegment();
 
-  const aBad = videoPlayer.readyState < 3 || !isTimeBuffered(videoPlayer, videoPlayer.currentTime || LISTEN_START, 0.10);
-  const bBad = audioPlayer.readyState < 3 || !isTimeBuffered(audioPlayer, audioPlayer.currentTime || LISTEN_START, 0.10);
+  // décider quel média relancer en priorité
+  const aBad = videoPlayer.readyState < 3 || !isTimeBuffered(videoPlayer, videoPlayer.currentTime || 0, 0.10);
+  const bBad = audioPlayer.readyState < 3 || !isTimeBuffered(audioPlayer, audioPlayer.currentTime || 0, 0.10);
 
   if (bBad && !aBad) {
     pinnedB.ok = false;
@@ -477,7 +542,6 @@ function armSegment(localToken) {
   lastProgressT = Math.max(videoPlayer.currentTime || 0, audioPlayer.currentTime || 0);
   lastProgressWall = performance.now();
 
-  // watchdog stall (time not advancing)
   stallWatchId = setInterval(() => {
     if (!segmentActive) return;
     if (localToken !== roundToken) return;
@@ -496,7 +560,6 @@ function armSegment(localToken) {
     }
   }, STALL_POLL_MS);
 
-  // fin segment
   endCheckId = setInterval(() => {
     if (!segmentActive) return;
     if (localToken !== roundToken) return;
@@ -515,7 +578,7 @@ function armSegment(localToken) {
 
 // ====== Pair selection (1/3 rules) ======
 function pickDifferentAnimeSong(base) {
-  for (let i = 0; i < 140; i++) {
+  for (let i = 0; i < 160; i++) {
     const cand = pickRandom(filteredSongs);
     if (!cand?.url) continue;
     if (cand.url === base.url) continue;
@@ -538,7 +601,7 @@ function choosePair() {
   const A = pickRandom(filteredSongs);
   if (!A?.url) return null;
 
-  const r = Math.floor(Math.random() * 3); // 0,1,2
+  const r = Math.floor(Math.random() * 3);
   if (r === 0) return { A, B: A, isMatch: true };
 
   if (r === 2) {
@@ -578,7 +641,7 @@ function finishRoundFailure(reasonText) {
   resultDiv.innerHTML = `
     ❌ Duel annulé (problème média).<br>
     <em>${reasonText || "Impossible de charger après plusieurs tentatives."}</em>
-    <div style="margin-top:8px;">Score : <b>0</b> / 3000</div>
+    <div style="margin-top:8px;">Score : <b>0</b> / ${MAX_SCORE}</div>
   `;
   resultDiv.className = "incorrect";
   updateScoreBar(0);
@@ -621,26 +684,19 @@ function isNotAllowedError(reason) {
 
 async function waitBothAdvance(localToken, baseTime, delta, timeoutMs) {
   const end = performance.now() + timeoutMs;
-
   const target = baseTime + delta;
+
   while (performance.now() < end) {
     if (localToken !== roundToken) return { ok: false };
-
     const tv = videoPlayer.currentTime || 0;
     const ta = audioPlayer.currentTime || 0;
-
     if (tv >= target && ta >= target) return { ok: true };
     await delay(60);
   }
 
-  // diagnostic: lequel n'avance pas ?
   const tv = videoPlayer.currentTime || 0;
   const ta = audioPlayer.currentTime || 0;
-  return {
-    ok: false,
-    vOk: tv >= (baseTime + Math.min(0.03, delta)),
-    aOk: ta >= (baseTime + Math.min(0.03, delta)),
-  };
+  return { ok: false, vOk: tv >= (baseTime + 0.02), aOk: ta >= (baseTime + 0.02) };
 }
 
 function snapVideoToAudio() {
@@ -654,7 +710,6 @@ function snapVideoToAudio() {
 }
 
 function microRateCorrector(localToken) {
-  // vidéo mute => on peut micro-ajuster sans "effet audio"
   const start = performance.now();
   const timer = setInterval(() => {
     if (localToken !== roundToken) { clearInterval(timer); return; }
@@ -662,9 +717,8 @@ function microRateCorrector(localToken) {
     const ta = audioPlayer.currentTime || 0;
     const dv = ta - tv;
 
-    // derrière => accélère un peu
-    if (dv > 0.08) videoPlayer.playbackRate = 1.06;
-    else if (dv < -0.08) videoPlayer.playbackRate = 0.94;
+    if (dv > 0.07) videoPlayer.playbackRate = 1.06;
+    else if (dv < -0.07) videoPlayer.playbackRate = 0.94;
     else videoPlayer.playbackRate = 1.0;
 
     if (performance.now() - start > 900) {
@@ -674,11 +728,11 @@ function microRateCorrector(localToken) {
   }, 120);
 }
 
-// ====== cœur du système : pinned + load gating + start sync ======
+// ====== cœur pinned + gating + start ======
 async function autoStartPinned(localToken) {
   if (localToken !== roundToken) return;
 
-  // ---------- (A) Tentative 0: charge A+B en parallèle ----------
+  // Tentative 0: charge A+B en parallèle
   if (!pinnedA.ok && !pinnedB.ok && pinnedA.attempt === 0 && pinnedB.attempt === 0) {
     setMediaStatus("⏳ Préchargement A+B…");
 
@@ -699,7 +753,7 @@ async function autoStartPinned(localToken) {
     if (!okB) pinnedB.attempt = 1;
   }
 
-  // ---------- (B) Charger + pin A (retry A only) ----------
+  // Charger + pin A (retry A only)
   while (!pinnedA.ok && pinnedA.attempt < RETRY_DELAYS.length) {
     if (localToken !== roundToken) return;
 
@@ -716,7 +770,7 @@ async function autoStartPinned(localToken) {
     return finishRoundFailure("Vidéo A : échec après 6 tentatives.");
   }
 
-  // ---------- (C) Charger + pin B (retry B only) ----------
+  // Charger + pin B (retry B only)
   while (!pinnedB.ok && pinnedB.attempt < RETRY_DELAYS.length) {
     if (localToken !== roundToken) return;
 
@@ -733,32 +787,12 @@ async function autoStartPinned(localToken) {
     return finishRoundFailure("Audio B : échec après 6 tentatives.");
   }
 
-  // ---------- (D) Buffer gating (ahead) sur A ET B ----------
+  // Buffer gating adaptatif
   setMediaStatus("🔄 Synchronisation…");
-
-  // uniformiser: même si A=B et tout est instant, on garde un min délai
   const syncT0 = performance.now();
+  const ahead = computeAhead();
 
-  // repin si besoin
-  if (!(videoPlayer.readyState >= 3 && isTimeBuffered(videoPlayer, LISTEN_START, 0.12))) {
-    const okRepinA = await ensurePinnedAt(videoPlayer, LISTEN_START, localToken);
-    if (!okRepinA) {
-      pinnedA.ok = false;
-      pinnedA.attempt = Math.min(pinnedA.attempt + 1, RETRY_DELAYS.length);
-      return autoStartPinned(localToken);
-    }
-  }
-  if (!(audioPlayer.readyState >= 3 && isTimeBuffered(audioPlayer, LISTEN_START, 0.12))) {
-    const okRepinB = await ensurePinnedAt(audioPlayer, LISTEN_START, localToken);
-    if (!okRepinB) {
-      pinnedB.ok = false;
-      pinnedB.attempt = Math.min(pinnedB.attempt + 1, RETRY_DELAYS.length);
-      return autoStartPinned(localToken);
-    }
-  }
-
-  // attendre buffer ahead
-  const okBufA = await waitBufferAhead(videoPlayer, LISTEN_START, BUFFER_AHEAD_SEC, BUFFER_WAIT_MS, localToken);
+  const okBufA = await waitBufferAhead(videoPlayer, LISTEN_START, ahead, BUFFER_WAIT_MS, localToken);
   if (localToken !== roundToken) return;
   if (!okBufA) {
     pinnedA.ok = false;
@@ -766,7 +800,7 @@ async function autoStartPinned(localToken) {
     return autoStartPinned(localToken);
   }
 
-  const okBufB = await waitBufferAhead(audioPlayer, LISTEN_START, BUFFER_AHEAD_SEC, BUFFER_WAIT_MS, localToken);
+  const okBufB = await waitBufferAhead(audioPlayer, LISTEN_START, ahead, BUFFER_WAIT_MS, localToken);
   if (localToken !== roundToken) return;
   if (!okBufB) {
     pinnedB.ok = false;
@@ -774,21 +808,20 @@ async function autoStartPinned(localToken) {
     return autoStartPinned(localToken);
   }
 
-  // ---------- (E) Start muted + attendre progression des 2 + snap + unmute audio ----------
+  // Start muted + wait both advance + snap + unmute audio
   stopPlayback();
   clearSegment();
   lockForRound();
 
-  // start muted BOTH (masque l'indice "ça lag")
   const prevVMuted = videoPlayer.muted;
   const prevAMuted = audioPlayer.muted;
+
   videoPlayer.muted = true;
   audioPlayer.muted = true;
 
   try { videoPlayer.currentTime = LISTEN_START; } catch {}
   try { audioPlayer.currentTime = LISTEN_START; } catch {}
 
-  // on prépare le segment (stall watchdog + fin)
   armSegment(localToken);
 
   const res = await Promise.allSettled([videoPlayer.play(), audioPlayer.play()]);
@@ -796,31 +829,26 @@ async function autoStartPinned(localToken) {
 
   const reasons = res.filter(r => r.status === "rejected").map(r => r.reason);
   if (reasons.some(isNotAllowedError)) {
-    // autoplay bloqué => on ne reload pas, on attend un clic puis on tente play à nouveau
     setMediaStatus("▶️ Clique dans la carte pour lancer");
     const onTap = async () => {
       containerEl.removeEventListener("click", onTap);
       if (localToken !== roundToken) return;
 
       try {
-        // toujours muted pour l'arm sync
         videoPlayer.muted = true;
         audioPlayer.muted = true;
 
         await Promise.all([videoPlayer.play(), audioPlayer.play()]);
 
-        // attendre que les deux avancent
         const adv = await waitBothAdvance(localToken, LISTEN_START, START_ADVANCE_DELTA, START_ADVANCE_TIMEOUT_MS);
         if (!adv.ok) throw new Error("advance-timeout");
 
         snapVideoToAudio();
         microRateCorrector(localToken);
 
-        // min delay
         const left = MIN_SYNC_DELAY_MS - (performance.now() - syncT0);
         if (left > 0) await delay(left);
 
-        // on unmute seulement l'audio B
         videoPlayer.muted = true;
         audioPlayer.muted = false;
         applyVolume();
@@ -828,7 +856,6 @@ async function autoStartPinned(localToken) {
       } catch {
         stopPlayback();
         clearSegment();
-        // restore muted
         videoPlayer.muted = prevVMuted;
         audioPlayer.muted = prevAMuted;
         finishRoundFailure("Autoplay bloqué / impossible de lancer.");
@@ -853,6 +880,7 @@ async function autoStartPinned(localToken) {
     audioPlayer.muted = prevAMuted;
     return autoStartPinned(localToken);
   }
+
   if (aFail) {
     pinnedB.ok = false;
     pinnedB.attempt = Math.min(pinnedB.attempt + 1, RETRY_DELAYS.length);
@@ -861,14 +889,13 @@ async function autoStartPinned(localToken) {
     return autoStartPinned(localToken);
   }
 
-  // attendre que les deux aient réellement commencé (sinon ça part décalé)
   const adv = await waitBothAdvance(localToken, LISTEN_START, START_ADVANCE_DELTA, START_ADVANCE_TIMEOUT_MS);
   if (localToken !== roundToken) return;
 
   if (!adv.ok) {
     stopPlayback();
     clearSegment();
-    // retry uniquement celui qui n'avance pas
+
     if (adv.vOk === false) {
       pinnedA.ok = false;
       pinnedA.attempt = Math.min(pinnedA.attempt + 1, RETRY_DELAYS.length);
@@ -877,20 +904,18 @@ async function autoStartPinned(localToken) {
       pinnedB.ok = false;
       pinnedB.attempt = Math.min(pinnedB.attempt + 1, RETRY_DELAYS.length);
     }
+
     videoPlayer.muted = prevVMuted;
     audioPlayer.muted = prevAMuted;
     return autoStartPinned(localToken);
   }
 
-  // snap sync + micro correction rate
   snapVideoToAudio();
   microRateCorrector(localToken);
 
-  // min delay pour uniformiser A=B vs A!=B
   const left = MIN_SYNC_DELAY_MS - (performance.now() - syncT0);
   if (left > 0) await delay(left);
 
-  // unmute seulement l'audio
   videoPlayer.muted = true;
   audioPlayer.muted = false;
   applyVolume();
@@ -898,7 +923,7 @@ async function autoStartPinned(localToken) {
   setMediaStatus("▶️ Lecture…");
 }
 
-// ====== Answer ======
+// ====== Answer / Score ======
 function endRoundAndMaybeNext(roundScore) {
   totalScore += roundScore;
 
@@ -906,7 +931,7 @@ function endRoundAndMaybeNext(roundScore) {
     resultDiv.innerHTML += `
       <div style="margin-top:10px; font-weight:900; opacity:0.95;">
         ✅ Série terminée !<br>
-        Score total : <b>${totalScore}</b> / <b>${totalRounds * 3000}</b>
+        Score total : <b>${totalScore}</b> / <b>${totalRounds * MAX_SCORE}</b>
       </div>
     `;
 
@@ -949,7 +974,7 @@ function checkAnswer(userSaysMatch) {
       🎉 Bonne réponse !<br><b>${verdict}</b>
       <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
       <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
-      <div style="margin-top:8px;">Score : <b>${score}</b> / 3000</div>
+      <div style="margin-top:8px;">Score : <b>${score}</b> / ${MAX_SCORE}</div>
     `;
     resultDiv.className = "correct";
     updateScoreBar(score);
@@ -961,7 +986,7 @@ function checkAnswer(userSaysMatch) {
       Réponse correcte : <b>${verdict}</b>
       <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
       <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
-      <div style="margin-top:8px;">Score : <b>0</b> / 3000</div>
+      <div style="margin-top:8px;">Score : <b>0</b> / ${MAX_SCORE}</div>
     `;
     resultDiv.className = "incorrect";
     updateScoreBar(0);
