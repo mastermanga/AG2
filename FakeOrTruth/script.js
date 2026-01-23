@@ -1,26 +1,28 @@
 /**********************
- * Fake Or Truth — Sync A/V (AUTO START)
- * - Vidéo = Song A ; Audio = Song B
- * - Auto-start dès que A+B prêts
- * - Une seule écoute : 45s -> 75s (30s)
- * - Réponse : Match / Pas match
- * - Reveal : vidéo A AVEC son vrai audio (controls)
+ * Fake Or Truth — Anti-bug media (A pinned)
+ * - Vidéo = Song A (muette pendant le round)
+ * - Audio = Song B (caché)
+ * - Auto-start segment 45s -> 75s (30s)
+ * - A est "pinned" à 45s : si B bug, on retry seulement B (on garde A)
+ * - Reveal : vidéo A AVEC son vrai audio + controls
  * - Distribution :
- *    1/3 A = B
- *    1/3 A != B & anime différent
- *    1/3 A != B mais même anime (si possible sinon fallback anime différent)
- * - Loader robuste : retry “pair” (A+B) + anti-loop
+ *   1/3 A=B
+ *   1/3 A!=B & anime différent
+ *   1/3 A!=B mais même anime (si possible)
  **********************/
 
 const MAX_SCORE = 3000;
 const MIN_REQUIRED_SONGS = 64;
 
-// retry pair (A+B)
-const RETRY_DELAYS = [0, 2000, 6000];
-const LOAD_TIMEOUT_MS = 14000;
-
 const LISTEN_START = 45;
 const LISTEN_DURATION = 30;
+
+const RETRY_DELAYS = [0, 2000, 6000];     // max 3 essais par média
+const LOAD_TIMEOUT_MS = 14000;            // timeout metadata
+const SEEK_TIMEOUT_MS = 9000;             // timeout seek/canplay
+const STALL_TIMEOUT_MS = 6000;            // si stalled/waiting trop longtemps durant lecture
+
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
@@ -97,6 +99,16 @@ function withCacheBuster(url) {
   return url + sep + "t=" + Date.now();
 }
 
+function isTimeBuffered(el, t, margin = 0.25) {
+  try {
+    const b = el.buffered;
+    for (let i = 0; i < b.length; i++) {
+      if (b.start(i) <= t && b.end(i) >= t + margin) return true;
+    }
+  } catch {}
+  return false;
+}
+
 // ====== Songs extraction ======
 function extractSongsFromAnime(anime) {
   const songs = [];
@@ -163,47 +175,23 @@ const previewCountEl = document.getElementById("previewCount");
 const applyBtn = document.getElementById("applyFiltersBtn");
 const roundCountEl = document.getElementById("roundCount");
 
-const btnMatch = document.getElementById("btnMatch");
-const btnNoMatch = document.getElementById("btnNoMatch");
-
+const roundLabel = document.getElementById("roundLabel");
 const resultDiv = document.getElementById("result");
 const nextBtn = document.getElementById("nextBtn");
-const roundLabel = document.getElementById("roundLabel");
+
+const mediaStatusEl = document.getElementById("mediaStatus");
+const containerEl = document.getElementById("container");
 
 const videoPlayer = document.getElementById("videoPlayer");
 const audioPlayer = document.getElementById("audioPlayer");
 
+const btnTruth = document.getElementById("btnTruth");
+const btnFake = document.getElementById("btnFake");
+
 const volumeSlider = document.getElementById("volumeSlider");
 const volumeVal = document.getElementById("volumeVal");
 
-// ====== Status ======
-let mediaStatusEl = document.getElementById("mediaStatus");
-function ensureMediaStatusEl() {
-  if (mediaStatusEl) return mediaStatusEl;
-  const container = document.getElementById("container");
-  if (!container) return null;
-
-  const el = document.createElement("div");
-  el.id = "mediaStatus";
-  el.style.margin = "6px 0 10px 0";
-  el.style.fontWeight = "900";
-  el.style.opacity = "0.9";
-  el.style.fontSize = "0.95rem";
-  el.style.minHeight = "1.2em";
-  el.style.textAlign = "center";
-  el.style.userSelect = "none";
-
-  container.insertBefore(el, container.querySelector("#videoWrapper") || null);
-  mediaStatusEl = el;
-  return el;
-}
-function setMediaStatus(msg) {
-  const el = ensureMediaStatusEl();
-  if (!el) return;
-  el.textContent = msg || "";
-}
-
-// ====== WebM support ======
+// ====== Support WebM ======
 const CAN_PLAY_WEBM = (() => {
   const v = document.createElement("video");
   if (!v.canPlayType) return false;
@@ -228,8 +216,36 @@ let videoSong = null; // A
 let audioSong = null; // B
 let isMatch = false;
 
-let listenLocked = true;   // tant que lecture pas faite
 let roundToken = 0;
+
+// A pinned state (garde A si B bug)
+let pinnedA = {
+  ok: false,
+  attempt: 0,
+  url: "",
+};
+
+let pinnedB = {
+  ok: false,
+  attempt: 0,
+  url: "",
+};
+
+// ====== Status ======
+function setMediaStatus(msg) {
+  mediaStatusEl.textContent = msg || "";
+}
+
+// ====== UI show/hide ======
+function showCustomization() {
+  customPanel.style.display = "block";
+  gamePanel.style.display = "none";
+}
+
+function showGame() {
+  customPanel.style.display = "none";
+  gamePanel.style.display = "block";
+}
 
 // ====== Score bar ======
 function getScoreBarColor(score) {
@@ -239,6 +255,7 @@ function getScoreBarColor(score) {
   if (score > 0) return "linear-gradient(90deg,#fd654c,#cb202d 90%)";
   return "linear-gradient(90deg,#444,#333 90%)";
 }
+
 function updateScoreBar(forceScore = null) {
   const bar = document.getElementById("score-bar");
   const label = document.getElementById("score-bar-label");
@@ -251,24 +268,13 @@ function updateScoreBar(forceScore = null) {
 
 // ====== Volume ======
 function applyVolume() {
-  if (!audioPlayer || !volumeSlider) return;
   const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "50", 10)));
   audioPlayer.volume = v / 100;
-  if (volumeVal) volumeVal.textContent = `${v}%`;
+  volumeVal.textContent = `${v}%`;
 }
-if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
+volumeSlider.addEventListener("input", applyVolume);
 
-// ====== UI show/hide ======
-function showCustomization() {
-  customPanel.style.display = "block";
-  gamePanel.style.display = "none";
-}
-function showGame() {
-  customPanel.style.display = "none";
-  gamePanel.style.display = "block";
-}
-
-// ====== Playback helpers ======
+// ====== Media primitives ======
 function hardReset(el) {
   try { el.pause(); } catch {}
   el.removeAttribute("src");
@@ -280,8 +286,8 @@ function stopPlayback() {
   try { audioPlayer.pause(); } catch {}
 }
 
-function lockPlayersForGame() {
-  // jeu : vidéo muette, audio B ok
+function lockForRound() {
+  // Round: vidéo muette, audio B audible
   videoPlayer.muted = true;
   videoPlayer.controls = false;
   videoPlayer.removeAttribute("controls");
@@ -294,9 +300,9 @@ function lockPlayersForGame() {
   applyVolume();
 }
 
-function revealVideoAWithItsAudio() {
-  // reveal : vidéo A avec son audio
+function revealVideoAWithAudio() {
   stopPlayback();
+  // On coupe B (sinon conflit audio)
   try { audioPlayer.removeAttribute("src"); audioPlayer.load(); } catch {}
 
   videoPlayer.muted = false;
@@ -305,7 +311,7 @@ function revealVideoAWithItsAudio() {
   try { videoPlayer.currentTime = 0; } catch {}
 }
 
-// ====== Promises events ======
+// ====== waitEvent ======
 function waitEvent(el, okEvent, badEvents, timeoutMs, localToken) {
   return new Promise((resolve, reject) => {
     let timer = null;
@@ -342,68 +348,149 @@ function waitEvent(el, okEvent, badEvents, timeoutMs, localToken) {
   });
 }
 
-async function seekSafe(el, t, localToken) {
+// ====== Seek & pin ======
+async function ensurePinnedAt(el, t, localToken) {
   if (localToken !== roundToken) return false;
 
-  // clamp si duration connue
-  const dur = Number.isFinite(el.duration) ? el.duration : NaN;
-  let target = t;
-  if (Number.isFinite(dur)) target = Math.max(0, Math.min(dur - 0.25, t));
-
-  try { el.currentTime = target; } catch {}
-
-  // attendre seeked (ou canplay si seeked ne vient pas)
-  try {
-    await waitEvent(el, "seeked", ["error"], 9000, localToken);
+  // déjà buffer ?
+  if (el.readyState >= 3 && isTimeBuffered(el, t, 0.25)) {
+    try { el.pause(); } catch {}
     return true;
+  }
+
+  // seek
+  try { el.currentTime = t; } catch {}
+
+  // attendre seeked, sinon fallback canplay
+  try {
+    await waitEvent(el, "seeked", ["error"], SEEK_TIMEOUT_MS, localToken);
   } catch {
-    // fallback : si readyState ok, on accepte
-    return el.readyState >= 3;
+    // si seeked ne vient pas, on exige au moins canplay
+  }
+
+  if (localToken !== roundToken) return false;
+
+  if (el.readyState >= 3 && isTimeBuffered(el, t, 0.15)) {
+    try { el.pause(); } catch {}
+    return true;
+  }
+
+  try {
+    await waitEvent(el, "canplay", ["error"], SEEK_TIMEOUT_MS, localToken);
+  } catch {
+    return false;
+  }
+
+  if (localToken !== roundToken) return false;
+  try { el.pause(); } catch {}
+  return el.readyState >= 3;
+}
+
+async function loadMeta(el, url, attempt, label, localToken) {
+  if (localToken !== roundToken) return false;
+
+  hardReset(el);
+  const src = attempt === 0 ? url : withCacheBuster(url);
+
+  el.preload = "auto";
+  el.src = src;
+  el.load();
+
+  setMediaStatus(`⏳ Chargement ${label}…`);
+  try {
+    await waitEvent(el, "loadedmetadata", ["error"], LOAD_TIMEOUT_MS, localToken);
+    return localToken === roundToken;
+  } catch {
+    return false;
   }
 }
 
-// ====== Segment stop “ensemble” ======
+async function loadAndPin(el, url, attempt, label, localToken) {
+  const okMeta = await loadMeta(el, url, attempt, label, localToken);
+  if (!okMeta || localToken !== roundToken) return false;
+
+  const okPin = await ensurePinnedAt(el, LISTEN_START, localToken);
+  if (!okPin || localToken !== roundToken) return false;
+
+  try { el.pause(); } catch {}
+  return true;
+}
+
+// ====== Segment stop (pause ensemble) + stall guard ======
 let segmentActive = false;
 let segmentEnd = 0;
+let stallTimer = null;
+
 function clearSegment() {
   segmentActive = false;
   segmentEnd = 0;
   videoPlayer.removeEventListener("timeupdate", onSegmentTick);
   audioPlayer.removeEventListener("timeupdate", onSegmentTick);
+  videoPlayer.removeEventListener("waiting", onStall);
+  audioPlayer.removeEventListener("waiting", onStall);
+  videoPlayer.removeEventListener("stalled", onStall);
+  audioPlayer.removeEventListener("stalled", onStall);
+  if (stallTimer) clearTimeout(stallTimer);
+  stallTimer = null;
 }
+
+function onStall() {
+  // si stall prolongé, on stoppe et on relance B (on garde A)
+  if (!segmentActive) return;
+  if (stallTimer) clearTimeout(stallTimer);
+  stallTimer = setTimeout(() => {
+    if (!segmentActive) return;
+    stopPlayback();
+    clearSegment();
+    setMediaStatus("⏳ Stall… relance audio.");
+    // invalide uniquement B, et relance
+    pinnedB.ok = false;
+    pinnedB.attempt = Math.min(pinnedB.attempt + 1, RETRY_DELAYS.length);
+    autoStartPinned(roundToken);
+  }, STALL_TIMEOUT_MS);
+}
+
 function onSegmentTick() {
   if (!segmentActive) return;
   const tv = videoPlayer.currentTime || 0;
   const ta = audioPlayer.currentTime || 0;
   const t = Math.max(tv, ta);
+
   if (t >= segmentEnd - 0.05) {
     try { videoPlayer.pause(); } catch {}
     try { audioPlayer.pause(); } catch {}
     clearSegment();
-    setMediaStatus("✅ À toi : Match ou Pas match ?");
-    listenLocked = false;
-    btnMatch.disabled = false;
-    btnNoMatch.disabled = false;
+    setMediaStatus("✅ À toi : Truth (match) ou Fake (pas match) ?");
+    btnTruth.disabled = false;
+    btnFake.disabled = false;
   }
 }
-function armSegment(start, dur) {
+
+function armSegment() {
   clearSegment();
   segmentActive = true;
-  segmentEnd = start + dur;
+  segmentEnd = LISTEN_START + LISTEN_DURATION;
+
   videoPlayer.addEventListener("timeupdate", onSegmentTick);
   audioPlayer.addEventListener("timeupdate", onSegmentTick);
+
+  videoPlayer.addEventListener("waiting", onStall);
+  audioPlayer.addEventListener("waiting", onStall);
+  videoPlayer.addEventListener("stalled", onStall);
+  audioPlayer.addEventListener("stalled", onStall);
 }
 
-// ====== Tirage 1/3 - 1/3 - 1/3 ======
+// ====== Pair selection (1/3 rules) ======
 function pickDifferentAnimeSong(base) {
-  for (let i = 0; i < 80; i++) {
+  for (let i = 0; i < 120; i++) {
     const cand = pickRandom(filteredSongs);
-    if (!cand || !cand.url) continue;
+    if (!cand?.url) continue;
     if (cand.url === base.url) continue;
     if (cand.animeMalId && base.animeMalId && cand.animeMalId === base.animeMalId) continue;
     if (cand.animeTitleLower === base.animeTitleLower) continue;
     return cand;
   }
+  // fallback
   return pickRandom(filteredSongs);
 }
 
@@ -417,40 +504,37 @@ function pickSameAnimeDifferentSong(base) {
 
 function choosePair() {
   const A = pickRandom(filteredSongs);
-  if (!A || !A.url) return null;
+  if (!A?.url) return null;
 
   const r = Math.floor(Math.random() * 3); // 0,1,2
 
   if (r === 0) return { A, B: A, isMatch: true };
   if (r === 2) {
-    const Bsame = pickSameAnimeDifferentSong(A);
-    if (Bsame) return { A, B: Bsame, isMatch: false };
+    const same = pickSameAnimeDifferentSong(A);
+    if (same) return { A, B: same, isMatch: false };
     return { A, B: pickDifferentAnimeSong(A), isMatch: false };
   }
   return { A, B: pickDifferentAnimeSong(A), isMatch: false };
 }
 
-// ====== Reset / Round ======
+// ====== Round flow ======
 function resetControls() {
-  listenLocked = true;
+  btnTruth.disabled = true;
+  btnFake.disabled = true;
+  nextBtn.style.display = "none";
+  nextBtn.onclick = null;
 
   resultDiv.textContent = "";
   resultDiv.className = "";
 
-  btnMatch.disabled = true;
-  btnNoMatch.disabled = true;
-
-  nextBtn.style.display = "none";
-  nextBtn.onclick = null;
-
+  setMediaStatus("");
   stopPlayback();
   clearSegment();
-  lockPlayersForGame();
 
+  lockForRound();
   updateScoreBar(MAX_SCORE);
 
   if (roundLabel) roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
-  setMediaStatus("");
 }
 
 function startNewRound() {
@@ -471,122 +555,135 @@ function startNewRound() {
   audioSong = pair.B;
   isMatch = pair.isMatch;
 
-  // AUTO START
-  autoStartPlayback(localToken);
+  // reset pinned states
+  pinnedA = { ok: false, attempt: 0, url: videoSong.url };
+  pinnedB = { ok: false, attempt: 0, url: audioSong.url };
+
+  autoStartPinned(localToken);
 }
 
-// ====== ✅ AUTO START LOADER “PAIR” ======
-async function autoStartPlayback(localToken) {
-  // on tente A+B ensemble
-  for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+// ✅ cœur du système : A pinned / retry B only
+async function autoStartPinned(localToken) {
+  if (localToken !== roundToken) return;
+
+  // --- 1) S'assurer que A est chargé + pinned (une fois)
+  while (!pinnedA.ok && pinnedA.attempt < RETRY_DELAYS.length) {
     if (localToken !== roundToken) return;
 
-    if (attempt > 0) {
-      setMediaStatus(`🔄 Rechargement… (${attempt + 1}/${RETRY_DELAYS.length})`);
-      await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
-      if (localToken !== roundToken) return;
-    } else {
-      setMediaStatus("⏳ Chargement A + B…");
+    if (pinnedA.attempt > 0) await delay(RETRY_DELAYS[pinnedA.attempt]);
+
+    const okA = await loadAndPin(videoPlayer, videoSong.url, pinnedA.attempt, "Vidéo A", localToken);
+    if (localToken !== roundToken) return;
+
+    if (okA) {
+      pinnedA.ok = true;
+      break;
     }
+    pinnedA.attempt++;
+  }
 
-    try {
-      // reset
-      hardReset(videoPlayer);
-      hardReset(audioPlayer);
+  if (!pinnedA.ok) {
+    setMediaStatus("❌ Vidéo A indisponible. Changement…");
+    return startNewRound();
+  }
 
-      // src (bust à partir de la 2e tentative)
-      const vsrc = attempt === 0 ? videoSong.url : withCacheBuster(videoSong.url);
-      const asrc = attempt === 0 ? audioSong.url : withCacheBuster(audioSong.url);
+  // --- 2) S'assurer que B est chargé + pinned (retry seulement B)
+  while (!pinnedB.ok && pinnedB.attempt < RETRY_DELAYS.length) {
+    if (localToken !== roundToken) return;
 
-      videoPlayer.preload = "auto";
-      audioPlayer.preload = "auto";
-      videoPlayer.src = vsrc;
-      audioPlayer.src = asrc;
-      videoPlayer.load();
-      audioPlayer.load();
+    if (pinnedB.attempt > 0) await delay(RETRY_DELAYS[pinnedB.attempt]);
 
-      // attendre metadata des 2
-      await Promise.all([
-        waitEvent(videoPlayer, "loadedmetadata", ["error"], LOAD_TIMEOUT_MS, localToken),
-        waitEvent(audioPlayer, "loadedmetadata", ["error"], LOAD_TIMEOUT_MS, localToken),
-      ]);
+    const okB = await loadAndPin(audioPlayer, audioSong.url, pinnedB.attempt, "Audio B", localToken);
+    if (localToken !== roundToken) return;
 
-      if (localToken !== roundToken) return;
+    if (okB) {
+      pinnedB.ok = true;
+      break;
+    }
+    pinnedB.attempt++;
+  }
 
-      // seek 45s sur les 2
-      setMediaStatus("⏳ Buffer (45s)…");
-      const okSeek = await Promise.all([
-        seekSafe(videoPlayer, LISTEN_START, localToken),
-        seekSafe(audioPlayer, LISTEN_START, localToken),
-      ]);
-      if (!okSeek[0] || !okSeek[1]) throw new Error("seek-failed");
-      if (localToken !== roundToken) return;
+  if (!pinnedB.ok) {
+    setMediaStatus("❌ Audio B indisponible. Nouveau duel…");
+    return startNewRound();
+  }
 
-      lockPlayersForGame();
-      applyVolume();
-
-      // arm segment stop
-      armSegment(LISTEN_START, LISTEN_DURATION);
-
-      // try play
-      setMediaStatus("▶️ Lecture…");
-      const pV = videoPlayer.play();
-      const pA = audioPlayer.play();
-
-      const res = await Promise.allSettled([pV, pA]);
-      if (localToken !== roundToken) return;
-
-      const rejected = res.some(r => r.status === "rejected");
-      if (!rejected) {
-        // petit “nudge” anti-désync
-        setTimeout(() => {
-          if (localToken !== roundToken) return;
-          const dv = (audioPlayer.currentTime || 0) - (videoPlayer.currentTime || 0);
-          if (Math.abs(dv) > 0.12) {
-            try { audioPlayer.currentTime = videoPlayer.currentTime; } catch {}
-          }
-        }, 700);
-
-        // pendant la lecture, on peut déjà répondre (si tu veux)
-        btnMatch.disabled = false;
-        btnNoMatch.disabled = false;
-        listenLocked = false;
-        return; // ✅ succès, on sort
-      }
-
-      // autoplay bloqué => fallback “clique n’importe où”
-      setMediaStatus("▶️ Clique n’importe où pour lancer");
-      const container = document.getElementById("container");
-      const onTap = async () => {
-        container.removeEventListener("click", onTap);
-        if (localToken !== roundToken) return;
-        try {
-          await Promise.all([videoPlayer.play(), audioPlayer.play()]);
-          setMediaStatus("▶️ Lecture…");
-          btnMatch.disabled = false;
-          btnNoMatch.disabled = false;
-          listenLocked = false;
-        } catch {
-          // si vraiment impossible, on retente un autre duel
-          startNewRound();
-        }
-      };
-      container.addEventListener("click", onTap, { once: true });
-      return;
-    } catch {
-      // tente suivante
+  // --- 3) Vérifier que A est toujours OK à 45s (sans reload)
+  if (!(videoPlayer.readyState >= 3 && isTimeBuffered(videoPlayer, LISTEN_START, 0.15))) {
+    const okRepinA = await ensurePinnedAt(videoPlayer, LISTEN_START, localToken);
+    if (!okRepinA) {
+      // en dernier recours, reload A (rare)
+      pinnedA.ok = false;
+      pinnedA.attempt = Math.min(pinnedA.attempt + 1, RETRY_DELAYS.length);
+      return autoStartPinned(localToken);
     }
   }
 
-  // échec total => on change de duel
-  setMediaStatus("❌ Trop lent / indisponible. Changement…");
-  startNewRound();
+  // --- 4) Play ensemble
+  if (localToken !== roundToken) return;
+
+  lockForRound();
+  try { videoPlayer.currentTime = LISTEN_START; } catch {}
+  try { audioPlayer.currentTime = LISTEN_START; } catch {}
+
+  armSegment();
+  setMediaStatus("▶️ Lecture…");
+
+  const res = await Promise.allSettled([videoPlayer.play(), audioPlayer.play()]);
+  if (localToken !== roundToken) return;
+
+  const vFail = res[0].status === "rejected";
+  const aFail = res[1].status === "rejected";
+
+  // autoplay bloqué => demander un geste
+  const reasons = res.filter(r => r.status === "rejected").map(r => r.reason);
+  const anyNotAllowed = reasons.some(e => e && (e.name === "NotAllowedError" || /notallowed/i.test(String(e.message || ""))));
+
+  if (anyNotAllowed) {
+    setMediaStatus("▶️ Clique dans la carte pour lancer");
+    const onTap = async () => {
+      containerEl.removeEventListener("click", onTap);
+      if (localToken !== roundToken) return;
+      try {
+        await Promise.all([videoPlayer.play(), audioPlayer.play()]);
+        setMediaStatus("▶️ Lecture…");
+      } catch {
+        setMediaStatus("❌ Impossible de lancer. Nouveau duel…");
+        startNewRound();
+      }
+    };
+    containerEl.addEventListener("click", onTap, { once: true });
+    return;
+  }
+
+  // si l'un foire => retry seulement celui-là
+  if (vFail) {
+    pinnedA.ok = false;
+    pinnedA.attempt = Math.min(pinnedA.attempt + 1, RETRY_DELAYS.length);
+    clearSegment();
+    return autoStartPinned(localToken);
+  }
+  if (aFail) {
+    pinnedB.ok = false;
+    pinnedB.attempt = Math.min(pinnedB.attempt + 1, RETRY_DELAYS.length);
+    clearSegment();
+    return autoStartPinned(localToken);
+  }
+
+  // petit nudge anti-désync
+  setTimeout(() => {
+    if (localToken !== roundToken) return;
+    const dv = (audioPlayer.currentTime || 0) - (videoPlayer.currentTime || 0);
+    if (Math.abs(dv) > 0.12) {
+      try { audioPlayer.currentTime = videoPlayer.currentTime; } catch {}
+    }
+  }, 700);
 }
 
 // ====== Answer ======
 function blockInputsAll() {
-  btnMatch.disabled = true;
-  btnNoMatch.disabled = true;
+  btnTruth.disabled = true;
+  btnFake.disabled = true;
 }
 
 function endRoundAndMaybeNext(roundScore) {
@@ -605,8 +702,8 @@ function endRoundAndMaybeNext(roundScore) {
     nextBtn.onclick = () => {
       showCustomization();
       stopPlayback();
-      resultDiv.textContent = "";
       setMediaStatus("");
+      resultDiv.textContent = "";
     };
     return;
   }
@@ -622,21 +719,19 @@ function endRoundAndMaybeNext(roundScore) {
 function checkAnswer(userSaysMatch) {
   if (!videoSong || !audioSong) return;
 
-  // si tu veux forcer "doit avoir entendu", décommente :
-  // if (listenLocked) return;
-
   const good = (userSaysMatch === isMatch);
 
   stopPlayback();
   clearSegment();
-  revealVideoAWithItsAudio();
+  revealVideoAWithAudio();
   blockInputsAll();
+
+  const verdict = isMatch ? "✅ TRUTH (MATCH)" : "❌ FAKE (NO MATCH)";
 
   if (good) {
     const score = MAX_SCORE;
     resultDiv.innerHTML = `
-      🎉 Bonne réponse !<br>
-      <b>${isMatch ? "✅ TRUTH (MATCH)" : "❌ FAKE (NO MATCH)"}</b>
+      🎉 Bonne réponse !<br><b>${verdict}</b>
       <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
       <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
       <div style="margin-top:8px;">Score : <b>${score}</b> / 3000</div>
@@ -645,23 +740,22 @@ function checkAnswer(userSaysMatch) {
     updateScoreBar(score);
     launchFireworks();
     endRoundAndMaybeNext(score);
-    return;
+  } else {
+    resultDiv.innerHTML = `
+      ❌ Mauvaise réponse.<br>
+      Réponse correcte : <b>${verdict}</b>
+      <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
+      <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
+      <div style="margin-top:8px;">Score : <b>0</b> / 3000</div>
+    `;
+    resultDiv.className = "incorrect";
+    updateScoreBar(0);
+    endRoundAndMaybeNext(0);
   }
-
-  resultDiv.innerHTML = `
-    ❌ Mauvaise réponse.<br>
-    Réponse correcte : <b>${isMatch ? "✅ TRUTH (MATCH)" : "❌ FAKE (NO MATCH)"}</b>
-    <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
-    <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
-    <div style="margin-top:8px;">Score : <b>0</b> / 3000</div>
-  `;
-  resultDiv.className = "incorrect";
-  updateScoreBar(0);
-  endRoundAndMaybeNext(0);
 }
 
-btnMatch.addEventListener("click", () => checkAnswer(true));
-btnNoMatch.addEventListener("click", () => checkAnswer(false));
+btnTruth.addEventListener("click", () => checkAnswer(true));
+btnFake.addEventListener("click", () => checkAnswer(false));
 
 // ====== Tooltip help ======
 document.addEventListener("click", (e) => {
@@ -672,6 +766,7 @@ document.addEventListener("click", (e) => {
   const wrap = icon.closest(".info-wrap");
   if (wrap) wrap.classList.toggle("open");
 });
+
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
     document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
@@ -732,10 +827,12 @@ function initCustomUI() {
 
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
 
+  // type pills (au moins 1)
   document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+
       const any = document.querySelectorAll("#typePills .pill.active").length > 0;
       if (!any) {
         btn.classList.add("active");
@@ -745,10 +842,12 @@ function initCustomUI() {
     });
   });
 
+  // song pills (au moins 1)
   document.querySelectorAll("#songPills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+
       const any = document.querySelectorAll("#songPills .pill.active").length > 0;
       if (!any) {
         btn.classList.add("active");
@@ -792,9 +891,11 @@ function applyFilters() {
     allowedSongs.includes(s.songType)
   ));
 
+  // top pop% (members)
   pool.sort((a, b) => b.animeMembers - a.animeMembers);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
+  // top score% (score)
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
@@ -852,8 +953,10 @@ fetch("../data/licenses_only.json")
     initCustomUI();
     updatePreview();
     showCustomization();
+
+    // init media
+    lockForRound();
     applyVolume();
-    lockPlayersForGame();
     updateScoreBar(MAX_SCORE);
   })
   .catch((e) => {
