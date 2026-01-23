@@ -19,18 +19,18 @@
         <button id="themeToggle" class="toggle-btn">🌓</button>
 
         <span class="info-wrap header-help">
-          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-match">
+          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-fot">
             <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor"
                 d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
             </svg>
           </span>
 
-          <span class="info-tip" id="help-match" role="tooltip">
-            Regarde la vidéo (Song A) et écoute le son (Song B).<br>
-            Dis si le son correspond à la vidéo : ✅ Match / ❌ Pas match.<br>
-            Une seule écoute : de 45s à 75s (30 secondes).<br>
-            Reveal : tu peux rejouer la vidéo A avec son vrai audio.
+          <span class="info-tip" id="help-fot" role="tooltip">
+            Le jeu lance automatiquement un extrait (45s → 75s).<br>
+            Vidéo = Song A (muette) / Audio = Song B.<br>
+            À toi de décider si l’audio correspond à la vidéo : <b>Truth</b> (match) ou <b>Fake</b> (pas match).<br>
+            Reveal : la vidéo A est rejouée avec son vrai audio.
           </span>
         </span>
       </div>
@@ -43,7 +43,7 @@
   <div id="custom-panel" class="main-container" style="max-width: 1400px; width: 98vw; padding: 1.7rem 1.8rem; margin: 0 auto 1.2rem auto;">
     <h2 style="margin:0 0 1.0rem 0; text-align:center;">⚙️ Personnalisation</h2>
 
-    <!-- Mode -->
+    <!-- Mode (Songs uniquement) -->
     <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
       <div class="opt-label" style="font-weight:900; min-width:160px;">Mode</div>
       <div class="opt-col" style="flex:1; min-width:280px;">
@@ -133,7 +133,8 @@
           max="100"
           step="1"
           value="1"
-          style="width:120px; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,188,212,0.35); background:rgba(0,0,0,0.18); color:inherit; font-weight:900; outline:none;"
+          class="round-input"
+          style="width:120px;"
         />
         <div style="opacity:0.85; font-weight:700; font-size:0.95rem;">
           (1 à 100 — enchaîne plusieurs rounds avec la même config.)
@@ -161,34 +162,37 @@
         </div>
       </div>
 
-      <div id="roundLabel" style="margin:0 0 10px 0; font-weight:900; opacity:0.9; text-align:center;"></div>
+      <!-- Round label -->
+      <div id="roundLabel" style="margin:0 0 8px 0; font-weight:900; opacity:0.9; text-align:center;"></div>
 
-      <!-- VIDEO (Song A) -->
+      <!-- Status media -->
+      <div id="mediaStatus"></div>
+
+      <!-- VIDEO A (muette pendant le round) -->
       <div id="videoWrapper">
-        <div class="video-head">🎞️ Vidéo (Song A)</div>
-        <video id="videoPlayer" playsinline preload="metadata"></video>
+        <video id="videoPlayer" playsinline preload="auto"></video>
       </div>
 
-      <!-- Volume (audio B pendant le jeu) -->
-      <div id="volumeRow" class="volume-row" style="width:100%; max-width:520px; margin:10px auto 12px auto;">
+      <!-- Audio B (caché, mais c’est un webm vidéo) -->
+      <video id="audioPlayer" playsinline preload="auto" style="display:none;"></video>
+
+      <!-- Volume -->
+      <div id="volumeRow" class="volume-row">
         <div class="vol-label">🔊 Volume</div>
-        <input id="volumeSlider" type="range" min="0" max="100" value="50" style="flex:1; max-width:320px;">
-        <div id="volumeVal" style="min-width:44px; text-align:right; font-weight:900; opacity:0.9;">50%</div>
+        <input id="volumeSlider" type="range" min="0" max="100" value="50">
+        <div id="volumeVal">50%</div>
       </div>
 
-      <!-- Réponse -->
-      <div id="answer-buttons">
-        <button id="btnMatch" class="answer-btn yes" disabled>✅ Match</button>
-        <button id="btnNoMatch" class="answer-btn no" disabled>❌ Pas match</button>
+      <!-- Choix -->
+      <div id="choiceRow">
+        <button id="btnTruth" class="choice-btn truth" disabled>✅ Truth</button>
+        <button id="btnFake" class="choice-btn fake" disabled>❌ Fake</button>
       </div>
 
       <div id="result"></div>
       <button id="nextBtn" style="display:none; margin-top:1.1rem;"></button>
 
       <canvas id="fireworks"></canvas>
-
-      <!-- AUDIO B caché (technique) -->
-      <video id="audioPlayer" playsinline preload="metadata" style="display:none;"></video>
     </div>
   </div>
 
