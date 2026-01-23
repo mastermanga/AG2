@@ -1,49 +1,73 @@
 /**********************
- * Sound Match — A/V sync game
- * - Vidéo = Song A ; Audio = Song B
- * - Le joueur répond : Match / Pas match
- * - 3 écoutes max : début (15s), refrain (15s), complet
- * - Score : 3000 / 2000 / 1500 selon écoute utilisée
- * - Filtres + rounds + anti-bug média (retries + stall)
+ * TopPick 3v3 (Anime / Songs)
+ * - Règle UNIQUE: choisir la meilleure ligne
+ * - Thème “contenu” auto (année/studio/tag/score/pop + songYear + artiste)
+ *   - 1 fois sur 5 => Libre
+ * - 6 items révélés EN ALTERNANCE :
+ *   L1#1 → L2#1 → L1#2 → L2#2 → L1#3 → L2#3
+ * - Anime: 1 item / 1s
+ * - Songs: play auto non mute à 50s pendant 20s (currentTime)
  **********************/
 
-const MAX_SCORE = 3000;
-
-const SCORE_TRY1 = 3000;
-const SCORE_TRY2 = 2000;
-const SCORE_TRY3 = 1500;
-
-const MIN_REQUIRED_SONGS = 64;
-
-// retry / anti-stall
-const RETRY_DELAYS = [0, 2000, 6000]; // 3 tentatives
-const STALL_TIMEOUT_MS = 6000;
-
-// Segments
-const TRY_DURATIONS = [15, 15, null]; // 3e écoute complète
-const REFRAIN_START = 50;             // refrain ~50s
-
-// ====== UI: menu + theme ======
+// ====== MENU & THEME ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
   window.location.href = "../index.html";
 });
-
 document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
   localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
-
 window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
 });
 
-// ====== Helpers ======
+// ====== TOOLTIP ======
+document.addEventListener("click", (e) => {
+  const icon = e.target.closest(".info-icon");
+  if (!icon) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const wrap = icon.closest(".info-wrap");
+  if (wrap) wrap.classList.toggle("open");
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".info-wrap")) {
+    document.querySelectorAll(".info-wrap.open").forEach(w => w.classList.remove("open"));
+  }
+});
+
+// ====== CONST ======
+const MIN_REQUIRED = 64;
+
+// Songs preview
+const SONG_START_SEC = 50;
+const SONG_PLAY_SEC = 20;
+
+// retries: 1 essai + 5 retries => 0, 2s, 4s, 6s, 8s, 10s
+const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
+const STALL_TIMEOUT_MS = 6000;
+
+// sécurité anti-blocage total
+const MAX_WALL_SNIPPET_MS = 60000;
+
+// 1 fois sur 5 : pas de filtre contenu
+const FREE_THEME_PROBA = 0.20;
+
+// ✅ RÈGLE UNIQUE
+const RULE = {
+  key: "BEST_LINE",
+  label: "Choisis la meilleure ligne",
+  desc: "Choisis la meilleure ligne (3 items).",
+  required: 1,
+  mode: "keep",
+};
+
+// ====== HELPERS ======
 function normalizeAnimeList(json) {
   if (Array.isArray(json)) return json;
   if (json && Array.isArray(json.animes)) return json.animes;
   return [];
 }
-
 function getDisplayTitle(a) {
   return (
     a.title_english ||
@@ -54,13 +78,27 @@ function getDisplayTitle(a) {
     "Titre inconnu"
   );
 }
-
 function getYear(a) {
-  const s = (a.season || "").trim();
-  const m = s.match(/(19|20)\d{2}/);
-  return m ? parseInt(m[0], 10) : 0;
+  const s = ((a && a.season) ? String(a.season) : "").trim();
+  const m = s.match(/(\d{4})/);
+  return m ? parseInt(m[1], 10) : 0;
 }
-
+function getYearFromSeasonStr(seasonStr, fallback = 0) {
+  const s = (seasonStr ? String(seasonStr) : "").trim();
+  const m = s.match(/(\d{4})/);
+  return m ? parseInt(m[1], 10) : (fallback || 0);
+}
+function clampYearSliders() {
+  const minEl = document.getElementById("yearMin");
+  const maxEl = document.getElementById("yearMax");
+  let a = parseInt(minEl.value, 10);
+  let b = parseInt(maxEl.value, 10);
+  if (a > b) {
+    [a, b] = [b, a];
+    minEl.value = a;
+    maxEl.value = b;
+  }
+}
 function shuffleInPlace(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -68,30 +106,35 @@ function shuffleInPlace(arr) {
   }
   return arr;
 }
-
-function safeNum(x) {
-  const n = +x;
-  return Number.isFinite(n) ? n : 0;
-}
-
 function clampInt(n, a, b) {
   n = Number.isFinite(n) ? n : a;
   return Math.max(a, Math.min(b, n));
 }
-
-function clampYearSliders() {
-  let a = parseInt(yearMinEl.value, 10);
-  let b = parseInt(yearMaxEl.value, 10);
-  if (a > b) {
-    [a, b] = [b, a];
-    yearMinEl.value = a;
-    yearMaxEl.value = b;
-  }
+function safeNum(x) {
+  const n = +x;
+  return Number.isFinite(n) ? n : 0;
+}
+function songTypeLabel(t) {
+  if (t === "OP") return "OP";
+  if (t === "ED") return "ED";
+  return "IN";
+}
+function formatSongTitle(s) {
+  const type = songTypeLabel(s.songType);
+  const num = (s.songNumber ? ` ${s.songNumber}` : "");
+  const name = (s.songName ? ` — ${s.songName}` : "");
+  const art = (s.songArtists ? ` — ${s.songArtists}` : "");
+  return `${s.animeTitle || "Anime"} ${type}${num}${name}${art}`;
+}
+function formatItemLabel(it) {
+  if (!it) return "";
+  if (it.kind === "song") return formatSongTitle(it);
+  return it.title || "";
 }
 
-// ====== Songs extraction ======
+// ✅ songs extraction
 function extractSongsFromAnime(anime) {
-  const songs = [];
+  const out = [];
   const song = anime.song || {};
   const buckets = [
     { key: "openings", type: "OP" },
@@ -105,45 +148,162 @@ function extractSongsFromAnime(anime) {
       const url = it.video || it.url || "";
       if (!url || typeof url !== "string" || url.length < 6) continue;
 
-      const artistsArr = Array.isArray(it.artists) ? it.artists : [];
-      const artist = artistsArr.join(", ");
+      const artistsArr = Array.isArray(it.artists) ? it.artists.filter(Boolean) : [];
+      const artists = artistsArr.join(", ");
+      const songYear = getYearFromSeasonStr(it.season, anime._year);
 
-      songs.push({
-        animeMalId: anime.mal_id ?? null,
+      out.push({
+        kind: "song",
+        songType: b.type,
+        songName: it.name || "",
+        songNumber: safeNum(it.number) || 1,
+        songArtists: artists || "",
+        artistsArr,
+        songYear,
+
         animeTitle: anime._title,
-        animeTitleLower: anime._titleLower,
-        animeImage: anime.image || "",
         animeType: anime._type,
         animeYear: anime._year,
         animeMembers: anime._members,
         animeScore: anime._score,
+        animeStudio: anime._studio || "",
+        animeTags: [...(anime._genres || []), ...(anime._themes || [])],
 
-        songType: b.type, // OP/ED/IN
-        songNumber: safeNum(it.number) || 1,
-        songName: it.name || "",
-        songArtist: artist || "",
-        songSeason: it.season || anime.season || "",
-
+        image: anime.image || "",
         url,
+        _key: `${b.type}|${it.number || ""}|${it.name || ""}|${url}|${anime.mal_id || ""}`,
       });
     }
   }
-  return songs;
+  return out;
 }
 
-function formatRevealLine(s) {
-  const typeLabel = s.songType === "OP" ? "Opening" : s.songType === "ED" ? "Ending" : "Insert";
-  const num = s.songNumber ? ` ${s.songNumber}` : "";
-  const partName = s.songName ? ` : ${s.songName}` : "";
-  const by = s.songArtist ? ` - ${s.songArtist}` : "";
-  return `${s.animeTitle} ${typeLabel}${num}${partName}${by}`;
+function pickNFromPool(pool, n) {
+  const used = new Set();
+  const out = [];
+  const shuffled = shuffleInPlace([...pool]);
+  for (const it of shuffled) {
+    if (out.length >= n) break;
+    if (used.has(it._key)) continue;
+    used.add(it._key);
+    out.push(it);
+  }
+  return out;
 }
 
-function pickRandom(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
+/* ==========================
+   AUTO “THEME CONTENU”
+   ========================== */
+function norm(s){ return (s || "").toString().trim().toLowerCase(); }
+function hasTag(it, tag) {
+  const t = norm(tag);
+  const arr = Array.isArray(it.tags) ? it.tags : [];
+  return arr.some(x => norm(x) === t);
+}
+function includesStudio(studio, needle) {
+  const s = norm(studio);
+  const n = norm(needle);
+  if (!s || !n) return false;
+  return s.includes(n);
+}
+function nearbyPool(pool, getNum, target, want = 6) {
+  const arr = [...pool].sort((a,b) => getNum(a) - getNum(b));
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < arr.length; i++) {
+    const d = Math.abs(getNum(arr[i]) - target);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  let L = best, R = best;
+  while ((R - L + 1) < want && (L > 0 || R < arr.length - 1)) {
+    if (L > 0) L--;
+    if ((R - L + 1) < want && R < arr.length - 1) R++;
+  }
+  return arr.slice(L, R + 1);
+}
+function pickRoundContentThemeAuto(basePool, mode) {
+  const MIN = 6;
+  const MAX_TRIES = 60;
+
+  const getAnimeYear = (it) => mode === "songs" ? (it.animeYear || 0) : (it.year || 0);
+  const getSongYear  = (it) => (it.songYear || it.animeYear || 0);
+  const getStudio    = (it) => mode === "songs" ? (it.animeStudio || "") : (it.studio || "");
+  const getScore     = (it) => mode === "songs" ? (it.animeScore || 0) : (it.score || 0);
+  const getPop       = (it) => mode === "songs" ? (it.animeMembers || 0) : (it.members || 0);
+
+  const criteriaAnime = ["YEAR","STUDIO","TAG","SCORE_NEAR","POP_NEAR"];
+  const criteriaSongs = ["YEAR","SONG_YEAR","STUDIO","TAG","SCORE_NEAR","POP_NEAR","ARTIST"];
+  const list = (mode === "songs") ? criteriaSongs : criteriaAnime;
+
+  for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+    const seed = basePool[Math.floor(Math.random() * basePool.length)];
+    if (!seed) break;
+
+    const crit = list[Math.floor(Math.random() * list.length)];
+    let pool = [];
+    let label = "Libre";
+
+    if (crit === "YEAR") {
+      const y = getAnimeYear(seed);
+      if (!y) continue;
+      pool = basePool.filter(it => getAnimeYear(it) === y);
+      label = `Année anime : ${y}`;
+    }
+
+    if (crit === "SONG_YEAR" && mode === "songs") {
+      const y = getSongYear(seed);
+      if (!y) continue;
+      pool = basePool.filter(it => getSongYear(it) === y);
+      label = `Année song : ${y}`;
+    }
+
+    if (crit === "STUDIO") {
+      const st = getStudio(seed);
+      if (!st) continue;
+      pool = basePool.filter(it => includesStudio(getStudio(it), st));
+      label = `Studio : ${st}`;
+    }
+
+    if (crit === "TAG") {
+      const tags = Array.isArray(seed.tags) ? seed.tags : [];
+      if (!tags.length) continue;
+      const t = tags[Math.floor(Math.random() * tags.length)];
+      pool = basePool.filter(it => hasTag(it, t));
+      label = `Tag : ${t}`;
+    }
+
+    if (crit === "SCORE_NEAR") {
+      const sc = getScore(seed);
+      if (!sc) continue;
+      pool = nearbyPool(basePool, getScore, sc, MIN);
+      label = `Score proche`;
+    }
+
+    if (crit === "POP_NEAR") {
+      const pop = getPop(seed);
+      if (!pop) continue;
+      pool = nearbyPool(basePool, getPop, pop, MIN);
+      label = `Popularité proche`;
+    }
+
+    if (crit === "ARTIST" && mode === "songs") {
+      const arts = Array.isArray(seed.artistsArr) ? seed.artistsArr.filter(Boolean) : [];
+      if (!arts.length) continue;
+      const a = arts[Math.floor(Math.random() * arts.length)];
+      pool = basePool.filter(it =>
+        Array.isArray(it.artistsArr) && it.artistsArr.some(x => norm(x) === norm(a))
+      );
+      label = `Artiste : ${a}`;
+    }
+
+    if (pool.length >= MIN) return { label, pool, crit };
+  }
+
+  return { label: "Libre", pool: basePool, crit: "FREE" };
 }
 
-// ====== DOM refs ======
+/* ==========================
+   DOM
+   ========================== */
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
 
@@ -157,89 +317,72 @@ const scoreValEl = document.getElementById("scorePercentVal");
 const yearMinValEl = document.getElementById("yearMinVal");
 const yearMaxValEl = document.getElementById("yearMaxVal");
 
+const songsRow = document.getElementById("songsRow");
 const previewCountEl = document.getElementById("previewCount");
 const applyBtn = document.getElementById("applyFiltersBtn");
 const roundCountEl = document.getElementById("roundCount");
 
-const playTry1Btn = document.getElementById("playTry1");
-const playTry2Btn = document.getElementById("playTry2");
-const playTry3Btn = document.getElementById("playTry3");
-
-const btnMatch = document.getElementById("btnMatch");
-const btnNoMatch = document.getElementById("btnNoMatch");
-
-const resultDiv = document.getElementById("result");
-const nextBtn = document.getElementById("nextBtn");
 const roundLabel = document.getElementById("roundLabel");
 
-const videoPlayer = document.getElementById("videoPlayer");
-const audioPlayer = document.getElementById("audioPlayer");
+const teamRowA = document.getElementById("teamRowA");
+const teamRowB = document.getElementById("teamRowB");
+const teamAList = document.getElementById("teamAList");
+const teamBList = document.getElementById("teamBList");
 
-const audioRevealWrapper = document.getElementById("audioRevealWrapper");
+const themeNameEl = document.getElementById("themeName");
+const themeDescEl = document.getElementById("themeDesc");
+const revealStatusEl = document.getElementById("revealStatus");
+const pickStatusEl = document.getElementById("pickStatus");
+const resultDiv = document.getElementById("result");
 
+const confirmBtn = document.getElementById("confirmBtn");
+const nextBtn = document.getElementById("nextBtn");
+
+const playerZone = document.getElementById("player-zone");
+const nowPlaying = document.getElementById("nowPlaying");
+const songPlayer = document.getElementById("songPlayer");
+
+const volumeRow = document.getElementById("volumeRow");
 const volumeSlider = document.getElementById("volumeSlider");
 const volumeVal = document.getElementById("volumeVal");
 
-// ====== Status “anti-bug” ======
-let mediaStatusEl = document.getElementById("mediaStatus");
-function ensureMediaStatusEl() {
-  if (mediaStatusEl) return mediaStatusEl;
-  const container = document.getElementById("container");
-  if (!container) return null;
+// ====== URL (PARCOURS) compat ======
+const urlParams = new URLSearchParams(window.location.search);
+const isParcours = urlParams.get("parcours") === "1";
+const parcoursCount = parseInt(urlParams.get("count") || "1", 10);
+const forcedMode = urlParams.get("mode"); // "anime" | "songs"
 
-  const el = document.createElement("div");
-  el.id = "mediaStatus";
-  el.style.margin = "6px 0 10px 0";
-  el.style.fontWeight = "900";
-  el.style.opacity = "0.9";
-  el.style.fontSize = "0.95rem";
-  el.style.minHeight = "1.2em";
-  el.style.textAlign = "center";
-  el.style.userSelect = "none";
-
-  container.insertBefore(el, container.querySelector("#videoWrapper") || null);
-  mediaStatusEl = el;
-  return el;
-}
-function setMediaStatus(msg) {
-  const el = ensureMediaStatusEl();
-  if (!el) return;
-  el.textContent = msg || "";
-}
-
-// ====== Support WebM ======
-const CAN_PLAY_WEBM = (() => {
-  const v = document.createElement("video");
-  if (!v.canPlayType) return false;
-  const t1 = v.canPlayType('video/webm; codecs="vp9, opus"');
-  const t2 = v.canPlayType('video/webm; codecs="vp8, opus"');
-  const t3 = v.canPlayType("video/webm");
-  return (t1 && t1 !== "") || (t2 && t2 !== "") || (t3 && t3 !== "");
-})();
-
-// ====== Data ======
+// ====== DATA ======
 let allAnimes = [];
 let allSongs = [];
-let filteredSongs = [];
 
-// ====== Session (Rounds) ======
+// ====== SETTINGS ======
+let currentMode = "anime";
+let filteredPool = [];
+
+// ====== GAME STATE ======
 let totalRounds = 1;
 let currentRound = 1;
-let totalScore = 0;
 
-// ====== Round state ======
-let videoSong = null; // Song A
-let audioSong = null; // Song B
-let isMatch = false;
+let currentContentTheme = null;
 
-let tries = 0;        // 0..3 (écoutes)
-let roundReady = false;
+// 3v3
+let teamItemsA = [];
+let teamItemsB = [];
 
-// tokens anti-bug
+let revealDone = false;
+let selectionEnabled = false;
+let selectedTeam = null; // 0 ou 1
+let lockedAfterValidate = false;
+
+// tokens
 let roundToken = 0;
 let mediaToken = 0;
 
-// ====== UI show/hide ======
+let revealTimer = null;
+let wallTimer = null;
+
+// ====== UI SHOW/HIDE ======
 function showCustomization() {
   customPanel.style.display = "block";
   gamePanel.style.display = "none";
@@ -249,144 +392,48 @@ function showGame() {
   gamePanel.style.display = "block";
 }
 
-// ====== Score bar ======
-function getScoreBarColor(score) {
-  if (score >= 2500) return "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
-  if (score >= 1500) return "linear-gradient(90deg,#fff96a,#ffc34b 90%)";
-  if (score >= 1000) return "linear-gradient(90deg,#ffb347,#fd654c 90%)";
-  if (score > 0) return "linear-gradient(90deg,#fd654c,#cb202d 90%)";
-  return "linear-gradient(90deg,#444,#333 90%)";
-}
-
-function finalScore() {
-  if (tries === 1) return SCORE_TRY1;
-  if (tries === 2) return SCORE_TRY2;
-  if (tries === 3) return SCORE_TRY3;
-  return 0;
-}
-
-function updateScoreBar(forceScore = null) {
-  const bar = document.getElementById("score-bar");
-  const label = document.getElementById("score-bar-label");
-
-  let score = MAX_SCORE;
-  if (forceScore !== null) {
-    score = forceScore;
-  } else {
-    score = finalScore() || MAX_SCORE;
-    if (tries === 0) score = MAX_SCORE;
-  }
-
-  const percent = Math.max(0, Math.min(100, (score / MAX_SCORE) * 100));
-  label.textContent = `${score} / ${MAX_SCORE}`;
-  bar.style.width = percent + "%";
-  bar.style.background = getScoreBarColor(score);
-}
-
-// ====== Volume ======
+// ====== VOLUME ======
 function applyVolume() {
-  if (!audioPlayer || !volumeSlider) return;
-  const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "50", 10)));
-  audioPlayer.volume = v / 100;
-  if (volumeVal) volumeVal.textContent = `${v}%`;
+  if (!songPlayer) return;
+  const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "30", 10)));
+  songPlayer.muted = false;
+  songPlayer.volume = v / 100;
+  volumeVal.textContent = `${v}%`;
 }
 if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
 
-// ====== Segment limiter (basé sur currentTime) ======
-function createLimiter(mediaEl) {
-  return {
-    el: mediaEl,
-    active: false,
-    endTime: 0,
-    handlerTimeUpdate: null,
-    handlerSeeked: null,
-  };
+// ====== MEDIA LOADER (retries + anti-stall) ======
+function hardResetMedia() {
+  try { songPlayer.pause(); } catch {}
+  songPlayer.removeAttribute("src");
+  songPlayer.load();
 }
-
-const limiterVideo = createLimiter(videoPlayer);
-const limiterAudio = createLimiter(audioPlayer);
-
-function clearLimiter(lim) {
-  if (!lim.active) return;
-  if (lim.handlerTimeUpdate) lim.el.removeEventListener("timeupdate", lim.handlerTimeUpdate);
-  if (lim.handlerSeeked) lim.el.removeEventListener("seeked", lim.handlerSeeked);
-  lim.active = false;
-  lim.endTime = 0;
-  lim.handlerTimeUpdate = null;
-  lim.handlerSeeked = null;
-}
-
-function armLimiter(lim, startTime, durationSec) {
-  clearLimiter(lim);
-  if (durationSec == null) return;
-
-  const endTime = startTime + durationSec;
-  lim.active = true;
-  lim.endTime = endTime;
-
-  const onTimeUpdate = () => {
-    if (!lim.active) return;
-    if (lim.el.currentTime >= lim.endTime - 0.05) {
-      try { lim.el.pause(); } catch {}
-      clearLimiter(lim);
-      setMediaStatus("");
-    }
-  };
-
-  const onSeeked = () => {
-    if (!lim.active) return;
-    if (lim.el.currentTime >= lim.endTime - 0.05) {
-      try { lim.el.pause(); } catch {}
-      clearLimiter(lim);
-      setMediaStatus("");
-    }
-  };
-
-  lim.handlerTimeUpdate = onTimeUpdate;
-  lim.handlerSeeked = onSeeked;
-
-  lim.el.addEventListener("timeupdate", onTimeUpdate);
-  lim.el.addEventListener("seeked", onSeeked);
-}
-
-// ====== MEDIA loader (retries + anti-stall) ======
-function hardResetMedia(el) {
-  clearLimiter(el === videoPlayer ? limiterVideo : limiterAudio);
-  try { el.pause(); } catch {}
-  el.removeAttribute("src");
-  el.load();
-}
-
 function withCacheBuster(url) {
   const sep = url.includes("?") ? "&" : "?";
   return url + sep + "t=" + Date.now();
 }
-
-function loadMediaWithRetries(el, url, localRound, localMedia, onReady, onFail, { preloadOnly = false } = {}) {
+function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
   let attemptIndex = 0;
   let stallTimer = null;
   let done = false;
 
   const cleanup = () => {
-    if (stallTimer) {
-      clearTimeout(stallTimer);
-      stallTimer = null;
-    }
-    el.onloadedmetadata = null;
-    el.oncanplay = null;
-    el.onplaying = null;
-    el.onwaiting = null;
-    el.onstalled = null;
-    el.onerror = null;
+    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+    songPlayer.onloadedmetadata = null;
+    songPlayer.oncanplay = null;
+    songPlayer.onplaying = null;
+    songPlayer.onwaiting = null;
+    songPlayer.onstalled = null;
+    songPlayer.onerror = null;
   };
 
-  const isStillValid = () => localRound === roundToken && localMedia === mediaToken;
+  const isStillValid = () => (localRound === roundToken && localMedia === mediaToken);
 
   const startStallTimer = () => {
     if (stallTimer) clearTimeout(stallTimer);
     stallTimer = setTimeout(() => {
       if (!isStillValid() || done) return;
-      triggerRetry("🔄 Rechargement (stall)...");
+      triggerRetry();
     }, STALL_TIMEOUT_MS);
   };
 
@@ -394,23 +441,18 @@ function loadMediaWithRetries(el, url, localRound, localMedia, onReady, onFail, 
     if (!isStillValid() || done) return;
     done = true;
     cleanup();
-    if (typeof onReady === "function") onReady();
+    onReady?.();
   };
 
-  const triggerRetry = (msg) => {
+  const triggerRetry = () => {
     if (!isStillValid() || done) return;
-
     cleanup();
     attemptIndex++;
-
     if (attemptIndex >= RETRY_DELAYS.length) {
       done = true;
-      setMediaStatus("❌ Média indisponible.");
-      if (typeof onFail === "function") onFail();
+      try { songPlayer.pause(); } catch {}
       return;
     }
-
-    setMediaStatus(msg || `🔄 Nouvelle tentative (${attemptIndex + 1}/${RETRY_DELAYS.length})...`);
     setTimeout(() => {
       if (!isStillValid() || done) return;
       doAttempt();
@@ -419,66 +461,64 @@ function loadMediaWithRetries(el, url, localRound, localMedia, onReady, onFail, 
 
   const doAttempt = () => {
     if (!isStillValid() || done) return;
-
     const src = attemptIndex === 0 ? url : withCacheBuster(url);
 
-    try { hardResetMedia(el); } catch {}
+    try { hardResetMedia(); } catch {}
+    songPlayer.preload = "metadata";
+    songPlayer.muted = false;
+    songPlayer.src = src;
+    songPlayer.load();
 
-    setMediaStatus(attemptIndex === 0 ? "⏳ Chargement..." : `🔄 Nouvelle tentative (${attemptIndex + 1}/${RETRY_DELAYS.length})...`);
-
-    el.preload = "metadata";
-    el.src = src;
-    el.load();
-
-    el.onloadedmetadata = () => {
+    songPlayer.onloadedmetadata = () => { if (!isStillValid() || done) return; markReady(); };
+    songPlayer.oncanplay = () => { if (!isStillValid() || done) return; markReady(); };
+    songPlayer.onwaiting = () => { if (!isStillValid() || done) return; startStallTimer(); };
+    songPlayer.onstalled = () => { if (!isStillValid() || done) return; startStallTimer(); };
+    songPlayer.onplaying = () => {
       if (!isStillValid() || done) return;
-      if (preloadOnly) return markReady();
-      markReady();
+      if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
     };
-
-    el.oncanplay = () => {
-      if (!isStillValid() || done) return;
-      if (preloadOnly) return markReady();
-      markReady();
-    };
-
-    el.onwaiting = () => {
-      if (!isStillValid() || done) return;
-      setMediaStatus("⏳ Chargement...");
-      startStallTimer();
-    };
-
-    el.onstalled = () => {
-      if (!isStillValid() || done) return;
-      setMediaStatus("⏳ Chargement...");
-      startStallTimer();
-    };
-
-    el.onplaying = () => {
-      if (!isStillValid() || done) return;
-      setMediaStatus("");
-      if (stallTimer) {
-        clearTimeout(stallTimer);
-        stallTimer = null;
-      }
-    };
-
-    el.onerror = () => {
-      if (!isStillValid() || done) return;
-      triggerRetry();
-    };
+    songPlayer.onerror = () => { if (!isStillValid() || done) return; triggerRetry(); };
 
     startStallTimer();
   };
 
   attemptIndex = 0;
   doAttempt();
-
   return cleanup;
 }
 
-// ====== Custom UI init ======
+// ====== UI INIT ======
 function initCustomUI() {
+  document.querySelectorAll("#modePills .pill").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#modePills .pill").forEach(b => {
+        b.classList.remove("active");
+        b.setAttribute("aria-pressed", "false");
+      });
+      btn.classList.add("active");
+      btn.setAttribute("aria-pressed", "true");
+      currentMode = btn.dataset.mode;
+      updateModeVisibility();
+      updatePreview();
+    });
+  });
+
+  document.querySelectorAll("#typePills .pill").forEach(btn => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      updatePreview();
+    });
+  });
+
+  document.querySelectorAll("#songPills .pill").forEach(btn => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      updatePreview();
+    });
+  });
+
   function syncLabels() {
     clampYearSliders();
     popValEl.textContent = popEl.value;
@@ -487,551 +527,528 @@ function initCustomUI() {
     yearMaxValEl.textContent = yearMaxEl.value;
     updatePreview();
   }
-
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
-
-  // type pills (au moins 1)
-  document.querySelectorAll("#typePills .pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-
-      const any = document.querySelectorAll("#typePills .pill.active").length > 0;
-      if (!any) {
-        btn.classList.add("active");
-        btn.setAttribute("aria-pressed", "true");
-      }
-
-      updatePreview();
-    });
-  });
-
-  // song pills (au moins 1)
-  document.querySelectorAll("#songPills .pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-
-      const any = document.querySelectorAll("#songPills .pill.active").length > 0;
-      if (!any) {
-        btn.classList.add("active");
-        btn.setAttribute("aria-pressed", "true");
-      }
-
-      updatePreview();
-    });
-  });
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncLabels));
 
   applyBtn.addEventListener("click", () => {
-    filteredSongs = applyFilters();
-    if (filteredSongs.length < MIN_REQUIRED_SONGS) return;
+    filteredPool = applyFilters();
+    const minNeeded = Math.max(6, MIN_REQUIRED);
+    if (filteredPool.length < minNeeded) return;
 
     totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
     currentRound = 1;
-    totalScore = 0;
+
+    if (isParcours) {
+      totalRounds = clampInt(parcoursCount, 1, 100);
+      if (forcedMode === "anime" || forcedMode === "songs") currentMode = forcedMode;
+      updateModePillsFromState();
+    }
 
     showGame();
-    startNewRound();
+    startRound();
   });
 
+  if (forcedMode === "anime" || forcedMode === "songs") {
+    currentMode = forcedMode;
+    updateModePillsFromState();
+  }
+
+  updateModeVisibility();
   syncLabels();
 }
 
-// ====== Filters ======
+function updateModePillsFromState() {
+  document.querySelectorAll("#modePills .pill").forEach(b => {
+    const active = b.dataset.mode === currentMode;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  updateModeVisibility();
+}
+
+function updateModeVisibility() {
+  songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
+}
+
+// ====== FILTERS ======
 function applyFilters() {
   const popPercent = parseInt(popEl.value, 10);
   const scorePercent = parseInt(scoreEl.value, 10);
   const yearMin = parseInt(yearMinEl.value, 10);
   const yearMax = parseInt(yearMaxEl.value, 10);
 
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
-  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map(b => b.dataset.type);
+  if (allowedTypes.length === 0) return [];
 
-  if (allowedTypes.length === 0 || allowedSongs.length === 0) return [];
+  if (currentMode === "anime") {
+    let pool = allAnimes.filter(a => a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type));
+    pool.sort((a, b) => b._members - a._members);
+    pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-  // 1) filtre year/type/songType
-  let pool = allSongs.filter((s) => {
-    return (
-      s.animeYear >= yearMin &&
-      s.animeYear <= yearMax &&
-      allowedTypes.includes(s.animeType) &&
-      allowedSongs.includes(s.songType)
-    );
-  });
+    pool.sort((a, b) => b._score - a._score);
+    pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  // 2) top pop% (members)
+    return pool.map(a => ({
+      kind: "anime",
+      _key: `anime|${a.mal_id}`,
+      title: a._title,
+      image: a.image || "",
+      year: a._year,
+      studio: a._studio || "",
+      members: a._members,
+      score: a._score,
+      tags: [...(a._genres || []), ...(a._themes || [])],
+    }));
+  }
+
+  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map(b => b.dataset.song);
+  if (allowedSongs.length === 0) return [];
+
+  let pool = allSongs.filter(s =>
+    s.animeYear >= yearMin && s.animeYear <= yearMax &&
+    allowedTypes.includes(s.animeType) &&
+    allowedSongs.includes(s.songType)
+  );
+
   pool.sort((a, b) => b.animeMembers - a.animeMembers);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-  // 3) top score% (score)
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  return pool;
+  return pool.map(s => ({
+    kind: "song",
+    _key: `song|${s._key}`,
+    animeTitle: s.animeTitle || "Anime",
+    songName: s.songName || "",
+    songNumber: s.songNumber || 1,
+    songArtists: s.songArtists || "",
+    artistsArr: Array.isArray(s.artistsArr) ? s.artistsArr : [],
+    songType: s.songType,
+    url: s.url,
+    image: s.image || "",
+
+    animeYear: s.animeYear || 0,
+    songYear: s.songYear || s.animeYear || 0,
+    animeStudio: s.animeStudio || "",
+    animeMembers: s.animeMembers || 0,
+    animeScore: s.animeScore || 0,
+    tags: Array.isArray(s.animeTags) ? s.animeTags : [],
+  }));
 }
 
-// ====== Preview ======
+// ====== PREVIEW ======
 function updatePreview() {
-  if (!allSongs.length) {
+  if (!allAnimes.length) {
     previewCountEl.textContent = "⏳ Chargement de la base…";
     previewCountEl.classList.add("bad");
     previewCountEl.classList.remove("good");
     applyBtn.disabled = true;
+    applyBtn.classList.add("disabled");
     return;
   }
 
   const pool = applyFilters();
-  const ok = pool.length >= MIN_REQUIRED_SONGS;
+  const minNeeded = Math.max(6, MIN_REQUIRED);
+  const ok = pool.length >= minNeeded;
+  const label = (currentMode === "songs") ? "Songs" : "Titres";
 
   previewCountEl.textContent = ok
-    ? `🎵 Songs disponibles : ${pool.length} (OK)`
-    : `🎵 Songs disponibles : ${pool.length} (Min ${MIN_REQUIRED_SONGS})`;
+    ? `🎵 ${label} disponibles : ${pool.length} (OK)`
+    : `🎵 ${label} disponibles : ${pool.length} (Min ${MIN_REQUIRED})`;
 
   previewCountEl.classList.toggle("good", ok);
   previewCountEl.classList.toggle("bad", !ok);
-
   applyBtn.disabled = !ok;
   applyBtn.classList.toggle("disabled", !ok);
 }
 
-// ====== Playback helpers ======
-function stopPlayback() {
-  clearLimiter(limiterVideo);
-  clearLimiter(limiterAudio);
-  try { videoPlayer.pause(); } catch {}
-  try { audioPlayer.pause(); } catch {}
+// ====== ROUND UI ======
+function clearRevealTimer() {
+  if (revealTimer) { clearInterval(revealTimer); revealTimer = null; }
+}
+function clearWallTimer() {
+  if (wallTimer) { clearTimeout(wallTimer); wallTimer = null; }
+}
+function stopMedia() {
+  mediaToken++;
+  try { songPlayer.pause(); } catch {}
+  songPlayer.removeAttribute("src");
+  songPlayer.load();
+}
+function clearTeamBadges() {
+  [teamRowA, teamRowB].forEach(row => row.querySelectorAll(".tp-badge").forEach(b => b.remove()));
 }
 
-function lockPlayersForGame() {
-  // Pendant le jeu : vidéo muette, audio actif
-  videoPlayer.muted = true;
-  videoPlayer.controls = false;
-  videoPlayer.removeAttribute("controls");
+function resetRoundUI() {
+  clearRevealTimer();
+  clearWallTimer();
+  stopMedia();
 
-  audioPlayer.muted = false;
-  audioPlayer.controls = false;
-  audioPlayer.removeAttribute("controls");
-  audioRevealWrapper.style.display = "none";
-}
+  revealDone = false;
+  selectionEnabled = false;
+  selectedTeam = null;
+  lockedAfterValidate = false;
 
-function revealPlayersAtEnd() {
-  clearLimiter(limiterVideo);
-  clearLimiter(limiterAudio);
+  clearTeamBadges();
 
-  try { videoPlayer.pause(); } catch {}
-  try { audioPlayer.pause(); } catch {}
-
-  // Reveal : on autorise les contrôles
-  videoPlayer.muted = false;
-  videoPlayer.controls = true;
-  videoPlayer.setAttribute("controls", "controls");
-
-  audioRevealWrapper.style.display = "block";
-  audioPlayer.muted = false;
-  audioPlayer.controls = true;
-  audioPlayer.setAttribute("controls", "controls");
-
-  applyVolume();
-}
-
-function updateListenButtons() {
-  if (!roundReady) {
-    playTry1Btn.disabled = true;
-    playTry2Btn.disabled = true;
-    playTry3Btn.disabled = true;
-    return;
-  }
-
-  // tries = nombre d’écoutes déjà consommées
-  if (tries === 0) {
-    playTry1Btn.disabled = false;
-    playTry2Btn.disabled = true;
-    playTry3Btn.disabled = true;
-    return;
-  }
-  if (tries === 1) {
-    playTry1Btn.disabled = true;
-    playTry2Btn.disabled = false;
-    playTry3Btn.disabled = true;
-    return;
-  }
-  if (tries === 2) {
-    playTry1Btn.disabled = true;
-    playTry2Btn.disabled = true;
-    playTry3Btn.disabled = false;
-    return;
-  }
-  // tries >= 3
-  playTry1Btn.disabled = true;
-  playTry2Btn.disabled = true;
-  playTry3Btn.disabled = true;
-}
-
-// ====== Round init/reset ======
-function resetControls() {
-  tries = 0;
-  roundReady = false;
+  teamRowA.classList.remove("selected-keep", "tp-row-locked");
+  teamRowB.classList.remove("selected-keep", "tp-row-locked");
 
   resultDiv.textContent = "";
-  resultDiv.className = "";
 
-  btnMatch.disabled = true;
-  btnNoMatch.disabled = true;
+  themeNameEl.style.display = "none";
+  themeDescEl.style.display = "none";
+  revealStatusEl.style.display = "none";
+  pickStatusEl.style.display = "none";
 
+  confirmBtn.disabled = true;
+  confirmBtn.classList.add("disabled");
   nextBtn.style.display = "none";
-  nextBtn.onclick = null;
 
-  stopPlayback();
-  lockPlayersForGame();
-
-  updateScoreBar(3000);
-  updateListenButtons();
-
-  if (roundLabel) roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
-  setMediaStatus("");
+  playerZone.style.display = (currentMode === "songs") ? "block" : "none";
+  volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
+  if (currentMode === "songs") applyVolume();
 }
 
-function pickAudioDifferentFrom(videoS) {
-  // on force un URL différent
-  for (let i = 0; i < 40; i++) {
-    const cand = pickRandom(filteredSongs);
-    if (cand && cand.url && cand.url !== videoS.url) return cand;
+function makePlaceholderLi(team, pos) {
+  const li = document.createElement("li");
+  li.classList.add("tp-item", "tp-locked");
+  li.dataset.team = String(team);
+  li.dataset.pos = String(pos);
+
+  const ph = document.createElement("div");
+  ph.className = "placeholder";
+  li.appendChild(ph);
+
+  const span = document.createElement("span");
+  span.textContent = `#${pos + 1}`;
+  li.appendChild(span);
+
+  return li;
+}
+
+function renderPlaceholders() {
+  teamAList.innerHTML = "";
+  teamBList.innerHTML = "";
+  for (let i = 0; i < 3; i++) {
+    teamAList.appendChild(makePlaceholderLi(0, i));
+    teamBList.appendChild(makePlaceholderLi(1, i));
   }
-  // fallback (si dataset bizarre)
-  return pickRandom(filteredSongs);
 }
 
-function startNewRound() {
-  roundToken++;
-  mediaToken++; // invalide tout ce qui traîne
-  resetControls();
+function setThemeUI(contentTheme) {
+  const cLabel = contentTheme?.label || "Libre";
+  themeNameEl.textContent = `✅ ${RULE.label}`;
+  themeDescEl.textContent = `${RULE.desc} • 🎯 Filtre : ${cLabel}`;
+}
 
-  if (!CAN_PLAY_WEBM) {
-    setMediaStatus("⚠️ WebM non supporté sur ce navigateur (Safari/iOS).");
-    return;
-  }
+function updatePickStatus() {
+  const got = (selectedTeam === 0 || selectedTeam === 1) ? 1 : 0;
+  pickStatusEl.textContent = `✅ Ligne choisie : ${got} / 1`;
 
-  // Choix Song A (vidéo) + Song B (audio)
-  videoSong = pickRandom(filteredSongs);
-  if (!videoSong || !videoSong.url) return startNewRound();
+  const ok = got === 1;
+  pickStatusEl.classList.toggle("good", ok);
+  pickStatusEl.classList.toggle("bad", !ok);
 
-  isMatch = Math.random() < 0.5;
-  audioSong = isMatch ? videoSong : pickAudioDifferentFrom(videoSong);
-  if (!audioSong || !audioSong.url) return startNewRound();
+  confirmBtn.disabled = !ok || !selectionEnabled || lockedAfterValidate;
+  confirmBtn.classList.toggle("disabled", confirmBtn.disabled);
+}
 
-  // Préchargement des 2 médias
-  setMediaStatus("⏳ Préchargement...");
+function markRevealDone() {
+  revealDone = true;
+  selectionEnabled = true;
 
-  const localRound = roundToken;
-  const localMedia = mediaToken;
+  themeNameEl.style.display = "block";
+  themeDescEl.style.display = "block";
 
-  let readyCount = 0;
-  let failed = false;
+  revealStatusEl.style.display = "block";
+  revealStatusEl.classList.remove("bad");
+  revealStatusEl.classList.add("good");
+  revealStatusEl.textContent = "✅ Révélation terminée — choisis la meilleure ligne !";
 
-  const onReadyOne = () => {
-    if (failed) return;
-    readyCount++;
-    if (readyCount >= 2) {
+  pickStatusEl.style.display = "block";
+  updatePickStatus();
+}
+
+function getRevealOrder() {
+  return [
+    { team: 0, pos: 0 },
+    { team: 1, pos: 0 },
+    { team: 0, pos: 1 },
+    { team: 1, pos: 1 },
+    { team: 0, pos: 2 },
+    { team: 1, pos: 2 },
+  ];
+}
+
+function revealCard(team, pos, item, localRound) {
+  if (localRound !== roundToken) return;
+
+  const list = team === 0 ? teamAList : teamBList;
+  const li = list.querySelector(`li[data-team="${team}"][data-pos="${pos}"]`);
+  if (!li) return;
+
+  li.innerHTML = "";
+  li.classList.remove("tp-locked");
+  li.dataset.key = item._key;
+  li.dataset.revealed = "1";
+
+  const img = document.createElement("img");
+  img.src = item.image || "";
+  img.alt = (item.kind === "song") ? (item.animeTitle || "Cover") : (item.title || "Cover");
+  img.loading = "lazy";
+  img.decoding = "async";
+  li.appendChild(img);
+
+  const span = document.createElement("span");
+  span.textContent = formatItemLabel(item);
+  li.appendChild(span);
+}
+
+// ====== REVEAL (ANIME) ======
+function revealAnimeProgressively(localRound) {
+  const order = getRevealOrder();
+  let i = 0;
+
+  const step = () => {
+    if (localRound !== roundToken) { clearRevealTimer(); return; }
+    if (i >= order.length) { clearRevealTimer(); markRevealDone(); return; }
+
+    const { team, pos } = order[i];
+    const item = team === 0 ? teamItemsA[pos] : teamItemsB[pos];
+    revealCard(team, pos, item, localRound);
+
+    i++;
+  };
+
+  requestAnimationFrame(() => step());
+  revealTimer = setInterval(step, 1000);
+}
+
+// ====== SONG SNIPPET ======
+function playSongSnippet(item, localRound) {
+  return new Promise((resolve) => {
+    if (currentMode !== "songs" || !item?.url) { resolve(); return; }
+
+    clearWallTimer();
+    stopMedia();
+
+    nowPlaying.textContent = `🎵 Extrait : ${formatItemLabel(item)}`;
+
+    mediaToken++;
+    const localMedia = mediaToken;
+
+    wallTimer = setTimeout(() => {
+      cleanupAll();
+      resolve();
+    }, MAX_WALL_SNIPPET_MS);
+
+    let endTime = null;
+    let cleanupLoad = null;
+
+    const onTimeUpdate = () => {
       if (localRound !== roundToken || localMedia !== mediaToken) return;
-      roundReady = true;
-      setMediaStatus("");
-      updateListenButtons();
-      // pour que le visuel s’affiche vite
-      lockPlayersForGame();
-      applyVolume();
-    }
-  };
-
-  const onFailAny = () => {
-    if (failed) return;
-    failed = true;
-    if (localRound !== roundToken || localMedia !== mediaToken) return;
-    startNewRound();
-  };
-
-  // vidéo (Song A)
-  loadMediaWithRetries(
-    videoPlayer,
-    videoSong.url,
-    localRound,
-    localMedia,
-    onReadyOne,
-    onFailAny,
-    { preloadOnly: true }
-  );
-
-  // audio (Song B)
-  loadMediaWithRetries(
-    audioPlayer,
-    audioSong.url,
-    localRound,
-    localMedia,
-    onReadyOne,
-    onFailAny,
-    { preloadOnly: true }
-  );
-}
-
-// ====== Play segment (VIDÉO + AUDIO) ======
-function playSegment(tryNum) {
-  if (!roundReady) return;
-  if (!videoSong || !audioSong) return;
-
-  if (tryNum !== tries + 1) {
-    alert("Vous devez écouter les extraits dans l'ordre.");
-    return;
-  }
-
-  // nouveau token “segment”
-  mediaToken++;
-
-  tries = tryNum;
-  updateScoreBar();
-  updateListenButtons();
-
-  // enable answer dès la 1ère écoute
-  btnMatch.disabled = tries < 1;
-  btnNoMatch.disabled = tries < 1;
-
-  // start times
-  let startTime = 0;
-  if (tries === 2) startTime = REFRAIN_START;
-  if (tries === 3) startTime = 0;
-
-  const dur = TRY_DURATIONS[tries - 1];
-
-  lockPlayersForGame();
-  stopPlayback();
-  setMediaStatus("⏳ Chargement...");
-
-  const localRound = roundToken;
-  const localMedia = mediaToken;
-
-  let readyV = false;
-  let readyA = false;
-  let started = false;
-
-  const maybeStart = () => {
-    if (started) return;
-    if (!readyV || !readyA) return;
-    if (localRound !== roundToken || localMedia !== mediaToken) return;
-
-    started = true;
-
-    // seek + limiter
-    try { videoPlayer.currentTime = startTime; } catch {}
-    try { audioPlayer.currentTime = startTime; } catch {}
-
-    armLimiter(limiterVideo, startTime, dur);
-    armLimiter(limiterAudio, startTime, dur);
-
-    // jeu : vidéo muette, audio actif
-    videoPlayer.muted = true;
-    audioPlayer.muted = false;
-    applyVolume();
-
-    Promise.allSettled([
-      videoPlayer.play(),
-      audioPlayer.play()
-    ]).then(() => {
-      if (localRound !== roundToken || localMedia !== mediaToken) return;
-      setMediaStatus("");
-    }).catch(() => {
-      if (localRound !== roundToken || localMedia !== mediaToken) return;
-      setMediaStatus("❌ Impossible de lire ce média.");
-    });
-  };
-
-  const failAll = () => {
-    if (localRound !== roundToken || localMedia !== mediaToken) return;
-    setMediaStatus("❌ Média indisponible. Changement…");
-    startNewRound();
-  };
-
-  loadMediaWithRetries(
-    videoPlayer,
-    videoSong.url,
-    localRound,
-    localMedia,
-    () => { readyV = true; maybeStart(); },
-    failAll,
-    { preloadOnly: false }
-  );
-
-  loadMediaWithRetries(
-    audioPlayer,
-    audioSong.url,
-    localRound,
-    localMedia,
-    () => { readyA = true; maybeStart(); },
-    failAll,
-    { preloadOnly: false }
-  );
-}
-
-// ====== Guess logic ======
-function blockInputsAll() {
-  btnMatch.disabled = true;
-  btnNoMatch.disabled = true;
-  playTry1Btn.disabled = true;
-  playTry2Btn.disabled = true;
-  playTry3Btn.disabled = true;
-}
-
-function endRoundAndMaybeNext(roundScore) {
-  totalScore += roundScore;
-
-  if (currentRound >= totalRounds) {
-    resultDiv.innerHTML += `
-      <div style="margin-top:10px; font-weight:900; opacity:0.95;">
-        ✅ Série terminée !<br>
-        Score total : <b>${totalScore}</b> / <b>${totalRounds * 3000}</b>
-      </div>
-    `;
-
-    nextBtn.style.display = "block";
-    nextBtn.textContent = "Retour réglages";
-    nextBtn.onclick = () => {
-      showCustomization();
-      stopPlayback();
-      audioRevealWrapper.style.display = "none";
-      resultDiv.textContent = "";
-      setMediaStatus("");
+      if (endTime == null) return;
+      if (songPlayer.currentTime >= endTime) stopSnippet();
     };
-    return;
-  }
+    const onEnded = () => stopSnippet();
 
-  nextBtn.style.display = "block";
-  nextBtn.textContent = "Round suivant";
-  nextBtn.onclick = () => {
-    currentRound += 1;
-    startNewRound();
-  };
-}
+    const cleanupAll = () => {
+      clearWallTimer();
+      songPlayer.removeEventListener("timeupdate", onTimeUpdate);
+      songPlayer.removeEventListener("ended", onEnded);
+      try { songPlayer.pause(); } catch {}
+      cleanupLoad?.();
+    };
 
-function checkAnswer(userSaysMatch) {
-  if (!videoSong || !audioSong) return;
-  if (tries < 1) return;
+    const stopSnippet = () => {
+      cleanupAll();
+      resolve();
+    };
 
-  const good = (userSaysMatch === isMatch);
+    cleanupLoad = loadMediaWithRetries(item.url, localRound, localMedia, {
+      onReady: () => {
+        if (localRound !== roundToken || localMedia !== mediaToken) {
+          cleanupAll();
+          resolve();
+          return;
+        }
 
-  stopPlayback();
-  revealPlayersAtEnd();
-  blockInputsAll();
+        applyVolume();
+        songPlayer.muted = false;
 
-  if (good) {
-    const score = finalScore();
-    resultDiv.innerHTML = `
-      🎉 Bonne réponse !<br>
-      <b>${isMatch ? "✅ MATCH" : "❌ PAS MATCH"}</b>
-      <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
-      <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
-      <div style="margin-top:8px;">Score : <b>${score}</b> / 3000</div>
-    `;
-    resultDiv.className = "correct";
-    updateScoreBar(score);
-    launchFireworks();
-    endRoundAndMaybeNext(score);
-    return;
-  }
+        let start = SONG_START_SEC;
+        const dur = songPlayer.duration;
+        if (Number.isFinite(dur) && dur > 1) {
+          start = Math.min(SONG_START_SEC, Math.max(0, dur - 0.25));
+          endTime = Math.min(start + SONG_PLAY_SEC, Math.max(0, dur - 0.05));
+        } else {
+          endTime = start + SONG_PLAY_SEC;
+        }
 
-  // mauvais
-  resultDiv.innerHTML = `
-    ❌ Mauvaise réponse.<br>
-    Réponse correcte : <b>${isMatch ? "✅ MATCH" : "❌ PAS MATCH"}</b>
-    <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
-    <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
-    <div style="margin-top:8px;">Score : <b>0</b> / 3000</div>
-  `;
-  resultDiv.className = "incorrect";
-  updateScoreBar(0);
-  endRoundAndMaybeNext(0);
-}
+        songPlayer.addEventListener("timeupdate", onTimeUpdate);
+        songPlayer.addEventListener("ended", onEnded);
 
-// ====== Buttons ======
-playTry1Btn.addEventListener("click", () => playSegment(1));
-playTry2Btn.addEventListener("click", () => playSegment(2));
-playTry3Btn.addEventListener("click", () => playSegment(3));
-
-btnMatch.addEventListener("click", () => checkAnswer(true));
-btnNoMatch.addEventListener("click", () => checkAnswer(false));
-
-// ====== Tooltip help ======
-document.addEventListener("click", (e) => {
-  const icon = e.target.closest(".info-icon");
-  if (!icon) return;
-  e.preventDefault();
-  e.stopPropagation();
-  const wrap = icon.closest(".info-wrap");
-  if (wrap) wrap.classList.toggle("open");
-});
-
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
-  }
-});
-
-// ====== Fireworks ======
-function launchFireworks() {
-  const canvas = document.getElementById("fireworks");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-
-  const particles = [];
-  function createParticle(x, y) {
-    const angle = Math.random() * 2 * Math.PI;
-    const speed = Math.random() * 5 + 2;
-    return { x, y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 60 };
-  }
-  for (let i = 0; i < 80; i++) particles.push(createParticle(canvas.width / 2, canvas.height / 2));
-
-  function animate() {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    particles.forEach((p) => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-      ctx.fillStyle = `hsl(${Math.random() * 360}, 100%, 50%)`;
-      ctx.fill();
-      p.x += p.dx;
-      p.y += p.dy;
-      p.dy += 0.05;
-      p.life--;
+        try { songPlayer.currentTime = start; } catch {}
+        songPlayer.play?.().catch(() => {});
+      }
     });
-
-    for (let i = particles.length - 1; i >= 0; i--) {
-      if (particles[i].life <= 0) particles.splice(i, 1);
-    }
-
-    if (particles.length > 0) requestAnimationFrame(animate);
-    else ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
-  animate();
+  });
 }
 
-// ====== Load dataset ======
+// ====== REVEAL (SONGS) ======
+async function revealSongsSequence(localRound) {
+  const order = getRevealOrder();
+  for (let i = 0; i < order.length; i++) {
+    if (localRound !== roundToken) return;
+
+    const { team, pos } = order[i];
+    const item = team === 0 ? teamItemsA[pos] : teamItemsB[pos];
+
+    revealCard(team, pos, item, localRound);
+    await playSongSnippet(item, localRound).catch(() => {});
+  }
+  if (localRound !== roundToken) return;
+  markRevealDone();
+}
+
+// ====== SELECTION (ligne) ======
+function refreshRowSelectionUI() {
+  teamRowA.classList.remove("selected-keep");
+  teamRowB.classList.remove("selected-keep");
+
+  if (selectedTeam === 0) teamRowA.classList.add("selected-keep");
+  if (selectedTeam === 1) teamRowB.classList.add("selected-keep");
+
+  updatePickStatus();
+}
+
+function onTeamClick(team) {
+  if (!selectionEnabled || lockedAfterValidate) return;
+  if (!revealDone) return;
+
+  selectedTeam = (selectedTeam === team) ? null : team;
+  refreshRowSelectionUI();
+}
+
+teamRowA.addEventListener("click", () => onTeamClick(0));
+teamRowB.addEventListener("click", () => onTeamClick(1));
+
+confirmBtn.addEventListener("click", () => {
+  if (lockedAfterValidate) return;
+  if (!selectionEnabled || !revealDone) return;
+  if (!(selectedTeam === 0 || selectedTeam === 1)) return;
+
+  lockedAfterValidate = true;
+  confirmBtn.disabled = true;
+  confirmBtn.classList.add("disabled");
+
+  clearRevealTimer();
+  clearWallTimer();
+  stopMedia();
+
+  teamRowA.classList.add("tp-row-locked");
+  teamRowB.classList.add("tp-row-locked");
+
+  const chosenRow = (selectedTeam === 0) ? teamRowA : teamRowB;
+  const badge = document.createElement("div");
+  badge.className = "tp-badge";
+  badge.textContent = "✅ CHOISIE";
+  chosenRow.appendChild(badge);
+
+  resultDiv.textContent = "✅ Validé — tu as choisi la meilleure ligne.";
+
+  nextBtn.style.display = "inline-block";
+  const isLast = currentRound >= totalRounds;
+  nextBtn.textContent = isLast ? "Retour réglages" : "Round suivant";
+  nextBtn.onclick = () => {
+    if (!isLast) {
+      currentRound++;
+      startRound();
+    } else {
+      showCustomization();
+      updatePreview();
+      if (isParcours) {
+        try { parent.postMessage({ parcoursScore: { label: "TopPick 3v3", score: 0, total: 0 } }, "*"); } catch {}
+      }
+    }
+  };
+});
+
+// ====== ROUND FLOW ======
+function startRound() {
+  roundToken++;
+  resetRoundUI();
+
+  const minNeeded = Math.max(6, MIN_REQUIRED);
+  if (!filteredPool || filteredPool.length < minNeeded) {
+    resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
+    nextBtn.style.display = "inline-block";
+    nextBtn.textContent = "Retour réglages";
+    nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+    return;
+  }
+
+  // 1 fois sur 5 : Libre
+  if (Math.random() < FREE_THEME_PROBA) {
+    currentContentTheme = { label: "Libre", pool: filteredPool, crit: "FREE" };
+  } else {
+    currentContentTheme = pickRoundContentThemeAuto(filteredPool, currentMode);
+  }
+
+  setThemeUI(currentContentTheme);
+
+  const finalPool = (currentContentTheme?.pool && currentContentTheme.pool.length >= 6)
+    ? currentContentTheme.pool
+    : filteredPool;
+
+  let picks = pickNFromPool(finalPool, 6);
+  if (picks.length < 6) {
+    resultDiv.textContent = "❌ Impossible de sélectionner 6 items uniques avec ces filtres.";
+    nextBtn.style.display = "inline-block";
+    nextBtn.textContent = "Retour réglages";
+    nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+    return;
+  }
+
+  picks = shuffleInPlace(picks);
+  teamItemsA = picks.slice(0, 3);
+  teamItemsB = picks.slice(3, 6);
+
+  roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
+  renderPlaceholders();
+
+  revealStatusEl.style.display = "block";
+  revealStatusEl.classList.add("bad");
+  revealStatusEl.classList.remove("good");
+  revealStatusEl.textContent = "⏳ Révélation en cours…";
+
+  if (currentMode === "songs") revealSongsSequence(roundToken);
+  else revealAnimeProgressively(roundToken);
+}
+
+// ====== LOAD DATA ======
 fetch("../data/licenses_only.json")
-  .then((r) => {
-    if (!r.ok) throw new Error("HTTP " + r.status);
+  .then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status} - ${r.statusText}`);
     return r.json();
   })
-  .then((json) => {
-    const data = normalizeAnimeList(json);
+  .then(json => {
+    const raw = normalizeAnimeList(json);
 
-    allAnimes = (Array.isArray(data) ? data : []).map((a) => {
+    allAnimes = (Array.isArray(raw) ? raw : []).map(a => {
       const title = getDisplayTitle(a);
       return {
         ...a,
         _title: title,
         _titleLower: title.toLowerCase(),
         _year: getYear(a),
-        _members: Number.isFinite(+a.members) ? +a.members : 0,
-        _score: Number.isFinite(+a.score) ? +a.score : 0,
+        _members: safeNum(a.members),
+        _score: safeNum(a.score),
         _type: a.type || "Unknown",
+        _studio: a.studio || "",
+        _genres: Array.isArray(a.genres) ? a.genres : [],
+        _themes: Array.isArray(a.themes) ? a.themes : [],
       };
     });
 
@@ -1043,11 +1060,21 @@ fetch("../data/licenses_only.json")
     showCustomization();
     applyVolume();
 
-    // état initial players
-    lockPlayersForGame();
+    if (isParcours) {
+      filteredPool = applyFilters();
+      const minNeeded = Math.max(6, MIN_REQUIRED);
+      if (filteredPool.length >= minNeeded) {
+        totalRounds = clampInt(parcoursCount, 1, 100);
+        currentRound = 1;
+        showGame();
+        startRound();
+      }
+    }
   })
-  .catch((e) => {
+  .catch(e => {
     previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
     previewCountEl.classList.add("bad");
     applyBtn.disabled = true;
+    applyBtn.classList.add("disabled");
+    console.error(e);
   });
