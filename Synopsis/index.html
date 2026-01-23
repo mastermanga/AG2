@@ -27,8 +27,8 @@
           </span>
 
           <span class="info-tip" id="help-synopsis" role="tooltip">
-            Devine l’anime grâce à des résumés. À chaque erreur : Hardcore → Moyen → Facile.
-            Le synopsis complet est révélé uniquement après la réponse.
+            Devine l’anime via des mots-clés. En cas d’erreur : Hardcore → Moyen → Facile.
+            Le synopsis complet n’apparaît qu’après la réponse.
           </span>
         </span>
       </div>
@@ -42,7 +42,7 @@
     <div class="opt-row">
       <div class="opt-label">Mode</div>
       <div class="opt-col">
-        <div id="modePills" class="opt-pill-group">
+        <div class="opt-pill-group">
           <button type="button" class="pill active" aria-pressed="true">Animes</button>
         </div>
       </div>
@@ -121,7 +121,9 @@
           <div id="synopsisBadge" class="synopsis-badge">Hardcore</div>
           <div id="synopsisStep" class="synopsis-step">Indice 1 / 3</div>
         </div>
-        <div id="synopsisText" class="synopsis-text">...</div>
+
+        <div id="keywordsWrap" class="keywords-wrap"></div>
+        <div class="keywords-hint">Mots-clés (court) — utilise l’autocomplete.</div>
       </div>
 
       <div id="controls">
