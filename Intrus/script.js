@@ -1,12 +1,9 @@
 /**********************
  * Intrus (Anime / Songs)
- * - 4 items (A-D), 1 intrus
- * - Mode Anime: affiches visibles, boutons INTRUS
- * - Mode Songs: pas d'image, pas de vidéo visible (Song A/B/C/D)
- *   -> écoute 4 extraits (A->D), puis le thème s'affiche, puis choix
- * - Thèmes (UNIQUEMENT ceux validés)
- *   Anime: TAG, YEAR, STUDIO, POP_QUARTILE(25%), SCORE_BIN(0-5 / 5.1-7.5 / 7.6-10)
- *   Songs: LICENSE, SONG_YEAR (prio), STUDIO, ARTIST, SONG_TYPE
+ * Fixes demandées :
+ * ✅ Songs : le lecteur vidéo ne doit jamais apparaître (caché via CSS .player-hidden)
+ * ✅ Anime : thème révélé APRÈS la réponse
+ * ✅ Songs Année : pas de "(songYear prio)" dans le texte
  **********************/
 
 // ====== MENU & THEME ======
@@ -40,14 +37,13 @@ document.addEventListener("click", (e) => {
 const MIN_REQUIRED = 64;
 const ROUND_ITEMS = 4;
 
-// Songs snippet (selon ton dernier réglage global)
+// Songs snippet
 const SONG_START_SEC = 45;
 const SONG_PLAY_SEC = 30;
 
-// retries: 1 essai + 5 retries => 0, 2s, 4s, 6s, 8s, 10s
+// retries
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const STALL_TIMEOUT_MS = 6000;
-// sécurité anti-blocage total (si ça ne joue jamais)
 const MAX_WALL_SNIPPET_MS = 65000;
 
 // ====== HELPERS ======
@@ -126,7 +122,7 @@ function formatSongTitle(s) {
   return `${s.animeTitle || "Anime"} ${type}${num}${name}${art}`;
 }
 
-// ====== Songs extraction (ajoute songYear + artistsArr + licenseId) ======
+// ====== Songs extraction ======
 function extractSongsFromAnime(anime) {
   const out = [];
   const song = anime.song || {};
@@ -157,7 +153,7 @@ function extractSongsFromAnime(anime) {
         songNumber: safeNum(it.number) || 1,
         songArtists: artists || "",
         artistsArr,
-        songYear, // ✅ prio
+        songYear, // prio
 
         licenseId,
         licenseTitle,
@@ -170,7 +166,6 @@ function extractSongsFromAnime(anime) {
         animeStudio: anime._studio || "",
         animeTags: [...(anime._genres || []), ...(anime._themes || [])],
 
-        image: anime.image || "",
         url,
         _key: `${b.type}|${it.number || ""}|${it.name || ""}|${url}|${anime.mal_id || ""}`,
       });
@@ -209,7 +204,6 @@ const resultDiv = document.getElementById("result");
 
 const nextBtn = document.getElementById("nextBtn");
 
-const playerZone = document.getElementById("player-zone");
 const nowPlaying = document.getElementById("nowPlaying");
 const songPlayer = document.getElementById("songPlayer");
 
@@ -263,7 +257,6 @@ function showGame() {
 
 // ====== VOLUME ======
 function applyVolume() {
-  if (!songPlayer) return;
   const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "30", 10)));
   songPlayer.muted = false;
   songPlayer.volume = v / 100;
@@ -416,12 +409,6 @@ function initCustomUI() {
     currentRound = 1;
     scoreGood = 0;
 
-    if (isParcours) {
-      totalRounds = clampInt(parcoursCount, 1, 100);
-      if (forcedMode === "anime" || forcedMode === "songs") currentMode = forcedMode;
-      updateModePillsFromState();
-    }
-
     showGame();
     startRound();
   });
@@ -498,7 +485,6 @@ function applyFilters() {
     _key: `song|${s._key}`,
     url: s.url,
 
-    // affichage (révélé après le choix)
     animeTitle: s.animeTitle || "Anime",
     songName: s.songName || "",
     songNumber: s.songNumber || 1,
@@ -506,17 +492,12 @@ function applyFilters() {
     artistsArr: Array.isArray(s.artistsArr) ? s.artistsArr : [],
     songType: s.songType,
 
-    // thème
     licenseId: s.licenseId,
     licenseTitle: s.licenseTitle,
 
-    songYear: s.songYear || 0,     // ✅ prio
-    animeYear: s.animeYear || 0,   // fallback
+    songYear: s.songYear || 0,   // prio
+    animeYear: s.animeYear || 0, // fallback
     animeStudio: s.animeStudio || "",
-
-    animeMembers: s.animeMembers || 0,
-    animeScore: s.animeScore || 0,
-    tags: Array.isArray(s.animeTags) ? s.animeTags : [],
   }));
 }
 
@@ -546,17 +527,17 @@ function updatePreview() {
   applyBtn.classList.toggle("disabled", !ok);
 }
 
-// ====== THEMES (Intrus) ======
-function scoreBinLabel(bin) {
-  if (bin === 1) return "0.0 → 5.0";
-  if (bin === 2) return "5.1 → 7.5";
-  return "7.6 → 10.0";
-}
+// ====== THEMES ======
 function scoreToBin(score) {
   const s = safeNum(score);
   if (s <= 5) return 1;
   if (s <= 7.5) return 2;
   return 3;
+}
+function scoreBinLabel(bin) {
+  if (bin === 1) return "0.0 → 5.0";
+  if (bin === 2) return "5.1 → 7.5";
+  return "7.6 → 10.0";
 }
 function quartileLabel(q) {
   if (q === 1) return "Top 25% (très populaire)";
@@ -565,13 +546,12 @@ function quartileLabel(q) {
   return "76% → 100% (moins populaire)";
 }
 function computePopularityQuartiles(animePool) {
-  // animePool: items avec members
   const arr = [...animePool].sort((a,b) => (b.members || 0) - (a.members || 0));
   const N = arr.length || 1;
   const map = new Map();
   for (let i = 0; i < arr.length; i++) {
-    const p = (i + 1) / N;         // 0..1 (rank)
-    const q = Math.ceil(p * 4);    // 1..4
+    const p = (i + 1) / N;
+    const q = Math.ceil(p * 4);
     map.set(arr[i]._key, clampInt(q, 1, 4));
   }
   return map;
@@ -591,6 +571,7 @@ function build3Plus1({ groupItems, outItems }) {
 
 function tryGenerateAnimeRound(pool) {
   const themeKeys = ["TAG","YEAR","STUDIO","POP25","SCOREBIN"];
+
   for (let attempt = 0; attempt < 80; attempt++) {
     const theme = pickOne(themeKeys);
 
@@ -613,11 +594,7 @@ function tryGenerateAnimeRound(pool) {
       const res = build3Plus1({ groupItems: chosen.items, outItems });
       if (!res) continue;
 
-      return {
-        themeTitle: "Thème : Tag",
-        themeDesc: `3 animes partagent : ${chosen.raw}`,
-        ...res
-      };
+      return { themeTitle: "Thème : Tag", themeDesc: `3 animes partagent : ${chosen.raw}`, ...res };
     }
 
     if (theme === "YEAR") {
@@ -628,7 +605,7 @@ function tryGenerateAnimeRound(pool) {
         if (!m.has(y)) m.set(y, []);
         m.get(y).push(it);
       }
-      const years = [...m.entries()].filter(([y, arr]) => arr.length >= 3);
+      const years = [...m.entries()].filter(([, arr]) => arr.length >= 3);
       if (!years.length) continue;
       const [y, groupItems] = pickOne(years);
 
@@ -636,11 +613,7 @@ function tryGenerateAnimeRound(pool) {
       const res = build3Plus1({ groupItems, outItems });
       if (!res) continue;
 
-      return {
-        themeTitle: "Thème : Année",
-        themeDesc: `3 animes sortis en ${y}`,
-        ...res
-      };
+      return { themeTitle: "Thème : Année", themeDesc: `3 animes sortis en ${y}`, ...res };
     }
 
     if (theme === "STUDIO") {
@@ -660,11 +633,7 @@ function tryGenerateAnimeRound(pool) {
       const res = build3Plus1({ groupItems: chosen.items, outItems });
       if (!res) continue;
 
-      return {
-        themeTitle: "Thème : Studio",
-        themeDesc: `3 animes du studio : ${chosen.raw}`,
-        ...res
-      };
+      return { themeTitle: "Thème : Studio", themeDesc: `3 animes du studio : ${chosen.raw}`, ...res };
     }
 
     if (theme === "POP25") {
@@ -676,7 +645,7 @@ function tryGenerateAnimeRound(pool) {
         if (!groups.has(q)) groups.set(q, []);
         groups.get(q).push(it);
       }
-      const candidates = [...groups.entries()].filter(([q, arr]) => arr.length >= 3);
+      const candidates = [...groups.entries()].filter(([, arr]) => arr.length >= 3);
       if (!candidates.length) continue;
       const [q, groupItems] = pickOne(candidates);
 
@@ -684,11 +653,7 @@ function tryGenerateAnimeRound(pool) {
       const res = build3Plus1({ groupItems, outItems });
       if (!res) continue;
 
-      return {
-        themeTitle: "Thème : Popularité",
-        themeDesc: `3 animes dans la tranche : ${quartileLabel(q)}`,
-        ...res
-      };
+      return { themeTitle: "Thème : Popularité", themeDesc: `3 animes dans : ${quartileLabel(q)}`, ...res };
     }
 
     if (theme === "SCOREBIN") {
@@ -698,7 +663,7 @@ function tryGenerateAnimeRound(pool) {
         if (!groups.has(b)) groups.set(b, []);
         groups.get(b).push(it);
       }
-      const candidates = [...groups.entries()].filter(([b, arr]) => arr.length >= 3);
+      const candidates = [...groups.entries()].filter(([, arr]) => arr.length >= 3);
       if (!candidates.length) continue;
       const [b, groupItems] = pickOne(candidates);
 
@@ -706,11 +671,7 @@ function tryGenerateAnimeRound(pool) {
       const res = build3Plus1({ groupItems, outItems });
       if (!res) continue;
 
-      return {
-        themeTitle: "Thème : Score",
-        themeDesc: `3 animes avec un score dans : ${scoreBinLabel(b)}`,
-        ...res
-      };
+      return { themeTitle: "Thème : Score", themeDesc: `3 animes avec un score : ${scoreBinLabel(b)}`, ...res };
     }
   }
   return null;
@@ -718,12 +679,12 @@ function tryGenerateAnimeRound(pool) {
 
 function getSongYear(it) {
   const sy = it.songYear || 0;
-  if (sy) return sy;
-  return it.animeYear || 0;
+  return sy || (it.animeYear || 0);
 }
 
 function tryGenerateSongRound(pool) {
   const themeKeys = ["LICENSE","SONG_YEAR","STUDIO","ARTIST","SONG_TYPE"];
+
   for (let attempt = 0; attempt < 100; attempt++) {
     const theme = pickOne(themeKeys);
 
@@ -737,17 +698,13 @@ function tryGenerateSongRound(pool) {
       }
       const candidates = [...m.entries()].filter(([,v]) => v.items.length >= 3);
       if (!candidates.length) continue;
-      const [, chosen] = pickOne(candidates);
+      const [id, chosen] = pickOne(candidates);
 
-      const outItems = pool.filter(it => it.licenseId !== chosen.items[0].licenseId);
+      const outItems = pool.filter(it => it.licenseId !== id);
       const res = build3Plus1({ groupItems: chosen.items, outItems });
       if (!res) continue;
 
-      return {
-        themeTitle: "Thème : Licence",
-        themeDesc: `3 songs de la licence : ${chosen.title}`,
-        ...res
-      };
+      return { themeTitle: "Thème : Licence", themeDesc: `3 songs de : ${chosen.title}`, ...res };
     }
 
     if (theme === "SONG_YEAR") {
@@ -758,7 +715,7 @@ function tryGenerateSongRound(pool) {
         if (!m.has(y)) m.set(y, []);
         m.get(y).push(it);
       }
-      const candidates = [...m.entries()].filter(([y, arr]) => arr.length >= 3);
+      const candidates = [...m.entries()].filter(([, arr]) => arr.length >= 3);
       if (!candidates.length) continue;
       const [y, groupItems] = pickOne(candidates);
 
@@ -766,11 +723,7 @@ function tryGenerateSongRound(pool) {
       const res = build3Plus1({ groupItems, outItems });
       if (!res) continue;
 
-      return {
-        themeTitle: "Thème : Année",
-        themeDesc: `3 songs sorties en ${y} (songYear prio)`,
-        ...res
-      };
+      return { themeTitle: "Thème : Année", themeDesc: `3 songs sorties en ${y}`, ...res };
     }
 
     if (theme === "STUDIO") {
@@ -790,11 +743,7 @@ function tryGenerateSongRound(pool) {
       const res = build3Plus1({ groupItems: chosen.items, outItems });
       if (!res) continue;
 
-      return {
-        themeTitle: "Thème : Studio",
-        themeDesc: `3 songs issues d’animes du studio : ${chosen.raw}`,
-        ...res
-      };
+      return { themeTitle: "Thème : Studio", themeDesc: `3 songs (studio) : ${chosen.raw}`, ...res };
     }
 
     if (theme === "ARTIST") {
@@ -816,11 +765,7 @@ function tryGenerateSongRound(pool) {
       const res = build3Plus1({ groupItems: chosen.items, outItems });
       if (!res) continue;
 
-      return {
-        themeTitle: "Thème : Artiste",
-        themeDesc: `3 songs avec l’artiste : ${chosen.raw}`,
-        ...res
-      };
+      return { themeTitle: "Thème : Artiste", themeDesc: `3 songs de : ${chosen.raw}`, ...res };
     }
 
     if (theme === "SONG_TYPE") {
@@ -831,7 +776,7 @@ function tryGenerateSongRound(pool) {
         if (!m.has(t)) m.set(t, []);
         m.get(t).push(it);
       }
-      const candidates = [...m.entries()].filter(([t, arr]) => arr.length >= 3);
+      const candidates = [...m.entries()].filter(([, arr]) => arr.length >= 3);
       if (!candidates.length) continue;
       const [t, groupItems] = pickOne(candidates);
 
@@ -839,11 +784,7 @@ function tryGenerateSongRound(pool) {
       const res = build3Plus1({ groupItems, outItems });
       if (!res) continue;
 
-      return {
-        themeTitle: "Thème : Type",
-        themeDesc: `3 songs de type : ${songTypeLabel(t)}`,
-        ...res
-      };
+      return { themeTitle: "Thème : Type", themeDesc: `3 songs de type : ${songTypeLabel(t)}`, ...res };
     }
   }
   return null;
@@ -867,7 +808,6 @@ function resetRoundUI() {
   revealStatusEl.style.display = "none";
   pickStatusEl.style.display = "none";
 
-  playerZone.style.display = (currentMode === "songs") ? "block" : "none";
   volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
   if (currentMode === "songs") applyVolume();
 
@@ -927,7 +867,6 @@ function renderRoundItems(items) {
       cover.textContent = `Song ${letters[i]}`;
       title.textContent = `Song ${letters[i]}`;
     } else {
-      // anime
       cover.classList.remove("intrus-song-box");
       cover.classList.add("intrus-cover");
 
@@ -943,24 +882,23 @@ function renderRoundItems(items) {
   }
 }
 
-function showThemeAndEnablePick() {
-  themeNameEl.textContent = `🎯 ${roundThemeTitle}`;
-  themeDescEl.textContent = roundThemeDesc;
-
-  themeNameEl.style.display = "block";
-  themeDescEl.style.display = "block";
-
+function enablePickButtons() {
   selectionEnabled = true;
-
   pickStatusEl.style.display = "block";
   pickStatusEl.classList.remove("bad");
   pickStatusEl.classList.add("good");
   pickStatusEl.textContent = "✅ Choisis l’intrus (bouton sous la carte).";
 
-  // active boutons
   choiceList.querySelectorAll(".intrus-choice-btn").forEach(b => {
     b.disabled = false;
   });
+}
+
+function showTheme() {
+  themeNameEl.textContent = `🎯 ${roundThemeTitle}`;
+  themeDescEl.textContent = roundThemeDesc;
+  themeNameEl.style.display = "block";
+  themeDescEl.style.display = "block";
 }
 
 function lockPick() {
@@ -970,12 +908,10 @@ function lockPick() {
 }
 
 function revealSongsLabelsAfterPick() {
-  // après le choix, on révèle le vrai nom (optionnel mais pratique)
   for (let i = 0; i < ROUND_ITEMS; i++) {
     const it = roundItems[i];
     const li = choiceList.querySelector(`li[data-index="${i}"]`);
     if (!li || !it || it.kind !== "song") continue;
-
     const title = li.querySelector(".intrus-title");
     title.textContent = formatSongTitle(it);
   }
@@ -987,16 +923,21 @@ function onPickIntrus(key) {
 
   lockPick();
 
-  // mark picked
-  const pickedLi = [...choiceList.querySelectorAll("li")].find(li => li.querySelector(".intrus-choice-btn")?.dataset.key === key);
+  // ✅ en mode anime : on révèle le thème seulement maintenant (après réponse)
+  if (currentMode === "anime") showTheme();
+
+  const pickedLi = [...choiceList.querySelectorAll("li")]
+    .find(li => li.querySelector(".intrus-choice-btn")?.dataset.key === key);
+
   if (pickedLi) pickedLi.classList.add("intrus-picked");
 
   const ok = key === intrusKey;
 
   if (pickedLi) pickedLi.classList.add(ok ? "intrus-correct" : "intrus-wrong");
 
-  // mark correct intrus
-  const correctLi = [...choiceList.querySelectorAll("li")].find(li => li.querySelector(".intrus-choice-btn")?.dataset.key === intrusKey);
+  const correctLi = [...choiceList.querySelectorAll("li")]
+    .find(li => li.querySelector(".intrus-choice-btn")?.dataset.key === intrusKey);
+
   if (correctLi) correctLi.classList.add("intrus-correct");
 
   if (currentMode === "songs") revealSongsLabelsAfterPick();
@@ -1019,17 +960,11 @@ function onPickIntrus(key) {
     } else {
       showCustomization();
       updatePreview();
-
-      if (isParcours) {
-        try {
-          parent.postMessage({ parcoursScore: { label: "Intrus", score: scoreGood, total: totalRounds } }, "*");
-        } catch {}
-      }
     }
   };
 }
 
-// ====== SONG SNIPPET (lecture cachée) ======
+// ====== SONG SNIPPET ======
 function playSongSnippet(item, localRound, index) {
   return new Promise((resolve) => {
     if (currentMode !== "songs" || !item?.url) { resolve(); return; }
@@ -1071,10 +1006,7 @@ function playSongSnippet(item, localRound, index) {
       cleanupLoad?.();
     };
 
-    const stopSnippet = () => {
-      cleanupAll();
-      resolve();
-    };
+    const stopSnippet = () => { cleanupAll(); resolve(); };
 
     cleanupLoad = loadMediaWithRetries(item.url, localRound, localMedia, {
       onReady: () => {
@@ -1101,10 +1033,7 @@ function playSongSnippet(item, localRound, index) {
         songPlayer.addEventListener("ended", onEnded);
 
         try { songPlayer.currentTime = start; } catch {}
-        songPlayer.play?.().catch(() => {
-          // si autoplay bloqué, on ne reste pas bloqué
-          stopSnippet();
-        });
+        songPlayer.play?.().catch(() => stopSnippet());
       }
     });
   });
@@ -1131,7 +1060,6 @@ function startRound() {
     return;
   }
 
-  // Génération round
   const gen = (currentMode === "songs")
     ? tryGenerateSongRound(filteredPool)
     : tryGenerateAnimeRound(filteredPool);
@@ -1153,14 +1081,14 @@ function startRound() {
 
   renderRoundItems(roundItems);
 
-  // Anime: on peut afficher le thème directement
+  // ✅ Anime : on n'affiche pas le thème avant la réponse
   if (currentMode === "anime") {
     revealStatusEl.style.display = "none";
-    showThemeAndEnablePick();
+    enablePickButtons();
     return;
   }
 
-  // Songs: écouter d'abord, puis afficher thème + activer choix
+  // Songs : écouter d'abord, puis afficher thème + activer choix
   (async () => {
     const localRound = roundToken;
 
@@ -1175,9 +1103,11 @@ function startRound() {
 
     revealStatusEl.classList.remove("bad");
     revealStatusEl.classList.add("good");
-    revealStatusEl.textContent = "✅ Écoutes terminées — thème affiché !";
+    revealStatusEl.textContent = "✅ Écoutes terminées — à toi !";
 
-    showThemeAndEnablePick();
+    // ✅ Songs : thème révélé après les 4 écoutes
+    showTheme();
+    enablePickButtons();
   })();
 }
 
@@ -1213,18 +1143,6 @@ fetch("../data/licenses_only.json")
     updatePreview();
     showCustomization();
     applyVolume();
-
-    if (isParcours) {
-      filteredPool = applyFilters();
-      const minNeeded = Math.max(ROUND_ITEMS, MIN_REQUIRED);
-      if (filteredPool.length >= minNeeded) {
-        totalRounds = clampInt(parcoursCount, 1, 100);
-        currentRound = 1;
-        scoreGood = 0;
-        showGame();
-        startRound();
-      }
-    }
   })
   .catch(e => {
     previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
