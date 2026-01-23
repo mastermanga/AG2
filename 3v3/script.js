@@ -6,7 +6,12 @@
  * - 6 items révélés EN ALTERNANCE :
  *   L1#1 → L2#1 → L1#2 → L2#2 → L1#3 → L2#3
  * - Anime: 1 item / 1s
- * - Songs: play auto non mute à 50s pendant 20s (currentTime)
+ * - Songs: play auto non mute à 45s pendant 30s (currentTime)
+ * - Anti doublons songs par anime:
+ *   - 4 impossible
+ *   - 3 très rare
+ *   - 2 rare
+ *   - si pool "thème contenu" trop petit -> on agrandit au pool filtré global (sans thème)
  **********************/
 
 // ====== MENU & THEME ======
@@ -39,9 +44,9 @@ document.addEventListener("click", (e) => {
 // ====== CONST ======
 const MIN_REQUIRED = 64;
 
-// Songs preview
-const SONG_START_SEC = 50;
-const SONG_PLAY_SEC = 20;
+// Songs preview (✅ nouveau)
+const SONG_START_SEC = 45;
+const SONG_PLAY_SEC = 30;
 
 // retries: 1 essai + 5 retries => 0, 2s, 4s, 6s, 8s, 10s
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
@@ -132,7 +137,7 @@ function formatItemLabel(it) {
   return it.title || "";
 }
 
-// ✅ songs extraction
+// ✅ songs extraction (avec animeMalId)
 function extractSongsFromAnime(anime) {
   const out = [];
   const song = anime.song || {};
@@ -161,6 +166,7 @@ function extractSongsFromAnime(anime) {
         artistsArr,
         songYear,
 
+        animeMalId: anime.mal_id || anime.license_id || 0, // ✅ AJOUT
         animeTitle: anime._title,
         animeType: anime._type,
         animeYear: anime._year,
@@ -189,6 +195,127 @@ function pickNFromPool(pool, n) {
     out.push(it);
   }
   return out;
+}
+
+/* ==========================
+   ANTI-DOUBLONS SONGS (4 IMPOSSIBLE)
+   - 2 rare
+   - 3 très rare
+   - 4 impossible
+   - si fail : on agrandit le pool (on retente sur pool global filtré)
+   ========================== */
+
+function songGroupKey(it) {
+  return String(it.animeMalId || it.animeTitle || "unknown");
+}
+
+function groupSongsByAnime(pool) {
+  const m = new Map();
+  for (const s of pool) {
+    const k = songGroupKey(s);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(s);
+  }
+  for (const [k, arr] of m) shuffleInPlace(arr);
+  return m;
+}
+
+// phases: (2 rare) / (3 très rare) / cap4=0
+const DUP_PHASES = [
+  { p2: 0.18, p3: 0.04 }, // strict : 2 rare, 3 très rare
+  { p2: 0.28, p3: 0.08 }, // encore rare
+  { p2: 0.40, p3: 0.12 }, // si pool concentré
+  { p2: 0.55, p3: 0.18 }, // dernier recours, mais cap 3 toujours
+];
+
+function acceptDup(nextCount, phase) {
+  // nextCount = nombre après ajout
+  if (nextCount <= 1) return true;
+  if (nextCount === 2) return Math.random() < phase.p2;
+  if (nextCount === 3) return Math.random() < phase.p3;
+  return false; // 4+ impossible
+}
+
+function tryPickSongsNo4(pool, n) {
+  const by = groupSongsByAnime(pool);
+  const keys = shuffleInPlace([...by.keys()]);
+  if (!keys.length) return null;
+
+  // D'abord: 1 par anime, max diversité
+  const picked = [];
+  const counts = new Map(); // key -> count
+  const usedKeys = new Set(); // song _key
+
+  for (const k of keys) {
+    if (picked.length >= n) break;
+    const arr = by.get(k);
+    if (!arr?.length) continue;
+    const it = arr.shift();
+    if (!it || usedKeys.has(it._key)) continue;
+    usedKeys.add(it._key);
+    picked.push(it);
+    counts.set(k, 1);
+  }
+  if (picked.length >= n) return picked;
+
+  // Ensuite: ajouter doublons selon phases, cap 3 strict
+  for (const phase of DUP_PHASES) {
+    let safety = 0;
+    while (picked.length < n && safety++ < 800) {
+      const candidates = keys.filter(k => {
+        const c = counts.get(k) || 0;
+        const arr = by.get(k);
+        return c < 3 && arr && arr.length > 0;
+      });
+      if (!candidates.length) break;
+
+      // pour éviter de spammer 1 seul anime, on parcourt dans un ordre random
+      shuffleInPlace(candidates);
+
+      let progressed = false;
+      for (const k of candidates) {
+        if (picked.length >= n) break;
+        const c = counts.get(k) || 0;
+        const nextC = c + 1;
+        if (!acceptDup(nextC, phase)) continue;
+
+        const arr = by.get(k);
+        let it = null;
+        while (arr && arr.length) {
+          const cand = arr.shift();
+          if (cand && !usedKeys.has(cand._key)) { it = cand; break; }
+        }
+        if (!it) continue;
+
+        usedKeys.add(it._key);
+        picked.push(it);
+        counts.set(k, nextC);
+        progressed = true;
+
+        // on ajoute au plus 1 par tour pour garder l'effet "rare"
+        break;
+      }
+
+      if (!progressed) break;
+    }
+
+    if (picked.length >= n) return picked;
+  }
+
+  return null;
+}
+
+function pickSongsWithPolicy(poolTheme, poolGlobal, n) {
+  // 1) essaie sur pool thème
+  let res = tryPickSongsNo4(poolTheme, n);
+  if (res && res.length === n) return res;
+
+  // 2) agrandit le pool (pool global filtré)
+  res = tryPickSongsNo4(poolGlobal, n);
+  if (res && res.length === n) return res;
+
+  // 3) on refuse plutôt que 4 du même anime
+  return null;
 }
 
 /* ==========================
@@ -618,6 +745,9 @@ function applyFilters() {
   return pool.map(s => ({
     kind: "song",
     _key: `song|${s._key}`,
+
+    animeMalId: s.animeMalId || 0, // ✅ AJOUT
+
     animeTitle: s.animeTitle || "Anime",
     songName: s.songName || "",
     songNumber: s.songNumber || 1,
@@ -879,6 +1009,7 @@ function playSongSnippet(item, localRound) {
 
         let start = SONG_START_SEC;
         const dur = songPlayer.duration;
+
         if (Number.isFinite(dur) && dur > 1) {
           start = Math.min(SONG_START_SEC, Math.max(0, dur - 0.25));
           endTime = Math.min(start + SONG_PLAY_SEC, Math.max(0, dur - 0.05));
@@ -933,6 +1064,10 @@ function onTeamClick(team) {
 
 teamRowA.addEventListener("click", () => onTeamClick(0));
 teamRowB.addEventListener("click", () => onTeamClick(1));
+
+// accessibilité clavier
+teamRowA.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTeamClick(0); } });
+teamRowB.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTeamClick(1); } });
 
 confirmBtn.addEventListener("click", () => {
   if (lockedAfterValidate) return;
@@ -998,12 +1133,30 @@ function startRound() {
 
   setThemeUI(currentContentTheme);
 
-  const finalPool = (currentContentTheme?.pool && currentContentTheme.pool.length >= 6)
+  // pool thème (si ok) sinon pool global
+  const themePool = (currentContentTheme?.pool && currentContentTheme.pool.length >= 6)
     ? currentContentTheme.pool
     : filteredPool;
 
-  let picks = pickNFromPool(finalPool, 6);
-  if (picks.length < 6) {
+  let picks = null;
+
+  if (currentMode === "songs") {
+    // ✅ tirage avec politique anti-doublons (4 impossible)
+    picks = pickSongsWithPolicy(themePool, filteredPool, 6);
+    if (!picks) {
+      resultDiv.textContent =
+        "❌ Impossible de créer un round de 6 songs sans dépasser 3 songs du même anime.\n" +
+        "👉 Conseil: élargis tes filtres (Songs/Types/Années ou Top% Popularité/Score).";
+      nextBtn.style.display = "inline-block";
+      nextBtn.textContent = "Retour réglages";
+      nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+      return;
+    }
+  } else {
+    picks = pickNFromPool(themePool, 6);
+  }
+
+  if (!picks || picks.length < 6) {
     resultDiv.textContent = "❌ Impossible de sélectionner 6 items uniques avec ces filtres.";
     nextBtn.style.display = "inline-block";
     nextBtn.textContent = "Retour réglages";
