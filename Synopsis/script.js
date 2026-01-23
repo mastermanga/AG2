@@ -1,19 +1,18 @@
 /**********************
- * CLUE (Synopsis)
- * - Dataset: ../data/licenses_only.json (synopsis FR)
- * - Personnalisation: popularité/score/années/types + rounds
- * - Reveal: 1 indice immédiat, puis un indice toutes les 3s (sans doublon)
- * - Score: 3000 - 500*(indicesAffichés-1)
- * - Indices possibles:
- *   - CLUE 3 mots (synopsis)
- *   - saison, studio, genres, thèmes, score, popularité (Top %), personnage, épisodes
- * - Pause: stop countdown + reveals
- * - Synopsis complet visible seulement après win/lose
+ * CLUE (sans timer)
+ * - 6 indices max visibles dès le début (2 colonnes)
+ * - 1er indice révélé au lancement du round
+ * - Ensuite :
+ *   - mauvaise réponse => indice suivant (jusqu'à 6)
+ *   - "Passer" => indice suivant sans tentative
+ * - Défaite seulement si mauvaise réponse à 6/6
+ * - Score: 3000 puis -500 par indice supplémentaire
+ * - Indices possibles: Synopsis(3 mots), saison, studio, genres, thèmes,
+ *   score, popularité (Top %), personnage, épisodes
  **********************/
 
 const MAX_SCORE = 3000;
 const REVEAL_PENALTY = 500;
-const REVEAL_INTERVAL_SEC = 3;
 const MAX_REVEALS_PER_ROUND = 6;
 const MIN_TITLES_TO_START = 64;
 
@@ -33,7 +32,9 @@ window.addEventListener("DOMContentLoaded", () => {
 
 // ====== Helpers ======
 function stripAccents(str) {
-  return (str || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return (str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
 function normalizeGuess(str) {
@@ -108,7 +109,7 @@ function cleanSynopsis(s) {
     .trim();
 }
 
-// ====== DOM refs (TON HTML) ======
+// ====== DOM refs ======
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
 
@@ -126,20 +127,16 @@ const previewCountEl = document.getElementById("previewCount");
 const applyBtn = document.getElementById("applyFiltersBtn");
 const roundCountEl = document.getElementById("roundCount");
 
-// game refs
 const feedback = document.getElementById("feedback");
 const input = document.getElementById("characterInput");
 const submitBtn = document.getElementById("submit-btn");
+const passBtn = document.getElementById("pass-btn");
 const restartBtn = document.getElementById("restart-btn");
 const suggestions = document.getElementById("suggestions");
 const roundLabel = document.getElementById("roundLabel");
 
-const pauseBtn = document.getElementById("pauseBtn");        // ✅
-const clueBadgeEl = document.getElementById("clueBadge");    // ✅
-const clueStepEl = document.getElementById("clueStep");      // ✅
-const clueMainEl = document.getElementById("clueMain");      // ✅
-const revealListEl = document.getElementById("revealList");  // ✅
-const revealTimerEl = document.getElementById("revealTimer");// ✅
+const revealList = document.getElementById("revealList");
+const clueStep = document.getElementById("clueStep");
 
 // score bar
 const scoreBar = document.getElementById("score-bar");
@@ -182,6 +179,7 @@ function setScoreBar(score) {
 }
 
 function currentPotentialScore() {
+  // 1 indice => 3000 ; 2 => 2500 ; ...
   const penalty = Math.max(0, (revealsShown - 1) * REVEAL_PENALTY);
   return Math.max(MAX_SCORE - penalty, 0);
 }
@@ -190,27 +188,20 @@ function currentPotentialScore() {
 let allAnimes = [];
 let filteredAnimes = [];
 
-// ====== Session (Rounds) ======
+// ====== Session ======
 let totalRounds = 1;
 let currentRound = 1;
 let totalScore = 0;
 
 // ====== Round state ======
 let currentAnime = null;
-let revealPool = [];
-let usedKinds = new Set();
-let revealsShown = 0;
+let revealSequence = [];   // exactement 6 items (random, sans doublon)
+let revealsShown = 0;      // nombre d’indices déjà révélés
 
-let paused = false;
 let gameEnded = false;
 
-// Countdown loop
-let countdown = REVEAL_INTERVAL_SEC;
-let countdownIntervalId = null;
-
-// ====== 3 mots (CLUE) ======
+// ====== Stopwords / extraction "3 mots" ======
 const STOP = new Set([
-  // FR basique + structure
   "a","à","au","aux","avec","ce","ces","cet","cette","dans","de","des","du","elle","en","et","eux","il","ils",
   "je","la","le","les","leur","leurs","lui","ma","mais","me","mes","moi","mon","ne","nos","notre","nous",
   "on","ou","par","pas","pour","qu","que","qui","sa","se","ses","son","sur","ta","te","tes","toi","ton","tu",
@@ -218,13 +209,11 @@ const STOP = new Set([
   "ainsi","alors","après","avant","aussi","bien","car","cependant","comme","contre","donc","encore","ensuite",
   "entre","ici","là","malgré","moins","plus","peu","plutôt","puis","quand","sans","selon","sous","tant",
   "toute","toutes","tout","tous","très","vers","souvent","toujours","désormais",
-  // verbes
-  "être","est","sont","étaient","était","été","sera","serait","avoir","ont","avait","fait","faire",
+  "être","est","sont","étaient","était","été","sera","serait","avoir","a","ont","avait","fait","faire",
   "peut","peuvent","doit","doivent","va","vont","vient","venir","reste","rester","devient","devenir",
   "semble","sembler","continue","continuer","commence","commencer","finit","finir",
   "passe","passer","poursuit","poursuivre","cherche","chercher","trouve","trouver",
   "découvre","découvrir","produit","produire","renvoie","renvoyer","retrouve","retrouver",
-  // trop générique
   "histoire","monde","vie","temps","gens","personne","personnes","chose","choses","jour","jours"
 ]);
 
@@ -264,6 +253,7 @@ function extractProperNounPhrases(originalSynopsis) {
   const text = String(originalSynopsis || "");
   const re = /\b[A-ZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ][A-Za-zÀ-ÖØ-öø-ÿœæŒÆ-]{2,}(?:\s+[A-ZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ][A-Za-zÀ-ÖØ-öø-ÿœæŒÆ-]{2,})?\b/g;
   const matches = text.match(re) || [];
+
   const seen = new Set();
   const out = [];
   for (const m of matches) {
@@ -312,30 +302,26 @@ function pick3WordClue(anime) {
     .map(([k]) => k);
 
   const clue = [];
-
   for (const p of proper) {
     if (clue.length >= 2) break;
     clue.push(p);
   }
-
   for (const n of nounish) {
     if (clue.length >= 3) break;
     if (clue.some(x => normalizeGuess(x) === n)) continue;
-    if (["année","années","fois","partie","groupe","route","chemin"].includes(n)) continue;
     clue.push(n);
   }
-
   while (clue.length < 3) clue.push("----");
   return clue.slice(0, 3);
 }
 
 // ====== Indices pool ======
 const SEASON_FR = {
-  winter: "Hiver",
-  spring: "Printemps",
-  summer: "Été",
-  fall: "Automne",
-  autumn: "Automne",
+  "winter": "Hiver",
+  "spring": "Printemps",
+  "summer": "Été",
+  "fall": "Automne",
+  "autumn": "Automne"
 };
 
 function formatSeason(seasonStr) {
@@ -372,9 +358,9 @@ function pickRandomCharacterName(anime) {
 function buildRevealPool(anime) {
   const items = [];
 
-  // CLUE 3 mots
-  if (typeof anime.synopsis === "string" && cleanSynopsis(anime.synopsis).length >= 40) {
-    items.push({ kind: "CLUE", label: "Clue (3 mots)", value: pick3WordClue(anime) });
+  const syn = cleanSynopsis(anime.synopsis || "");
+  if (syn.length >= 40) {
+    items.push({ kind: "SYNOPSIS", label: "Synopsis", value: pick3WordClue(anime) });
   }
 
   const season = formatSeason(anime.season);
@@ -385,12 +371,12 @@ function buildRevealPool(anime) {
   }
 
   if (Array.isArray(anime.genres) && anime.genres.length) {
-    const g = anime.genres.slice(0, 4).map(String).map(s => s.trim()).filter(Boolean);
+    const g = anime.genres.slice(0, 4).map(x => String(x).trim()).filter(Boolean);
     if (g.length) items.push({ kind: "GENRES", label: "Genres", value: g });
   }
 
   if (Array.isArray(anime.themes) && anime.themes.length) {
-    const t = anime.themes.slice(0, 4).map(String).map(s => s.trim()).filter(Boolean);
+    const t = anime.themes.slice(0, 4).map(x => String(x).trim()).filter(Boolean);
     if (t.length) items.push({ kind: "THEMES", label: "Thèmes", value: t });
   }
 
@@ -406,228 +392,74 @@ function buildRevealPool(anime) {
   const ep = Number.isFinite(+anime.episodes) ? +anime.episodes : 0;
   if (ep > 0) items.push({ kind: "EPS", label: "Épisodes", value: ep });
 
+  // sécurité: si dataset manque des champs, on complète pour atteindre 6
+  const fallbacks = [
+    { kind: "TYPE", label: "Type", value: String(anime.type || "").trim() },
+    { kind: "STATUS", label: "Statut", value: String(anime.status || "").trim() },
+    { kind: "DURATION", label: "Durée", value: String(anime.duration || "").trim() },
+  ];
+  for (const fb of fallbacks) {
+    if (items.length >= 6) break;
+    if (!fb.value) continue;
+    if (items.some(x => x.kind === fb.kind)) continue;
+    items.push(fb);
+  }
+
   shuffleInPlace(items);
   return items;
 }
 
-// ====== Rendering (TON UI) ======
-function setStepUI() {
-  if (!clueBadgeEl || !clueStepEl) return;
-  clueBadgeEl.textContent = "Indice";
-  clueStepEl.textContent = `${Math.min(revealsShown + 1, MAX_REVEALS_PER_ROUND)} / ${MAX_REVEALS_PER_ROUND}`;
-}
+// ====== Reveal UI (6 slots fixes) ======
+let slots = [];
 
-function setCountdownUI() {
-  if (!revealTimerEl) return;
-  if (gameEnded) {
-    revealTimerEl.textContent = "";
-    return;
+function initRevealGrid() {
+  revealList.innerHTML = "";
+  slots = [];
+
+  for (let i = 0; i < MAX_REVEALS_PER_ROUND; i++) {
+    const slot = document.createElement("div");
+    slot.className = "reveal-slot empty";
+    slot.dataset.idx = String(i);
+
+    const tag = document.createElement("div");
+    tag.className = "reveal-tag";
+    tag.textContent = `Indice ${i + 1}`;
+
+    const body = document.createElement("div");
+    body.className = "reveal-body";
+    body.innerHTML = `<span class="reveal-dash">—</span>`;
+
+    slot.appendChild(tag);
+    slot.appendChild(body);
+    revealList.appendChild(slot);
+    slots.push(slot);
   }
-  if (paused) {
-    revealTimerEl.textContent = "En pause";
-    return;
+}
+
+function setStepLabel() {
+  clueStep.textContent = `${Math.min(revealsShown, MAX_REVEALS_PER_ROUND)} / ${MAX_REVEALS_PER_ROUND}`;
+}
+
+function renderValue(value) {
+  if (Array.isArray(value)) {
+    // synopsis 3 mots ou genres etc
+    return value.filter(Boolean).join(", ");
   }
-  // si plus d'indices à venir
-  if (revealsShown >= MAX_REVEALS_PER_ROUND || revealPool.length === 0) {
-    revealTimerEl.textContent = "Plus d’indices";
-    return;
-  }
-  revealTimerEl.textContent = `Prochain indice : ${countdown}s`;
+  return String(value ?? "").trim();
 }
 
-function clearNewHighlight() {
-  if (!revealListEl) return;
-  [...revealListEl.querySelectorAll(".reveal-item.new")].forEach(el => el.classList.remove("new"));
-}
+function fillSlot(idx, item) {
+  const slot = slots[idx];
+  if (!slot) return;
 
-function renderClueMain(item) {
-  if (!clueMainEl) return;
-  clueMainEl.innerHTML = "";
+  slot.className = `reveal-slot kind-${item.kind}`;
+  const tag = slot.querySelector(".reveal-tag");
+  const body = slot.querySelector(".reveal-body");
 
-  // CLUE 3 mots -> pills
-  if (item.kind === "CLUE") {
-    const row = document.createElement("div");
-    row.className = "keyword-row";
-    (item.value || []).forEach(w => {
-      const pill = document.createElement("span");
-      pill.className = "keyword-pill";
-      pill.textContent = w;
-      row.appendChild(pill);
-    });
-    clueMainEl.appendChild(row);
-    return;
-  }
+  if (tag) tag.textContent = item.label;
 
-  // arrays => pills
-  if (Array.isArray(item.value)) {
-    const row = document.createElement("div");
-    row.className = "keyword-row";
-    item.value.forEach(v => {
-      const pill = document.createElement("span");
-      pill.className = "keyword-pill";
-      pill.textContent = v;
-      row.appendChild(pill);
-    });
-    clueMainEl.appendChild(row);
-    return;
-  }
-
-  // otherwise => text
-  const div = document.createElement("div");
-  div.className = "clue-text";
-  div.innerHTML = `<b>${item.label} :</b> ${String(item.value)}`;
-  clueMainEl.appendChild(div);
-}
-
-function renderRevealHistory(item) {
-  if (!revealListEl) return;
-
-  clearNewHighlight();
-
-  const box = document.createElement("div");
-  box.className = "reveal-item new";
-
-  const tag = document.createElement("span");
-  tag.className = "tag";
-  tag.textContent = item.label;
-
-  const content = document.createElement("span");
-  const val = Array.isArray(item.value) ? item.value.join(", ") : String(item.value);
-  content.textContent = val;
-
-  box.appendChild(tag);
-  box.appendChild(content);
-
-  // prepend (dernier en haut) ou append (dernier en bas)
-  revealListEl.prepend(box);
-}
-
-function resetCluesUI() {
-  if (clueMainEl) clueMainEl.innerHTML = "";
-  if (revealListEl) revealListEl.innerHTML = "";
-  revealsShown = 0;
-  setStepUI();
-  countdown = REVEAL_INTERVAL_SEC;
-  setCountdownUI();
-}
-
-// ====== Reveal loop (countdown visible) ======
-function stopCountdownLoop() {
-  if (countdownIntervalId) clearInterval(countdownIntervalId);
-  countdownIntervalId = null;
-}
-
-function startCountdownLoop() {
-  stopCountdownLoop();
-  countdown = REVEAL_INTERVAL_SEC;
-  setCountdownUI();
-
-  countdownIntervalId = setInterval(() => {
-    if (gameEnded) return;
-    if (paused) return;
-
-    if (revealsShown >= MAX_REVEALS_PER_ROUND || revealPool.length === 0) {
-      setCountdownUI();
-      stopCountdownLoop();
-      return;
-    }
-
-    countdown -= 1;
-    if (countdown <= 0) {
-      revealNextClue();
-      countdown = REVEAL_INTERVAL_SEC;
-    }
-    setCountdownUI();
-  }, 1000);
-}
-
-function togglePause() {
-  if (gameEnded) return;
-  paused = !paused;
-  pauseBtn.textContent = paused ? "▶️ Reprendre" : "⏸️ Pause";
-  feedback.textContent = paused ? "⏸️ Pause." : "";
-  feedback.className = paused ? "info" : "";
-  setCountdownUI();
-}
-
-if (pauseBtn) pauseBtn.addEventListener("click", togglePause);
-
-// ====== Reveal logic ======
-function revealNextClue() {
-  if (gameEnded) return;
-
-  if (revealsShown >= MAX_REVEALS_PER_ROUND) return;
-
-  // pick first non-used
-  let idx = -1;
-  for (let i = 0; i < revealPool.length; i++) {
-    if (!usedKinds.has(revealPool[i].kind)) { idx = i; break; }
-  }
-
-  if (idx === -1) {
-    setCountdownUI();
-    return;
-  }
-
-  const item = revealPool.splice(idx, 1)[0];
-  usedKinds.add(item.kind);
-
-  // render current + history
-  renderClueMain(item);
-  renderRevealHistory(item);
-
-  // book-keeping
-  revealsShown += 1;
-  setScoreBar(currentPotentialScore());
-  setStepUI();
-
-  setCountdownUI();
-}
-
-// ====== Filters ======
-function applyFilters() {
-  const popPercent = parseInt(popEl.value, 10);
-  const scorePercent = parseInt(scoreEl.value, 10);
-  const yearMin = parseInt(yearMinEl.value, 10);
-  const yearMax = parseInt(yearMaxEl.value, 10);
-
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
-  if (allowedTypes.length === 0) return [];
-
-  let pool = allAnimes.filter((a) => {
-    return (
-      a._year >= yearMin &&
-      a._year <= yearMax &&
-      allowedTypes.includes(a._type) &&
-      typeof a.synopsis === "string" &&
-      cleanSynopsis(a.synopsis).length >= 40
-    );
-  });
-
-  if (pool.length === 0) return [];
-
-  pool.sort((a, b) => b._members - a._members);
-  pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
-
-  pool.sort((a, b) => b._score - a._score);
-  pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
-
-  return pool;
-}
-
-// ====== Preview ======
-function updatePreview() {
-  const pool = applyFilters();
-  const count = pool.length;
-  const ok = count >= MIN_TITLES_TO_START;
-
-  previewCountEl.textContent = `🧩 Titres disponibles : ${count} (${ok ? "OK" : "Min 64"})`;
-  previewCountEl.classList.toggle("good", ok);
-  previewCountEl.classList.toggle("bad", !ok);
-
-  applyBtn.disabled = !ok;
-  applyBtn.classList.toggle("disabled", !ok);
-  applyBtn.setAttribute("aria-disabled", (!ok).toString());
+  const v = renderValue(item.value);
+  body.textContent = v || "—";
 }
 
 // ====== Game flow ======
@@ -638,68 +470,65 @@ function resetRoundUI() {
   feedback.className = "";
 
   gameEnded = false;
-  paused = false;
-
-  if (pauseBtn) pauseBtn.textContent = "⏸️ Pause";
 
   input.value = "";
   input.disabled = false;
   submitBtn.disabled = true;
+  passBtn.disabled = false;
+
   suggestions.innerHTML = "";
 
   restartBtn.style.display = "none";
-  restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Terminer";
+  restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
 
-  usedKinds = new Set();
-  revealPool = [];
+  revealsShown = 0;
+  revealSequence = [];
 
-  resetCluesUI();
-  stopCountdownLoop();
+  initRevealGrid();
+  setStepLabel();
   setScoreBar(MAX_SCORE);
+}
 
-  // retire anciens synopsis
-  document.querySelectorAll(".reveal-details").forEach(el => el.remove());
+function revealNextClue() {
+  if (gameEnded) return;
+  if (revealsShown >= MAX_REVEALS_PER_ROUND) return;
+
+  const item = revealSequence[revealsShown];
+  if (!item) return;
+
+  fillSlot(revealsShown, item);
+  revealsShown += 1;
+
+  setStepLabel();
+  setScoreBar(currentPotentialScore());
+
+  // si on est à 6, on empêche "Passer" (mais on peut encore guess)
+  if (revealsShown >= MAX_REVEALS_PER_ROUND) {
+    passBtn.disabled = true;
+  }
 }
 
 function startNewRound() {
   resetRoundUI();
 
   currentAnime = filteredAnimes[Math.floor(Math.random() * filteredAnimes.length)];
-  revealPool = buildRevealPool(currentAnime);
+  const pool = buildRevealPool(currentAnime);
 
-  // 1er indice immédiat
+  // on garantit exactement 6 items différents
+  // (pool est déjà shufflé)
+  revealSequence = pool.slice(0, MAX_REVEALS_PER_ROUND);
+
+  // 1er indice direct
   revealNextClue();
-
-  // puis countdown + reveals
-  startCountdownLoop();
 }
 
 // ====== End round ======
-function showFullSynopsisReveal() {
-  const gameContainer = document.getElementById("container");
-  if (!gameContainer) return;
-
-  const details = document.createElement("details");
-  details.className = "reveal-details";
-
-  const sum = document.createElement("summary");
-  sum.textContent = "Voir le synopsis complet";
-
-  const div = document.createElement("div");
-  div.className = "reveal-synopsis";
-  div.textContent = cleanSynopsis(currentAnime?.synopsis || "");
-
-  details.appendChild(sum);
-  details.appendChild(div);
-  gameContainer.appendChild(details);
-}
-
 function endRound(roundScore, won, messageHtml) {
   gameEnded = true;
-  stopCountdownLoop();
 
   input.disabled = true;
   submitBtn.disabled = true;
+  passBtn.disabled = true;
   suggestions.innerHTML = "";
 
   setScoreBar(roundScore);
@@ -709,30 +538,30 @@ function endRound(roundScore, won, messageHtml) {
 
   totalScore += roundScore;
 
-  showFullSynopsisReveal();
-
   restartBtn.style.display = "inline-block";
   restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
 
   restartBtn.onclick = () => {
-    if (currentRound >= totalRounds) showFinalRecap();
-    else {
+    if (currentRound >= totalRounds) {
+      showFinalRecap();
+    } else {
       currentRound += 1;
       startNewRound();
     }
   };
-
-  setCountdownUI();
 }
 
 function winRound() {
   const score = currentPotentialScore();
   if (score > 0) launchFireworks();
-  endRound(score, true, `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>Score : <b>${score}</b> / ${MAX_SCORE}`);
+
+  const msg = `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>Score : <b>${score}</b> / ${MAX_SCORE}`;
+  endRound(score, true, msg);
 }
 
 function loseRound() {
-  endRound(0, false, `❌ Raté…<br>Réponse : <b>${currentAnime._title}</b><br>Score : <b>0</b> / ${MAX_SCORE}`);
+  const msg = `❌ Raté…<br>Réponse : <b>${currentAnime._title}</b><br>Score : <b>0</b> / ${MAX_SCORE}`;
+  endRound(0, false, msg);
 }
 
 function showFinalRecap() {
@@ -766,18 +595,43 @@ function checkGuess() {
   const acceptable = currentAnime._titlesNorm || [];
   const ok = acceptable.includes(g);
 
-  if (ok) winRound();
-  else {
-    feedback.textContent = "❌ Mauvaise réponse.";
-    feedback.className = "error";
-    input.select();
-    input.focus();
+  if (ok) {
+    winRound();
+    return;
   }
+
+  // mauvaise réponse
+  if (revealsShown >= MAX_REVEALS_PER_ROUND) {
+    // à 6/6 -> lose
+    feedback.textContent = "❌ Mauvaise réponse. Fin du round.";
+    feedback.className = "error";
+    loseRound();
+    return;
+  }
+
+  // sinon, on débloque l'indice suivant
+  revealNextClue();
+  feedback.textContent = "❌ Mauvaise réponse. Indice suivant débloqué.";
+  feedback.className = "info";
+
+  input.select();
+  input.focus();
 }
 
 submitBtn.addEventListener("click", checkGuess);
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) checkGuess();
+});
+
+// ====== Pass ======
+passBtn.addEventListener("click", () => {
+  if (gameEnded) return;
+  if (revealsShown >= MAX_REVEALS_PER_ROUND) return;
+
+  revealNextClue();
+  feedback.textContent = "⏭️ Indice suivant.";
+  feedback.className = "info";
+  input.focus();
 });
 
 // ====== Autocomplete ======
@@ -830,45 +684,50 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// ====== Fireworks ======
-function launchFireworks() {
-  const canvas = document.getElementById("fireworks");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+// ====== Filters ======
+function applyFilters() {
+  const popPercent = parseInt(popEl.value, 10);
+  const scorePercent = parseInt(scoreEl.value, 10);
+  const yearMin = parseInt(yearMinEl.value, 10);
+  const yearMax = parseInt(yearMaxEl.value, 10);
 
-  const particles = [];
-  function createParticle(x, y) {
-    const angle = Math.random() * 2 * Math.PI;
-    const speed = Math.random() * 5 + 2;
-    return { x, y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 60 };
-  }
-  for (let i = 0; i < 80; i++) particles.push(createParticle(canvas.width / 2, canvas.height / 2));
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
+  if (allowedTypes.length === 0) return [];
 
-  function animate() {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  let pool = allAnimes.filter((a) => {
+    return (
+      a._year >= yearMin &&
+      a._year <= yearMax &&
+      allowedTypes.includes(a._type) &&
+      typeof a.synopsis === "string" &&
+      cleanSynopsis(a.synopsis).length >= 40
+    );
+  });
 
-    particles.forEach((p) => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-      ctx.fillStyle = `hsl(${Math.random() * 360}, 100%, 50%)`;
-      ctx.fill();
-      p.x += p.dx;
-      p.y += p.dy;
-      p.dy += 0.05;
-      p.life--;
-    });
+  if (pool.length === 0) return [];
 
-    for (let i = particles.length - 1; i >= 0; i--) {
-      if (particles[i].life <= 0) particles.splice(i, 1);
-    }
+  pool.sort((a, b) => b._members - a._members);
+  pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-    if (particles.length > 0) requestAnimationFrame(animate);
-    else ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
-  animate();
+  pool.sort((a, b) => b._score - a._score);
+  pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
+
+  return pool;
+}
+
+// ====== Preview ======
+function updatePreview() {
+  const pool = applyFilters();
+  const count = pool.length;
+  const ok = count >= MIN_TITLES_TO_START;
+
+  previewCountEl.textContent = `🧩 Titres disponibles : ${count} (${ok ? "OK" : "Min 64"})`;
+  previewCountEl.classList.toggle("good", ok);
+  previewCountEl.classList.toggle("bad", !ok);
+
+  applyBtn.disabled = !ok;
+  applyBtn.classList.toggle("disabled", !ok);
+  applyBtn.setAttribute("aria-disabled", (!ok).toString());
 }
 
 // ====== init UI ======
@@ -917,6 +776,47 @@ function initCustomUI() {
   });
 
   syncLabels();
+}
+
+// ====== Fireworks ======
+function launchFireworks() {
+  const canvas = document.getElementById("fireworks");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  const particles = [];
+  function createParticle(x, y) {
+    const angle = Math.random() * 2 * Math.PI;
+    const speed = Math.random() * 5 + 2;
+    return { x, y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 60 };
+  }
+  for (let i = 0; i < 80; i++) particles.push(createParticle(canvas.width / 2, canvas.height / 2));
+
+  function animate() {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    particles.forEach((p) => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = `hsl(${Math.random() * 360}, 100%, 50%)`;
+      ctx.fill();
+      p.x += p.dx;
+      p.y += p.dy;
+      p.dy += 0.05;
+      p.life--;
+    });
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      if (particles[i].life <= 0) particles.splice(i, 1);
+    }
+
+    if (particles.length > 0) requestAnimationFrame(animate);
+    else ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  animate();
 }
 
 // ====== Load dataset ======
