@@ -26,10 +26,11 @@
           </span>
 
           <span class="info-tip" id="help-fot" role="tooltip">
-            Le jeu lance automatiquement un extrait (45s → 75s).<br>
+            Le jeu lance automatiquement un extrait (0s → 20s).<br>
             Vidéo = Song A (muette) / Audio = Song B.<br>
             À toi de décider : <b>Truth</b> (match) ou <b>Fake</b> (pas match).<br>
-            Reveal : vidéo A avec son vrai audio.
+            Reveal : vidéo A avec son vrai audio.<br>
+            <b>Score :</b> 1000 points par round.
           </span>
         </span>
       </div>
@@ -126,18 +127,18 @@
     <div id="container">
       <div id="score-bar-container" style="margin-bottom:12px;">
         <div id="score-bar" style="width:100%;position:relative;">
-          <span id="score-bar-label" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-weight:bold;">3000 / 3000</span>
+          <span id="score-bar-label" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-weight:bold;">1000 / 1000</span>
         </div>
       </div>
 
       <div id="roundLabel" style="margin:0 0 8px 0; font-weight:900; opacity:0.9; text-align:center;"></div>
-
       <div id="mediaStatus"></div>
 
       <div id="videoWrapper">
         <video id="videoPlayer" playsinline preload="auto"></video>
       </div>
 
+      <!-- audio invisible mais chargé -->
       <video id="audioPlayer" playsinline preload="auto" style="display:none;"></video>
 
       <div id="volumeRow" class="volume-row">
