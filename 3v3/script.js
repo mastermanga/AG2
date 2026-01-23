@@ -1,14 +1,12 @@
 /**********************
  * TopPick 3v3 (Anime / Songs)
- * - Même personnalisation que TopPick
- * - Chaque round: règle random (Garde une équipe / Supprime une équipe)
- * - Chaque round: thème “contenu” auto (année/studio/tag/score/pop + songYear + artiste)
- *   - 1 fois sur 5 => Libre (aucun filtre contenu)
- * - 6 items révélés progressivement EN ALTERNANCE :
+ * - Règle UNIQUE: choisir la meilleure ligne
+ * - Thème “contenu” auto (année/studio/tag/score/pop + songYear + artiste)
+ *   - 1 fois sur 5 => Libre
+ * - 6 items révélés EN ALTERNANCE :
  *   L1#1 → L2#1 → L1#2 → L2#2 → L1#3 → L2#3
  * - Anime: 1 item / 1s
- * - Songs: play auto non mute à 50s pendant 20s (currentTime), stop, suivant...
- * - Choix: le joueur choisit UNE LIGNE (équipe)
+ * - Songs: play auto non mute à 50s pendant 20s (currentTime)
  **********************/
 
 // ====== MENU & THEME ======
@@ -43,23 +41,26 @@ const MIN_REQUIRED = 64;
 
 // Songs preview
 const SONG_START_SEC = 50;
-const SONG_PLAY_SEC = 20; // 20s de vidéo
+const SONG_PLAY_SEC = 20;
 
 // retries: 1 essai + 5 retries => 0, 2s, 4s, 6s, 8s, 10s
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const STALL_TIMEOUT_MS = 6000;
 
-// sécurité anti-blocage total (si ça ne joue jamais)
+// sécurité anti-blocage total
 const MAX_WALL_SNIPPET_MS = 60000;
 
 // 1 fois sur 5 : pas de filtre contenu
 const FREE_THEME_PROBA = 0.20;
 
-// Règles de round (ligne)
-const THEMES = [
-  { key: "KEEP_TEAM", label: "Garde une équipe", required: 1, mode: "keep", desc: "Choisis la meilleure ligne (3 items) à garder." },
-  { key: "DEL_TEAM",  label: "Supprime une équipe", required: 1, mode: "delete", desc: "Choisis la pire ligne (3 items) à éliminer." },
-];
+// ✅ RÈGLE UNIQUE
+const RULE = {
+  key: "BEST_LINE",
+  label: "Choisis la meilleure ligne",
+  desc: "Choisis la meilleure ligne (3 items).",
+  required: 1,
+  mode: "keep",
+};
 
 // ====== HELPERS ======
 function normalizeAnimeList(json) {
@@ -131,7 +132,7 @@ function formatItemLabel(it) {
   return it.title || "";
 }
 
-// songs extraction: ajoute songYear + artistsArr + anime meta tags
+// ✅ songs extraction
 function extractSongsFromAnime(anime) {
   const out = [];
   const song = anime.song || {};
@@ -149,7 +150,6 @@ function extractSongsFromAnime(anime) {
 
       const artistsArr = Array.isArray(it.artists) ? it.artists.filter(Boolean) : [];
       const artists = artistsArr.join(", ");
-
       const songYear = getYearFromSeasonStr(it.season, anime._year);
 
       out.push({
@@ -191,12 +191,8 @@ function pickNFromPool(pool, n) {
   return out;
 }
 
-function randomRuleTheme() {
-  return THEMES[Math.floor(Math.random() * THEMES.length)];
-}
-
 /* ==========================
-   AUTO “THEME CONTENU” / ROUND
+   AUTO “THEME CONTENU”
    ========================== */
 function norm(s){ return (s || "").toString().trim().toLowerCase(); }
 function hasTag(it, tag) {
@@ -368,7 +364,6 @@ let filteredPool = [];
 let totalRounds = 1;
 let currentRound = 1;
 
-let currentRuleTheme = null;
 let currentContentTheme = null;
 
 // 3v3
@@ -680,7 +675,6 @@ function stopMedia() {
   songPlayer.removeAttribute("src");
   songPlayer.load();
 }
-
 function clearTeamBadges() {
   [teamRowA, teamRowB].forEach(row => row.querySelectorAll(".tp-badge").forEach(b => b.remove()));
 }
@@ -697,8 +691,8 @@ function resetRoundUI() {
 
   clearTeamBadges();
 
-  teamRowA.classList.remove("selected-keep", "selected-delete", "tp-row-locked");
-  teamRowB.classList.remove("selected-keep", "selected-delete", "tp-row-locked");
+  teamRowA.classList.remove("selected-keep", "tp-row-locked");
+  teamRowB.classList.remove("selected-keep", "tp-row-locked");
 
   resultDiv.textContent = "";
 
@@ -714,16 +708,6 @@ function resetRoundUI() {
   playerZone.style.display = (currentMode === "songs") ? "block" : "none";
   volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
   if (currentMode === "songs") applyVolume();
-}
-
-function renderPlaceholders() {
-  teamAList.innerHTML = "";
-  teamBList.innerHTML = "";
-
-  for (let i = 0; i < 3; i++) {
-    teamAList.appendChild(makePlaceholderLi(0, i));
-    teamBList.appendChild(makePlaceholderLi(1, i));
-  }
 }
 
 function makePlaceholderLi(team, pos) {
@@ -743,23 +727,26 @@ function makePlaceholderLi(team, pos) {
   return li;
 }
 
-function setThemeUI(ruleTheme, contentTheme) {
+function renderPlaceholders() {
+  teamAList.innerHTML = "";
+  teamBList.innerHTML = "";
+  for (let i = 0; i < 3; i++) {
+    teamAList.appendChild(makePlaceholderLi(0, i));
+    teamBList.appendChild(makePlaceholderLi(1, i));
+  }
+}
+
+function setThemeUI(contentTheme) {
   const cLabel = contentTheme?.label || "Libre";
-  themeNameEl.textContent = `🎲 Règle : ${ruleTheme.label}`;
-  themeDescEl.textContent = `${ruleTheme.desc} • 🎯 Filtre : ${cLabel}`;
+  themeNameEl.textContent = `✅ ${RULE.label}`;
+  themeDescEl.textContent = `${RULE.desc} • 🎯 Filtre : ${cLabel}`;
 }
 
 function updatePickStatus() {
-  if (!currentRuleTheme) return;
-
   const got = (selectedTeam === 0 || selectedTeam === 1) ? 1 : 0;
-  const need = 1;
+  pickStatusEl.textContent = `✅ Ligne choisie : ${got} / 1`;
 
-  pickStatusEl.textContent = (currentRuleTheme.mode === "delete")
-    ? `❌ Ligne à supprimer : ${got} / ${need}`
-    : `✅ Ligne à garder : ${got} / ${need}`;
-
-  const ok = got === need;
+  const ok = got === 1;
   pickStatusEl.classList.toggle("good", ok);
   pickStatusEl.classList.toggle("bad", !ok);
 
@@ -777,14 +764,13 @@ function markRevealDone() {
   revealStatusEl.style.display = "block";
   revealStatusEl.classList.remove("bad");
   revealStatusEl.classList.add("good");
-  revealStatusEl.textContent = "✅ Révélation terminée — choisis une ligne !";
+  revealStatusEl.textContent = "✅ Révélation terminée — choisis la meilleure ligne !";
 
   pickStatusEl.style.display = "block";
   updatePickStatus();
 }
 
 function getRevealOrder() {
-  // L1#1 → L2#1 → L1#2 → L2#2 → L1#3 → L2#3
   return [
     { team: 0, pos: 0 },
     { team: 1, pos: 0 },
@@ -793,42 +779,6 @@ function getRevealOrder() {
     { team: 0, pos: 2 },
     { team: 1, pos: 2 },
   ];
-}
-
-// ====== REVEAL (ANIME) ======
-function revealAnimeProgressively(localRound) {
-  const order = getRevealOrder();
-  let i = 0;
-
-  const step = () => {
-    if (localRound !== roundToken) { clearRevealTimer(); return; }
-    if (i >= order.length) { clearRevealTimer(); markRevealDone(); return; }
-
-    const { team, pos } = order[i];
-    const item = team === 0 ? teamItemsA[pos] : teamItemsB[pos];
-    revealCard(team, pos, item, localRound);
-
-    i++;
-  };
-
-  requestAnimationFrame(() => step());
-  revealTimer = setInterval(step, 1000);
-}
-
-// ====== REVEAL (SONGS) ======
-async function revealSongsSequence(localRound) {
-  const order = getRevealOrder();
-  for (let i = 0; i < order.length; i++) {
-    if (localRound !== roundToken) return;
-
-    const { team, pos } = order[i];
-    const item = team === 0 ? teamItemsA[pos] : teamItemsB[pos];
-
-    revealCard(team, pos, item, localRound);
-    await playSongSnippet(item, localRound).catch(() => {});
-  }
-  if (localRound !== roundToken) return;
-  markRevealDone();
 }
 
 function revealCard(team, pos, item, localRound) {
@@ -855,7 +805,27 @@ function revealCard(team, pos, item, localRound) {
   li.appendChild(span);
 }
 
-// ====== SONG SNIPPET (20s DE VIDÉO) ======
+// ====== REVEAL (ANIME) ======
+function revealAnimeProgressively(localRound) {
+  const order = getRevealOrder();
+  let i = 0;
+
+  const step = () => {
+    if (localRound !== roundToken) { clearRevealTimer(); return; }
+    if (i >= order.length) { clearRevealTimer(); markRevealDone(); return; }
+
+    const { team, pos } = order[i];
+    const item = team === 0 ? teamItemsA[pos] : teamItemsB[pos];
+    revealCard(team, pos, item, localRound);
+
+    i++;
+  };
+
+  requestAnimationFrame(() => step());
+  revealTimer = setInterval(step, 1000);
+}
+
+// ====== SONG SNIPPET ======
 function playSongSnippet(item, localRound) {
   return new Promise((resolve) => {
     if (currentMode !== "songs" || !item?.url) { resolve(); return; }
@@ -892,11 +862,6 @@ function playSongSnippet(item, localRound) {
     };
 
     const stopSnippet = () => {
-      if (localRound !== roundToken || localMedia !== mediaToken) {
-        cleanupAll();
-        resolve();
-        return;
-      }
       cleanupAll();
       resolve();
     };
@@ -931,47 +896,46 @@ function playSongSnippet(item, localRound) {
   });
 }
 
+// ====== REVEAL (SONGS) ======
+async function revealSongsSequence(localRound) {
+  const order = getRevealOrder();
+  for (let i = 0; i < order.length; i++) {
+    if (localRound !== roundToken) return;
+
+    const { team, pos } = order[i];
+    const item = team === 0 ? teamItemsA[pos] : teamItemsB[pos];
+
+    revealCard(team, pos, item, localRound);
+    await playSongSnippet(item, localRound).catch(() => {});
+  }
+  if (localRound !== roundToken) return;
+  markRevealDone();
+}
+
 // ====== SELECTION (ligne) ======
-function setSelectedTeam(team) {
-  if (!currentRuleTheme) return;
+function refreshRowSelectionUI() {
+  teamRowA.classList.remove("selected-keep");
+  teamRowB.classList.remove("selected-keep");
 
-  selectedTeam = team;
-
-  teamRowA.classList.remove("selected-keep", "selected-delete");
-  teamRowB.classList.remove("selected-keep", "selected-delete");
-
-  const cls = (currentRuleTheme.mode === "delete") ? "selected-delete" : "selected-keep";
-  if (team === 0) teamRowA.classList.add(cls);
-  if (team === 1) teamRowB.classList.add(cls);
+  if (selectedTeam === 0) teamRowA.classList.add("selected-keep");
+  if (selectedTeam === 1) teamRowB.classList.add("selected-keep");
 
   updatePickStatus();
 }
 
 function onTeamClick(team) {
   if (!selectionEnabled || lockedAfterValidate) return;
-  // on autorise le choix seulement une fois les 6 révélés
   if (!revealDone) return;
 
-  if (selectedTeam === team) selectedTeam = null;
-  else selectedTeam = team;
-
-  teamRowA.classList.remove("selected-keep", "selected-delete");
-  teamRowB.classList.remove("selected-keep", "selected-delete");
-
-  if (selectedTeam === 0 || selectedTeam === 1) {
-    const cls = (currentRuleTheme.mode === "delete") ? "selected-delete" : "selected-keep";
-    if (selectedTeam === 0) teamRowA.classList.add(cls);
-    else teamRowB.classList.add(cls);
-  }
-
-  updatePickStatus();
+  selectedTeam = (selectedTeam === team) ? null : team;
+  refreshRowSelectionUI();
 }
 
 teamRowA.addEventListener("click", () => onTeamClick(0));
 teamRowB.addEventListener("click", () => onTeamClick(1));
 
 confirmBtn.addEventListener("click", () => {
-  if (!currentRuleTheme || lockedAfterValidate) return;
+  if (lockedAfterValidate) return;
   if (!selectionEnabled || !revealDone) return;
   if (!(selectedTeam === 0 || selectedTeam === 1)) return;
 
@@ -987,17 +951,12 @@ confirmBtn.addEventListener("click", () => {
   teamRowB.classList.add("tp-row-locked");
 
   const chosenRow = (selectedTeam === 0) ? teamRowA : teamRowB;
-
   const badge = document.createElement("div");
   badge.className = "tp-badge";
-  badge.textContent = (currentRuleTheme.mode === "delete") ? "❌ SUPPRIMÉE" : "✅ GARDÉE";
+  badge.textContent = "✅ CHOISIE";
   chosenRow.appendChild(badge);
 
-  if (currentRuleTheme.mode === "delete") {
-    resultDiv.textContent = "✅ Validé — la ligne sélectionnée est supprimée.";
-  } else {
-    resultDiv.textContent = "✅ Validé — la ligne sélectionnée est gardée.";
-  }
+  resultDiv.textContent = "✅ Validé — tu as choisi la meilleure ligne.";
 
   nextBtn.style.display = "inline-block";
   const isLast = currentRound >= totalRounds;
@@ -1030,18 +989,15 @@ function startRound() {
     return;
   }
 
-  currentRuleTheme = randomRuleTheme();
-
-  // 1 fois sur 5 : pas de thème contenu
+  // 1 fois sur 5 : Libre
   if (Math.random() < FREE_THEME_PROBA) {
     currentContentTheme = { label: "Libre", pool: filteredPool, crit: "FREE" };
   } else {
     currentContentTheme = pickRoundContentThemeAuto(filteredPool, currentMode);
   }
 
-  setThemeUI(currentRuleTheme, currentContentTheme);
+  setThemeUI(currentContentTheme);
 
-  // pool finale pour tirer les 6
   const finalPool = (currentContentTheme?.pool && currentContentTheme.pool.length >= 6)
     ? currentContentTheme.pool
     : filteredPool;
@@ -1055,7 +1011,6 @@ function startRound() {
     return;
   }
 
-  // randomize encore un peu l’ordre puis split 3v3
   picks = shuffleInPlace(picks);
   teamItemsA = picks.slice(0, 3);
   teamItemsB = picks.slice(3, 6);
@@ -1063,7 +1018,6 @@ function startRound() {
   roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
   renderPlaceholders();
 
-  // on affiche "en cours" pendant reveal
   revealStatusEl.style.display = "block";
   revealStatusEl.classList.add("bad");
   revealStatusEl.classList.remove("good");
