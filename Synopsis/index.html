@@ -27,9 +27,15 @@
           </span>
 
           <span class="info-tip" id="help-clue" role="tooltip">
-            Un indice apparaît toutes les 3 secondes (aléatoire, sans doublon dans le round).
-            Le score démarre à 3000 et chaque nouvel indice coûte -500.
-            Tu peux mettre en pause quand tu veux.
+            6 indices max. Le score démarre à 3000, chaque nouvel indice coûte -500.
+            <br><br>
+            ✅ Bonne réponse = win.
+            <br>
+            ❌ Mauvaise réponse = indice suivant (jusqu’à 6).
+            <br>
+            ⏭️ “Passer” révèle l’indice suivant sans tentative.
+            <br><br>
+            Défaite uniquement si tu te trompes à 6/6.
           </span>
         </span>
       </div>
@@ -40,7 +46,6 @@
   <div id="custom-panel" class="main-container">
     <h2>⚙️ Personnalisation</h2>
 
-    <!-- Mode (Animes uniquement) -->
     <div class="opt-row">
       <div class="opt-label">Mode</div>
       <div class="opt-col">
@@ -51,7 +56,6 @@
       <div class="opt-value"></div>
     </div>
 
-    <!-- Popularité -->
     <div class="opt-row">
       <div class="opt-label">Popularité</div>
       <div class="opt-col">
@@ -60,7 +64,6 @@
       <div class="opt-value">Top <span id="popPercentVal">30</span>%</div>
     </div>
 
-    <!-- Score -->
     <div class="opt-row">
       <div class="opt-label">Score</div>
       <div class="opt-col">
@@ -69,7 +72,6 @@
       <div class="opt-value">Top <span id="scorePercentVal">100</span>%</div>
     </div>
 
-    <!-- Années -->
     <div class="opt-row">
       <div class="opt-label">Années</div>
       <div class="opt-col">
@@ -81,7 +83,6 @@
       <div class="opt-value"><span id="yearMinVal">1950</span> → <span id="yearMaxVal">2026</span></div>
     </div>
 
-    <!-- Types -->
     <div class="opt-row">
       <div class="opt-label">Types</div>
       <div class="opt-col">
@@ -96,18 +97,16 @@
       <div class="opt-value"></div>
     </div>
 
-    <!-- Preview count -->
     <div id="previewCount" class="preview-count bad">
       ⏳ Chargement de la base…
     </div>
 
-    <!-- Rounds -->
     <div class="opt-row">
       <div class="opt-label">Rounds</div>
       <div class="opt-col"></div>
       <div class="opt-value opt-right">
         <input id="roundCount" class="round-input" type="number" min="1" max="100" step="1" value="1" />
-        <span class="round-hint">(1 à 100) — Enchaîne plusieurs parties avec la même config.</span>
+        <span class="round-hint">(1 à 100)</span>
       </div>
     </div>
 
@@ -121,7 +120,7 @@
   <!-- JEU -->
   <div id="game-panel" style="display:none;">
     <div id="container">
-      <!-- SCORE -->
+
       <div id="score-bar-container">
         <div id="score-bar"></div>
         <span id="score-bar-label">3000 / 3000</span>
@@ -129,29 +128,20 @@
 
       <div class="top-row">
         <div id="roundLabel"></div>
-        <button id="pauseBtn" class="pause-btn" type="button">⏸️ Pause</button>
       </div>
 
-      <!-- CLUE CARD -->
       <div id="clueCard" class="clue-card">
         <div class="clue-head">
           <div class="clue-badges">
-            <span id="clueBadge" class="clue-badge">Indice</span>
-            <span id="clueStep" class="clue-step">1 / 6</span>
+            <span class="clue-badge">Indices</span>
+            <span id="clueStep" class="clue-step">0 / 6</span>
           </div>
-          <div id="revealTimer" class="reveal-timer">Prochain indice : 3s</div>
         </div>
 
-        <div id="clueMain" class="clue-main">
-          <!-- contenu de l'indice courant -->
-        </div>
-
-        <div id="revealList" class="reveal-list">
-          <!-- historique des indices -->
-        </div>
+        <!-- 6 cases visibles dès le début (2 colonnes) -->
+        <div id="revealList" class="reveal-grid"></div>
       </div>
 
-      <!-- CONTROLS -->
       <div id="controls">
         <div class="input-container">
           <input type="text" id="characterInput" placeholder="Entrez le nom d'un anime..." autocomplete="off" />
@@ -160,7 +150,7 @@
 
         <div class="btn-row">
           <button id="submit-btn" disabled>Valider</button>
-          <button id="giveup-btn" style="display:none;">Révéler</button>
+          <button id="pass-btn" type="button">Passer</button>
           <button id="restart-btn" style="display:none;">Suivant</button>
         </div>
       </div>
@@ -171,9 +161,7 @@
     </div>
   </div>
 
-  <footer>
-    © 2025 mastermanga
-  </footer>
+  <footer>© 2025 mastermanga</footer>
 
   <script src="script.js"></script>
 </body>
