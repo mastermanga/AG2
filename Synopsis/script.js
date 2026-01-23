@@ -1,26 +1,28 @@
 /**********************
  * Synopsis (FR)
- * - Dataset: ../data/licenses_only.json (synopsis déjà en FR)
- * - 3 étapes: Hard++ -> Moyen -> Synopsis complet
- * - À chaque erreur: on descend en difficulté
+ * - Dataset: ../data/licenses_only.json (synopsis déjà FR)
+ * - 3 étapes: Hardcore -> Moyen -> Facile (TOUS = résumés courts réécrits)
+ * - Le synopsis COMPLET est visible UNIQUEMENT au reveal (win/lose)
  * - Score: 3000 / 2000 / 1000 sinon 0
  * - Min 64 titres
- * - Optimisations: cache titres autocomplete + cache stages + mots rares (idle)
+ * - Optimisations: cache titres autocomplete + cache stages + mots rares (idle optionnel)
  **********************/
 
 const MAX_SCORE = 3000;
 const STAGE_SCORES = [3000, 2000, 1000];
-const STAGE_LABELS = ["Hard++", "Moyen", "Synopsis"];
+const STAGE_LABELS = ["Hardcore", "Moyen", "Facile"];
 const MIN_TITLES_TO_START = 64;
 
 // ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
   window.location.href = "../index.html";
 });
+
 document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
   localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
+
 window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
 });
@@ -36,6 +38,7 @@ function getDisplayTitle(a) {
     "Titre inconnu"
   );
 }
+
 function getTitleVariants(a) {
   const arr = [
     a.title_english,
@@ -44,15 +47,16 @@ function getTitleVariants(a) {
     a.title,
     a.animethemes && a.animethemes.name
   ].filter(Boolean);
-  // uniq
   return Array.from(new Set(arr.map(s => String(s).trim()).filter(Boolean)));
 }
+
 function getYear(a) {
   const s = (a.season || "").trim();
   const parts = s.split(/\s+/);
   const y = parseInt(parts[1] || parts[0] || "0", 10);
   return Number.isFinite(y) ? y : 0;
 }
+
 function clampYearSliders() {
   const minEl = document.getElementById("yearMin");
   const maxEl = document.getElementById("yearMax");
@@ -64,10 +68,12 @@ function clampYearSliders() {
     maxEl.value = b;
   }
 }
+
 function clampInt(n, a, b) {
   n = Number.isFinite(n) ? n : a;
   return Math.max(a, Math.min(b, n));
 }
+
 function escapeRegExp(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -90,6 +96,7 @@ const previewCountEl = document.getElementById("previewCount");
 const applyBtn = document.getElementById("applyFiltersBtn");
 const roundCountEl = document.getElementById("roundCount");
 
+// game refs
 const feedback = document.getElementById("feedback");
 const input = document.getElementById("characterInput");
 const submitBtn = document.getElementById("submit-btn");
@@ -113,8 +120,9 @@ let filteredAnimes = [];
 let titlesList = [];
 let titlesLowerSet = new Set();
 
-// Stages cache (évite recalcul si anime revient)
-const stageCache = new Map(); // key -> [hard, med, full]
+// Cache : stocke 3 résumés + synopsis complet (reveal only)
+const stageCache = new Map(); // key -> { stages:[hard, med, easy], full:"..." }
+let fullSynopsisClean = "";
 
 // ====== Session ======
 let totalRounds = 1;
@@ -162,21 +170,15 @@ function setScoreBar(score) {
   scoreBarLabel.textContent = `${s} / ${MAX_SCORE}`;
 }
 
-// ====== Nettoyage synopsis ======
+// ====== Texte / synopsis helpers ======
 function basicCleanSynopsis(text) {
   let t = (text || "").replace(/\r/g, "").trim();
-
-  // retire notes MAL FR/EN
   t = t.replace(/\[\s*(?:Écrit|Ecrit)\s+par\s+MAL\s+Rewrite\s*\]/giu, "");
   t = t.replace(/\[\s*Written\s+by\s+MAL\s+Rewrite\s*\]/giu, "");
-
-  // retire éventuelles lignes "Written by ..." variantes
-  t = t.replace(/\[\s*Written\s+by[^\]]*\]/giu, "");
   t = t.replace(/\[\s*(?:Écrit|Ecrit)\s+par[^\]]*\]/giu, "");
-
-  t = t.replace(/\n{3,}/g, "\n\n");
-  t = t.replace(/[ \t]{2,}/g, " ");
-  return t.trim();
+  t = t.replace(/\[\s*Written\s+by[^\]]*\]/giu, "");
+  t = t.replace(/\n{3,}/g, "\n\n").trim();
+  return t;
 }
 
 function splitSentences(text) {
@@ -185,21 +187,20 @@ function splitSentences(text) {
   return t.split(/(?<=[.!?])\s+/).filter(Boolean);
 }
 
-// ====== Masquer mots du titre (variants) ======
 function wordsFromTitle(title) {
   return (title || "")
     .toLowerCase()
     .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "") // enlève accents
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter(w => w.length >= 4);
 }
 
 function removeTitleWordsFromVariants(text, variants) {
-  const allWords = [];
-  for (const v of (variants || [])) allWords.push(...wordsFromTitle(v));
-  const uniq = Array.from(new Set(allWords)).slice(0, 20);
+  const all = [];
+  for (const v of (variants || [])) all.push(...wordsFromTitle(v));
+  const uniq = Array.from(new Set(all)).slice(0, 25);
   if (!uniq.length) return text;
 
   let out = text;
@@ -210,147 +211,156 @@ function removeTitleWordsFromVariants(text, variants) {
   return out;
 }
 
-// ====== Censure noms propres (Unicode) ======
+function tidyText(t) {
+  return (t || "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/\(\s+/g, "(")
+    .replace(/\s+\)/g, ")")
+    .replace(/____(\s+____)+/g, "____")
+    .trim();
+}
+
 function supportsUnicodeProps() {
   try { new RegExp("\\p{L}", "u"); return true; } catch { return false; }
 }
 
-function removeProperNounsAggressive(text) {
-  let t = text;
+// ✅ Remplace les noms propres par petits placeholders, sinon vide
+function maskProperNounsFR(text, { maxReplacements = 5 } = {}) {
+  let t = String(text || "");
+  if (!t) return t;
 
-  // retire initiales "D." etc.
-  t = t.replace(/\b\p{Lu}\.\b/gu, "");
+  const START_OK = new Set([
+    "Il","Elle","Ils","Elles","On","Ce","Cette","Ces","C’","C'","Quand","Lorsque","Après","Avant","Cependant","Pourtant",
+    "Mais","Donc","Ainsi","En","Dans","Sur","Sous","Avec","Sans","Depuis","Auparavant","Plusieurs","La","Le","Les","Un","Une","Des"
+  ]);
 
-  if (supportsUnicodeProps()) {
-    // Suite de mots capitalisés -> [REDACTED]
-    t = t.replace(/\b(\p{Lu}\p{Ll}{2,})(\s+(\p{Lu}\p{Ll}{2,}))+(\b)/gu, "[REDACTED]");
+  const placeholders = ["un personnage", "un autre personnage", "une organisation", "un lieu", "un groupe"];
+  let used = 0;
 
-    // mots isolés capitalisés (hors début de phrase) -> [REDACTED]
-    const sentences = t.split(/(?<=[.!?])\s+/);
-    t = sentences.map(s => {
-      const parts = s.split(/\s+/);
-      return parts.map((w, idx) => {
-        if (idx === 0) return w;
-        const raw = w.replace(/^[("'+-]+|[)"'.,?!:;]+$/g, "");
-        if (/^\p{Lu}\p{Ll}{2,}$/u.test(raw)) return w.replace(raw, "[REDACTED]");
-        return w;
-      }).join(" ");
-    }).join(" ");
+  const uni = supportsUnicodeProps();
+
+  // suites capitalisées (Prénom Nom)
+  if (uni) {
+    t = t.replace(/\b(\p{Lu}[\p{L}’'-]{2,})(\s+(\p{Lu}[\p{L}’'-]{2,})){1,2}\b/gu, () => {
+      used++;
+      if (used <= maxReplacements) return placeholders[(used - 1) % placeholders.length];
+      return "";
+    });
   } else {
-    // fallback (moins bon sans unicode)
-    t = t.replace(/\b([A-Z][a-z]{2,})(\s+[A-Z][a-z]{2,})+\b/g, "[REDACTED]");
+    t = t.replace(/\b([A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÖØ-öø-ÿ’'-]{2,})(\s+([A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÖØ-öø-ÿ’'-]{2,})){1,2}\b/g, () => {
+      used++;
+      if (used <= maxReplacements) return placeholders[(used - 1) % placeholders.length];
+      return "";
+    });
   }
 
-  return t.replace(/\s{2,}/g, " ").trim();
+  // mots capitalisés isolés (même début de phrase si pas “START_OK”)
+  const sentences = t.split(/(?<=[.!?])\s+/);
+  t = sentences.map(sentence => {
+    const words = sentence.split(/\s+/);
+    if (!words.length) return sentence;
+
+    const clean0 = words[0].replace(/^[("'+-]+|[)"'.,?!:;]+$/g, "");
+    if (clean0 && /^[A-ZÀ-ÖØ-Ý]/.test(clean0) && !START_OK.has(clean0)) {
+      used++;
+      words[0] = (used <= maxReplacements) ? placeholders[(used - 1) % placeholders.length] : "";
+    }
+
+    for (let i = 1; i < words.length; i++) {
+      const raw = words[i].replace(/^[("'+-]+|[)"'.,?!:;]+$/g, "");
+      if (!raw) continue;
+      if (/^[A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÖØ-öø-ÿ’'-]{2,}$/.test(raw)) {
+        used++;
+        words[i] = (used <= maxReplacements) ? placeholders[(used - 1) % placeholders.length] : "";
+      }
+    }
+    return words.join(" ");
+  }).join(" ");
+
+  return tidyText(t);
 }
 
-// ====== Mots rares (auto), construit en idle ======
-const freqMap = new Map();
-let freqReady = false;
-let freqBuilding = false;
+/**
+ * ✅ Généralisation globale (Hardcore plus fort, Moyen léger)
+ */
+function generalizeTerms(text, level) {
+  let t = String(text || "");
+  const replHard = [
+    [/volley[-\s]?ball/giu, "un sport"],
+    [/football|basket|baseball|tennis/giu, "un sport"],
+    [/pirates?/giu, "un groupe"],
+    [/trésor|butin|récompense/giu, "un objectif"],
+    [/démons?|démoniaque/giu, "une menace"],
+    [/titans?/giu, "des créatures"],
+    [/lycée|école|académie|université/giu, "un établissement"],
+    [/royaume|empire|continent|monde/giu, "un territoire"],
+    [/guerre|batailles?/giu, "un conflit"],
+    [/magie|sorts?/giu, "un pouvoir"],
+  ];
+  const replMed = [
+    [/lycée|école|académie|université/giu, "un établissement"],
+    [/royaume|empire|continent|monde/giu, "un territoire"],
+  ];
 
-const STOPWORDS = new Set([
-  // FR
-  "dans","avec","sans","pour","mais","donc","alors","quand","où","comme","plus","moins","très","aussi","seulement",
-  "être","avoir","fait","faire","peut","doit","vont","aller","cela","cette","ces","ceux","tout","tous","toute","toutes",
-  "une","des","les","aux","du","de","la","le","un","et","ou","ni","ne","pas","sur","sous","entre","vers","chez",
-  "leurs","leur","lui","elle","elles","ils","son","sa","ses","nos","notre","vos","votre","mes","mon","ma","tes","ton","ta",
-  // EN (au cas où il reste un peu d'anglais)
-  "their","there","about","after","before","during","through","across","under","over","into","from","with","without",
-  "this","that","these","those","then","than","when","where","while","who","whom","which","what","why","how",
-  "they","them","his","her","him","hers","theirs","your","yours","our","ours","its","it's","itself","the","and","for","but","not",
-  "are","was","were","been","being","have","has","had","do","does","did","will","would","can","could","should","may","might","must",
-  "one","two","three","many","most","more","less","very","also","only","just","even","still","such"
-]);
-
-function tokenize(text) {
-  const s = (text || "")
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, ""); // enlève accents pour comparer
-  // lettres+chiffres (unicode-safe en restant simple)
-  return s
-    .replace(/[^a-z0-9\s']/g, " ")
-    .split(/\s+/)
-    .filter(w => w.length >= 4 && !STOPWORDS.has(w));
+  const list = (level === "hardcore") ? replHard : (level === "medium") ? replMed : [];
+  for (const [re, sub] of list) t = t.replace(re, sub);
+  return tidyText(t);
 }
 
-function buildFreqMap(animes) {
-  freqMap.clear();
-  for (const a of animes) {
-    const syn = basicCleanSynopsis(a && a.synopsis ? a.synopsis : "");
-    const uniq = new Set(tokenize(syn));
-    for (const w of uniq) freqMap.set(w, (freqMap.get(w) || 0) + 1);
-  }
-  freqReady = true;
-  freqBuilding = false;
+// ✅ Choix de phrases DIFFERENT entre Hardcore / Moyen / Facile (court)
+function pickForHardcore(sents) {
+  if (sents.length >= 5) return [sents[1], sents[3]].join(" ");
+  if (sents.length >= 3) return [sents[1], sents[2]].join(" ");
+  return sents.slice(0, 2).join(" ");
+}
+function pickForMedium(sents) {
+  if (sents.length >= 4) return [sents[0], sents[2]].join(" ");
+  return sents.slice(0, 2).join(" ");
+}
+function pickForEasy(sents) {
+  return sents.slice(0, 2).join(" ");
 }
 
-function scheduleFreqBuild() {
-  if (freqReady || freqBuilding) return;
-  freqBuilding = true;
-  if ("requestIdleCallback" in window) {
-    requestIdleCallback(() => buildFreqMap(allAnimes));
-  } else {
-    setTimeout(() => buildFreqMap(allAnimes), 0);
-  }
+function buildHardcoreSummary(syn, titleVariants) {
+  const clean = basicCleanSynopsis(syn);
+  const sents = splitSentences(clean);
+  let out = pickForHardcore(sents);
+
+  // réécrit généraliste
+  out = generalizeTerms(out, "hardcore");
+
+  // retire mots du titre + noms propres
+  out = removeTitleWordsFromVariants(out, titleVariants);
+  out = maskProperNounsFR(out, { maxReplacements: 4 });
+
+  return out || "____";
 }
 
-function maskRareWords(text, n = 8) {
-  if (!freqReady) return text;
-  const words = Array.from(new Set(tokenize(text)));
-  if (!words.length) return text;
+function buildMediumSummary(syn, titleVariants) {
+  const clean = basicCleanSynopsis(syn);
+  const sents = splitSentences(clean);
+  let out = pickForMedium(sents);
 
-  words.sort((a, b) => (freqMap.get(a) || 0) - (freqMap.get(b) || 0));
-  const toHide = new Set(words.slice(0, Math.min(n, words.length)));
+  // moins généraliste que hardcore, mais toujours "réécrit"
+  out = generalizeTerms(out, "medium");
 
-  return text.replace(/\b([A-Za-zÀ-ÖØ-öø-ÿ']{4,})\b/g, (m) => {
-    const w = m.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
-    return toHide.has(w) ? "____" : m;
-  });
+  out = removeTitleWordsFromVariants(out, titleVariants);
+  out = maskProperNounsFR(out, { maxReplacements: 5 });
+
+  return out || "____";
 }
 
-// ====== Build stages ======
-function buildHardPP(original, variants) {
-  let t = basicCleanSynopsis(original);
-  if (!t) return "Synopsis indisponible.";
+function buildEasySummary(syn, titleVariants) {
+  const clean = basicCleanSynopsis(syn);
+  const sents = splitSentences(clean);
+  let out = pickForEasy(sents);
 
-  const sents = splitSentences(t);
-  let chosen = sents.slice(0, 2).join(" ");
-  if (chosen.length < 170 && sents.length >= 3) chosen = sents.slice(0, 3).join(" ");
+  // Facile : vrais mots, mais sans noms forts
+  out = removeTitleWordsFromVariants(out, titleVariants);
+  out = maskProperNounsFR(out, { maxReplacements: 7 });
 
-  chosen = removeTitleWordsFromVariants(chosen, variants);
-  chosen = removeProperNounsAggressive(chosen);
-
-  // masque mots rares (si freqMap prête, sinon no-op)
-  chosen = maskRareWords(chosen, 10);
-
-  // nettoie répétitions
-  chosen = chosen.replace(/\[REDACTED\](\s+\[REDACTED\])+/g, "[REDACTED]");
-  return chosen.trim();
-}
-
-function buildMedium(original, variants) {
-  let t = basicCleanSynopsis(original);
-  if (!t) return "Synopsis indisponible.";
-
-  const sents = splitSentences(t);
-  let chosen = sents.slice(0, 4).join(" ");
-  if (chosen.length > 650) chosen = sents.slice(0, 3).join(" ");
-
-  chosen = removeTitleWordsFromVariants(chosen, variants);
-  chosen = removeProperNounsAggressive(chosen);
-
-  // léger masque rare
-  chosen = maskRareWords(chosen, 4);
-
-  chosen = chosen.replace(/\[REDACTED\](\s+\[REDACTED\])+/g, "[REDACTED]");
-  return chosen.trim();
-}
-
-function buildFull(original) {
-  const t = basicCleanSynopsis(original);
-  return t || "Synopsis indisponible.";
+  return out || "____";
 }
 
 // ====== Filters ======
@@ -360,8 +370,7 @@ function applyFilters() {
   const yearMin = parseInt(yearMinEl.value, 10);
   const yearMax = parseInt(yearMaxEl.value, 10);
 
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")]
-    .map((b) => b.dataset.type);
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
   let pool = allAnimes.filter((a) => {
@@ -391,6 +400,7 @@ function updatePreview() {
   const ok = count >= MIN_TITLES_TO_START;
 
   previewCountEl.textContent = `📜 Titres disponibles : ${count} (${ok ? "OK" : "Min 64"})`;
+
   previewCountEl.classList.toggle("good", ok);
   previewCountEl.classList.toggle("bad", !ok);
 
@@ -425,8 +435,11 @@ function initCustomUI() {
     updatePreview();
   }
 
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) =>
+    el.addEventListener("input", syncLabels)
+  );
 
+  // type pills
   document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -443,7 +456,6 @@ function initCustomUI() {
     }
 
     rebuildTitlesCache();
-    scheduleFreqBuild(); // en idle, ne bloque pas le lancement
 
     totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
     currentRound = 1;
@@ -489,17 +501,24 @@ function startNewRound() {
   const key = String(currentAnime.mal_id || currentAnime._title);
 
   if (stageCache.has(key)) {
-    stageTexts = stageCache.get(key);
+    const pack = stageCache.get(key);
+    stageTexts = pack.stages;
+    fullSynopsisClean = pack.full;
   } else {
     const variants = getTitleVariants(currentAnime);
     const syn = currentAnime.synopsis || "";
-    const pack = [
-      buildHardPP(syn, variants),
-      buildMedium(syn, variants),
-      buildFull(syn),
+
+    const stages = [
+      buildHardcoreSummary(syn, variants),
+      buildMediumSummary(syn, variants),
+      buildEasySummary(syn, variants),
     ];
-    stageCache.set(key, pack);
-    stageTexts = pack;
+
+    const full = basicCleanSynopsis(syn);
+
+    stageCache.set(key, { stages, full });
+    stageTexts = stages;
+    fullSynopsisClean = full;
   }
 
   renderStage();
@@ -565,7 +584,19 @@ function endRound(roundScore, won, messageHtml) {
 
   setScoreBar(roundScore);
 
-  feedback.innerHTML = messageHtml;
+  const safeFull = (fullSynopsisClean || "Synopsis indisponible.")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  const reveal = `
+    <details class="reveal-details">
+      <summary>Voir le synopsis complet</summary>
+      <div class="reveal-synopsis">${safeFull}</div>
+    </details>
+  `;
+
+  feedback.innerHTML = messageHtml + reveal;
   feedback.className = won ? "success" : "error";
 
   totalScore += roundScore;
@@ -586,9 +617,11 @@ function endRound(roundScore, won, messageHtml) {
 function winRound() {
   const score = STAGE_SCORES[stageIndex];
   if (score > 0) launchFireworks();
+
   const msg = `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>Score : <b>${score}</b> / ${MAX_SCORE}`;
   endRound(score, true, msg);
 }
+
 function loseRound() {
   const msg = `❌ Raté…<br>Réponse : <b>${currentAnime._title}</b><br>Score : <b>0</b> / ${MAX_SCORE}`;
   endRound(0, false, msg);
@@ -622,6 +655,7 @@ input.addEventListener("input", function () {
   if (!val) return;
 
   const matches = titlesList.filter(t => t.toLowerCase().includes(val)).slice(0, 7);
+
   for (const title of matches) {
     const div = document.createElement("div");
     div.innerHTML = `<span>${title.replace(new RegExp(escapeRegExp(val), "i"), (m) => `<b>${m}</b>`)}</span>`;
@@ -641,17 +675,21 @@ input.addEventListener("input", function () {
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) checkGuess();
 });
+
 submitBtn.addEventListener("click", checkGuess);
 
 // ====== Tooltip ======
 document.addEventListener("click", (e) => {
   const icon = e.target.closest(".info-icon");
   if (!icon) return;
+
   e.preventDefault();
   e.stopPropagation();
+
   const wrap = icon.closest(".info-wrap");
   if (wrap) wrap.classList.toggle("open");
 });
+
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
     document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
