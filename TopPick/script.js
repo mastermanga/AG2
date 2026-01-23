@@ -1,10 +1,12 @@
 /**********************
  * TopPick (Anime / Songs)
  * - Même personnalisation que Blind Ranking
- * - Chaque round: thème random (Garde 1 / Supprime 1 / Garde 3)
+ * - Chaque round: règle random (Garde 1 / Supprime 1 / Garde 3 / Supprime 3)
+ * - Chaque round: filtre “contenu” auto (année/studio/tag/score/pop + songYear + artiste)
+ *   - 1 fois sur 5 => Libre (aucun filtre contenu)
  * - 6 items révélés progressivement
  *   - Anime: 1er item à t=0, puis 1 item / 1s
- *   - Songs: play auto non mute à 45s pendant 15s DE VIDÉO (currentTime), stop, suivant...
+ *   - Songs: play auto non mute à 50s pendant 20s DE VIDÉO (currentTime), stop, suivant...
  * - Pas de points
  **********************/
 
@@ -40,7 +42,7 @@ const MIN_REQUIRED = 64;
 
 // Songs preview
 const SONG_START_SEC = 50;
-const SONG_PLAY_SEC = 20; // 15s DE VIDEO
+const SONG_PLAY_SEC = 20; // ✅ 20s DE VIDEO
 
 // retries: 1 essai + 5 retries => 0, 2s, 4s, 6s, 8s, 10s
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
@@ -49,11 +51,15 @@ const STALL_TIMEOUT_MS = 6000;
 // sécurité anti-blocage total (si ça ne joue jamais)
 const MAX_WALL_SNIPPET_MS = 60000;
 
-// Themes
+// 1 fois sur 5 : pas de filtre contenu
+const FREE_THEME_PROBA = 0.20;
+
+// Règles de round
 const THEMES = [
   { key: "KEEP1", label: "Garde 1", required: 1, mode: "keep", desc: "Choisis 1 favori à garder." },
   { key: "DEL1",  label: "Supprime 1", required: 1, mode: "delete", desc: "Choisis 1 à supprimer." },
   { key: "KEEP3", label: "Garde 3", required: 3, mode: "keep", desc: "Choisis 3 favoris à garder." },
+  { key: "DEL3",  label: "Supprime 3", required: 3, mode: "delete", desc: "Choisis 3 à supprimer." }, // ✅ AJOUT
 ];
 
 // ====== HELPERS ======
@@ -76,6 +82,11 @@ function getYear(a) {
   const s = ((a && a.season) ? String(a.season) : "").trim();
   const m = s.match(/(\d{4})/);
   return m ? parseInt(m[1], 10) : 0;
+}
+function getYearFromSeasonStr(seasonStr, fallback = 0) {
+  const s = (seasonStr ? String(seasonStr) : "").trim();
+  const m = s.match(/(\d{4})/);
+  return m ? parseInt(m[1], 10) : (fallback || 0);
 }
 function clampYearSliders() {
   const minEl = document.getElementById("yearMin");
@@ -120,6 +131,8 @@ function formatItemLabel(it) {
   if (it.kind === "song") return formatSongTitle(it);
   return it.title || "";
 }
+
+// ✅ songs extraction: ajoute songYear + artistsArr + anime meta tags
 function extractSongsFromAnime(anime) {
   const out = [];
   const song = anime.song || {};
@@ -135,8 +148,10 @@ function extractSongsFromAnime(anime) {
       const url = it.video || it.url || "";
       if (!url || typeof url !== "string" || url.length < 6) continue;
 
-      const artistsArr = Array.isArray(it.artists) ? it.artists : [];
+      const artistsArr = Array.isArray(it.artists) ? it.artists.filter(Boolean) : [];
       const artists = artistsArr.join(", ");
+
+      const songYear = getYearFromSeasonStr(it.season, anime._year);
 
       out.push({
         kind: "song",
@@ -144,11 +159,17 @@ function extractSongsFromAnime(anime) {
         songName: it.name || "",
         songNumber: safeNum(it.number) || 1,
         songArtists: artists || "",
+        artistsArr,
+        songYear,
+
         animeTitle: anime._title,
         animeType: anime._type,
         animeYear: anime._year,
         animeMembers: anime._members,
         animeScore: anime._score,
+        animeStudio: anime._studio || "",
+        animeTags: [...(anime._genres || []), ...(anime._themes || [])],
+
         image: anime.image || "",
         url,
         _key: `${b.type}|${it.number || ""}|${it.name || ""}|${url}|${anime.mal_id || ""}`,
@@ -157,6 +178,7 @@ function extractSongsFromAnime(anime) {
   }
   return out;
 }
+
 function pickNFromPool(pool, n) {
   const used = new Set();
   const out = [];
@@ -169,11 +191,124 @@ function pickNFromPool(pool, n) {
   }
   return out;
 }
-function randomTheme() {
+
+function randomRuleTheme() {
   return THEMES[Math.floor(Math.random() * THEMES.length)];
 }
 
-// ====== DOM ======
+/* ==========================
+   AUTO “THEME CONTENU” / ROUND
+   ========================== */
+function norm(s){ return (s || "").toString().trim().toLowerCase(); }
+function hasTag(it, tag) {
+  const t = norm(tag);
+  const arr = Array.isArray(it.tags) ? it.tags : [];
+  return arr.some(x => norm(x) === t);
+}
+function includesStudio(studio, needle) {
+  const s = norm(studio);
+  const n = norm(needle);
+  if (!s || !n) return false;
+  return s.includes(n);
+}
+function nearbyPool(pool, getNum, target, want = 6) {
+  const arr = [...pool].sort((a,b) => getNum(a) - getNum(b));
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < arr.length; i++) {
+    const d = Math.abs(getNum(arr[i]) - target);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  let L = best, R = best;
+  while ((R - L + 1) < want && (L > 0 || R < arr.length - 1)) {
+    if (L > 0) L--;
+    if ((R - L + 1) < want && R < arr.length - 1) R++;
+  }
+  return arr.slice(L, R + 1);
+}
+function pickRoundContentThemeAuto(basePool, mode) {
+  const MIN = 6;
+  const MAX_TRIES = 60;
+
+  const getAnimeYear = (it) => mode === "songs" ? (it.animeYear || 0) : (it.year || 0);
+  const getSongYear  = (it) => (it.songYear || it.animeYear || 0);
+  const getStudio    = (it) => mode === "songs" ? (it.animeStudio || "") : (it.studio || "");
+  const getScore     = (it) => mode === "songs" ? (it.animeScore || 0) : (it.score || 0);
+  const getPop       = (it) => mode === "songs" ? (it.animeMembers || 0) : (it.members || 0);
+
+  const criteriaAnime = ["YEAR","STUDIO","TAG","SCORE_NEAR","POP_NEAR"];
+  const criteriaSongs = ["YEAR","SONG_YEAR","STUDIO","TAG","SCORE_NEAR","POP_NEAR","ARTIST"];
+  const list = (mode === "songs") ? criteriaSongs : criteriaAnime;
+
+  for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+    const seed = basePool[Math.floor(Math.random() * basePool.length)];
+    if (!seed) break;
+
+    const crit = list[Math.floor(Math.random() * list.length)];
+    let pool = [];
+    let label = "Libre";
+
+    if (crit === "YEAR") {
+      const y = getAnimeYear(seed);
+      if (!y) continue;
+      pool = basePool.filter(it => getAnimeYear(it) === y);
+      label = `Année anime : ${y}`;
+    }
+
+    if (crit === "SONG_YEAR" && mode === "songs") {
+      const y = getSongYear(seed);
+      if (!y) continue;
+      pool = basePool.filter(it => getSongYear(it) === y);
+      label = `Année song : ${y}`;
+    }
+
+    if (crit === "STUDIO") {
+      const st = getStudio(seed);
+      if (!st) continue;
+      pool = basePool.filter(it => includesStudio(getStudio(it), st));
+      label = `Studio : ${st}`;
+    }
+
+    if (crit === "TAG") {
+      const tags = Array.isArray(seed.tags) ? seed.tags : [];
+      if (!tags.length) continue;
+      const t = tags[Math.floor(Math.random() * tags.length)];
+      pool = basePool.filter(it => hasTag(it, t));
+      label = `Tag : ${t}`;
+    }
+
+    if (crit === "SCORE_NEAR") {
+      const sc = getScore(seed);
+      if (!sc) continue;
+      pool = nearbyPool(basePool, getScore, sc, MIN);
+      label = `Score proche`;
+    }
+
+    if (crit === "POP_NEAR") {
+      const pop = getPop(seed);
+      if (!pop) continue;
+      pool = nearbyPool(basePool, getPop, pop, MIN);
+      label = `Popularité proche`;
+    }
+
+    if (crit === "ARTIST" && mode === "songs") {
+      const arts = Array.isArray(seed.artistsArr) ? seed.artistsArr.filter(Boolean) : [];
+      if (!arts.length) continue;
+      const a = arts[Math.floor(Math.random() * arts.length)];
+      pool = basePool.filter(it =>
+        Array.isArray(it.artistsArr) && it.artistsArr.some(x => norm(x) === norm(a))
+      );
+      label = `Artiste : ${a}`;
+    }
+
+    if (pool.length >= MIN) return { label, pool, crit };
+  }
+
+  return { label: "Libre", pool: basePool, crit: "FREE" };
+}
+
+/* ==========================
+   DOM
+   ========================== */
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
 
@@ -230,7 +365,9 @@ let filteredPool = [];
 let totalRounds = 1;
 let currentRound = 1;
 
-let currentTheme = null;
+let currentRuleTheme = null;
+let currentContentTheme = null;
+
 let roundItems = []; // 6 items
 
 let revealDone = false;
@@ -454,7 +591,12 @@ function applyFilters() {
       kind: "anime",
       _key: `anime|${a.mal_id}`,
       title: a._title,
-      image: a.image || ""
+      image: a.image || "",
+      year: a._year,
+      studio: a._studio || "",
+      members: a._members,
+      score: a._score,
+      tags: [...(a._genres || []), ...(a._themes || [])],
     }));
   }
 
@@ -480,9 +622,17 @@ function applyFilters() {
     songName: s.songName || "",
     songNumber: s.songNumber || 1,
     songArtists: s.songArtists || "",
+    artistsArr: Array.isArray(s.artistsArr) ? s.artistsArr : [],
     songType: s.songType,
     url: s.url,
-    image: s.image || ""
+    image: s.image || "",
+
+    animeYear: s.animeYear || 0,
+    songYear: s.songYear || s.animeYear || 0,
+    animeStudio: s.animeStudio || "",
+    animeMembers: s.animeMembers || 0,
+    animeScore: s.animeScore || 0,
+    tags: Array.isArray(s.animeTags) ? s.animeTags : [],
   }));
 }
 
@@ -538,7 +688,6 @@ function resetRoundUI() {
 
   resultDiv.textContent = "";
 
-  // cacher tout pendant la révélation (pour laisser de la place)
   themeNameEl.style.display = "none";
   themeDescEl.style.display = "none";
   revealStatusEl.style.display = "none";
@@ -572,17 +721,18 @@ function renderPlaceholders() {
   }
 }
 
-function setThemeUI(theme) {
-  themeNameEl.textContent = `🎲 Thème : ${theme.label}`;
-  themeDescEl.textContent = theme.desc;
+function setThemeUI(ruleTheme, contentTheme) {
+  const cLabel = contentTheme?.label || "Libre";
+  themeNameEl.textContent = `🎲 Règle : ${ruleTheme.label}`;
+  themeDescEl.textContent = `${ruleTheme.desc} • 🎯 Filtre : ${cLabel}`;
 }
 
 function updatePickStatus() {
-  if (!currentTheme) return;
-  const need = currentTheme.required;
+  if (!currentRuleTheme) return;
+  const need = currentRuleTheme.required;
   const got = selectedKeys.size;
 
-  pickStatusEl.textContent = (currentTheme.mode === "delete")
+  pickStatusEl.textContent = (currentRuleTheme.mode === "delete")
     ? `❌ À supprimer : ${got} / ${need}`
     : `✅ À garder : ${got} / ${need}`;
 
@@ -598,7 +748,6 @@ function markRevealDone() {
   revealDone = true;
   selectionEnabled = true;
 
-  // on montre maintenant le thème + status (une fois les 6 révélés)
   themeNameEl.style.display = "block";
   themeDescEl.style.display = "block";
 
@@ -612,25 +761,16 @@ function markRevealDone() {
 }
 
 // ====== REVEAL (ANIME) ======
-// ✅ 1er item à t=0, puis toutes les 1s
 function revealAnimeProgressively(items, localRound) {
   let i = 0;
 
   const step = () => {
-    if (localRound !== roundToken) {
-      clearRevealTimer();
-      return;
-    }
-    if (i >= items.length) {
-      clearRevealTimer();
-      markRevealDone();
-      return;
-    }
+    if (localRound !== roundToken) { clearRevealTimer(); return; }
+    if (i >= items.length) { clearRevealTimer(); markRevealDone(); return; }
     revealCard(i, items[i], localRound);
     i++;
   };
 
-  // ✅ important : laisser le DOM peindre les placeholders puis révéler IMMEDIATEMENT
   requestAnimationFrame(() => step());
   revealTimer = setInterval(step, 1000);
 }
@@ -673,19 +813,15 @@ function revealCard(index, item, localRound) {
 function applySelectionStyles(li) {
   li.classList.remove("tp-selected-keep", "tp-selected-delete");
   const key = li.dataset.key;
-  if (!key || !selectedKeys.has(key) || !currentTheme) return;
-
-  if (currentTheme.mode === "delete") li.classList.add("tp-selected-delete");
+  if (!key || !selectedKeys.has(key) || !currentRuleTheme) return;
+  if (currentRuleTheme.mode === "delete") li.classList.add("tp-selected-delete");
   else li.classList.add("tp-selected-keep");
 }
 
-// ====== SONG SNIPPET (15s DE VIDÉO) ======
+// ====== SONG SNIPPET (20s DE VIDÉO) ======
 function playSongSnippet(item, localRound) {
   return new Promise((resolve) => {
-    if (currentMode !== "songs" || !item?.url) {
-      resolve();
-      return;
-    }
+    if (currentMode !== "songs" || !item?.url) { resolve(); return; }
 
     clearWallTimer();
     stopMedia();
@@ -695,7 +831,6 @@ function playSongSnippet(item, localRound) {
     mediaToken++;
     const localMedia = mediaToken;
 
-    // sécurité anti-blocage total
     wallTimer = setTimeout(() => {
       cleanupAll();
       resolve();
@@ -709,7 +844,6 @@ function playSongSnippet(item, localRound) {
       if (endTime == null) return;
       if (songPlayer.currentTime >= endTime) stopSnippet();
     };
-
     const onEnded = () => stopSnippet();
 
     const cleanupAll = () => {
@@ -741,14 +875,14 @@ function playSongSnippet(item, localRound) {
         applyVolume();
         songPlayer.muted = false;
 
-        // seek à 45s
         let start = SONG_START_SEC;
         const dur = songPlayer.duration;
         if (Number.isFinite(dur) && dur > 1) {
           start = Math.min(SONG_START_SEC, Math.max(0, dur - 0.25));
+          endTime = Math.min(start + SONG_PLAY_SEC, Math.max(0, dur - 0.05));
+        } else {
+          endTime = start + SONG_PLAY_SEC;
         }
-
-        endTime = start + SONG_PLAY_SEC;
 
         songPlayer.addEventListener("timeupdate", onTimeUpdate);
         songPlayer.addEventListener("ended", onEnded);
@@ -769,9 +903,9 @@ choiceList.addEventListener("click", (e) => {
   if (li.dataset.revealed !== "1") return;
 
   const key = li.dataset.key;
-  if (!key || !currentTheme) return;
+  if (!key || !currentRuleTheme) return;
 
-  const need = currentTheme.required;
+  const need = currentRuleTheme.required;
 
   if (selectedKeys.has(key)) selectedKeys.delete(key);
   else {
@@ -784,9 +918,9 @@ choiceList.addEventListener("click", (e) => {
 });
 
 confirmBtn.addEventListener("click", () => {
-  if (!currentTheme || lockedAfterValidate) return;
+  if (!currentRuleTheme || lockedAfterValidate) return;
   if (!selectionEnabled) return;
-  if (selectedKeys.size !== currentTheme.required) return;
+  if (selectedKeys.size !== currentRuleTheme.required) return;
 
   lockedAfterValidate = true;
   confirmBtn.disabled = true;
@@ -805,13 +939,19 @@ confirmBtn.addEventListener("click", () => {
 
     const badge = document.createElement("div");
     badge.className = "tp-badge";
-    badge.textContent = (currentTheme.mode === "delete") ? "❌ SUPPRIMÉ" : "✅ GARDÉ";
+    badge.textContent = (currentRuleTheme.mode === "delete") ? "❌ SUPPRIMÉ" : "✅ GARDÉ";
     li.appendChild(badge);
   });
 
-  if (currentTheme.mode === "delete") resultDiv.textContent = "✅ Validé — le titre sélectionné est supprimé.";
-  else if (currentTheme.required === 1) resultDiv.textContent = "✅ Validé — ton favori est gardé.";
-  else resultDiv.textContent = "✅ Validé — tes 3 favoris sont gardés.";
+  if (currentRuleTheme.mode === "delete") {
+    resultDiv.textContent = (currentRuleTheme.required === 1)
+      ? "✅ Validé — le titre sélectionné est supprimé."
+      : "✅ Validé — tes 3 titres sélectionnés sont supprimés.";
+  } else {
+    resultDiv.textContent = (currentRuleTheme.required === 1)
+      ? "✅ Validé — ton favori est gardé."
+      : "✅ Validé — tes 3 favoris sont gardés.";
+  }
 
   nextBtn.style.display = "inline-block";
   const isLast = currentRound >= totalRounds;
@@ -844,10 +984,23 @@ function startRound() {
     return;
   }
 
-  currentTheme = randomTheme();
-  setThemeUI(currentTheme);
+  currentRuleTheme = randomRuleTheme();
 
-  roundItems = pickNFromPool(filteredPool, 6);
+  // ✅ 1 fois sur 5 : pas de thème contenu
+  if (Math.random() < FREE_THEME_PROBA) {
+    currentContentTheme = { label: "Libre", pool: filteredPool, crit: "FREE" };
+  } else {
+    currentContentTheme = pickRoundContentThemeAuto(filteredPool, currentMode);
+  }
+
+  setThemeUI(currentRuleTheme, currentContentTheme);
+
+  // pool finale pour tirer les 6
+  const finalPool = (currentContentTheme?.pool && currentContentTheme.pool.length >= 6)
+    ? currentContentTheme.pool
+    : filteredPool;
+
+  roundItems = pickNFromPool(finalPool, 6);
   if (roundItems.length < 6) {
     resultDiv.textContent = "❌ Impossible de sélectionner 6 items uniques avec ces filtres.";
     nextBtn.style.display = "inline-block";
@@ -882,6 +1035,9 @@ fetch("../data/licenses_only.json")
         _members: safeNum(a.members),
         _score: safeNum(a.score),
         _type: a.type || "Unknown",
+        _studio: a.studio || "",
+        _genres: Array.isArray(a.genres) ? a.genres : [],
+        _themes: Array.isArray(a.themes) ? a.themes : [],
       };
     });
 
