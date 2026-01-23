@@ -1,11 +1,13 @@
 /**********************
- * Fake Or Truth — Anti-bug media (A pinned)
- * - Auto-start segment: 45s -> 75s (30s)
- * - A pinned + retry uniquement le média en échec
- * - 6 tentatives: 0,2,4,6,8,10s
- * - Stall FIX: watchdog "le temps n'avance plus"
- * - Bonus warmup: play/pause muet pour buffer
- * - Si retries échouent -> duel fini, le joueur clique "Round suivant"
+ * Fake Or Truth — Anti-bug media (A pinned) + Sync improvements
+ * ✅ 6 tentatives: 0,2,4,6,8,10s
+ * ✅ Buffer gating (ahead) sur A ET B avant start
+ * ✅ Tentative 0: charge A+B en parallèle
+ * ✅ Start muted + attendre progression des 2 + snap sync + unmute audio seulement
+ * ✅ Min-delay "Synchronisation..." pour uniformiser (A=B ne démarre pas "trop vite")
+ * ✅ Correction de désync: snap + micro playbackRate temporaire (vidéo mute)
+ * ✅ Stall FIX: watchdog "le temps n'avance plus"
+ * ✅ Si échec total -> duel fini, joueur clique "Round suivant"
  **********************/
 
 const MAX_SCORE = 3000;
@@ -20,8 +22,19 @@ const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const LOAD_TIMEOUT_MS = 16000;
 const SEEK_TIMEOUT_MS = 10000;
 
+// ✅ gating buffer
+const BUFFER_AHEAD_SEC = 1.5;     // on exige 1.5s de buffer après 45s sur A et B
+const BUFFER_WAIT_MS = 6500;      // temps max pour attendre le buffer avant de considérer retry
+
+// ✅ uniformiser l'expérience (A=B ne "part" pas instant)
+const MIN_SYNC_DELAY_MS = 550;
+
+// ✅ start gating (progress)
+const START_ADVANCE_DELTA = 0.10; // on attend que les deux aient avancé au moins 0.10s
+const START_ADVANCE_TIMEOUT_MS = 4500;
+
 // ✅ stall "réel"
-const STALL_TIMEOUT_MS = 14000; // plus tolérant
+const STALL_TIMEOUT_MS = 14000;
 const STALL_POLL_MS = 500;
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -109,6 +122,16 @@ function isTimeBuffered(el, t, margin = 0.25) {
     }
   } catch {}
   return false;
+}
+
+async function waitBufferAhead(el, baseT, aheadSec, maxWaitMs, localToken) {
+  const end = performance.now() + maxWaitMs;
+  while (performance.now() < end) {
+    if (localToken !== roundToken) return false;
+    if (el.readyState >= 3 && isTimeBuffered(el, baseT, aheadSec)) return true;
+    await delay(120);
+  }
+  return el.readyState >= 3 && isTimeBuffered(el, baseT, Math.min(0.25, aheadSec));
 }
 
 // ====== Songs extraction ======
@@ -287,6 +310,7 @@ function lockForRound() {
 }
 function revealVideoAWithAudio() {
   stopPlayback();
+
   // éviter double audio
   try { audioPlayer.removeAttribute("src"); audioPlayer.load(); } catch {}
 
@@ -294,7 +318,7 @@ function revealVideoAWithAudio() {
   videoPlayer.controls = true;
   videoPlayer.setAttribute("controls", "controls");
 
-  // ✅ reveal au même endroit (45s) pour comparer
+  // reveal au même endroit (45s)
   try { videoPlayer.currentTime = LISTEN_START; } catch {}
 }
 
@@ -402,14 +426,20 @@ async function loadAndPin(el, url, attempt, label, localToken) {
 let segmentActive = false;
 let segmentEnd = 0;
 let stallWatchId = null;
+let endCheckId = null;
+
 let lastProgressT = 0;
 let lastProgressWall = 0;
 
 function clearSegment() {
   segmentActive = false;
   segmentEnd = 0;
+
   if (stallWatchId) clearInterval(stallWatchId);
   stallWatchId = null;
+
+  if (endCheckId) clearInterval(endCheckId);
+  endCheckId = null;
 }
 
 function handleStall(localToken) {
@@ -419,7 +449,6 @@ function handleStall(localToken) {
   stopPlayback();
   clearSegment();
 
-  // heuristique: on retry celui qui semble le plus faible
   const aBad = videoPlayer.readyState < 3 || !isTimeBuffered(videoPlayer, videoPlayer.currentTime || LISTEN_START, 0.10);
   const bBad = audioPlayer.readyState < 3 || !isTimeBuffered(audioPlayer, audioPlayer.currentTime || LISTEN_START, 0.10);
 
@@ -448,7 +477,7 @@ function armSegment(localToken) {
   lastProgressT = Math.max(videoPlayer.currentTime || 0, audioPlayer.currentTime || 0);
   lastProgressWall = performance.now();
 
-  // watchdog: même si timeupdate ne fire plus
+  // watchdog stall (time not advancing)
   stallWatchId = setInterval(() => {
     if (!segmentActive) return;
     if (localToken !== roundToken) return;
@@ -467,8 +496,21 @@ function armSegment(localToken) {
     }
   }, STALL_POLL_MS);
 
-  // fin segment (simple tick via poll)
-  // (on laisse le watchdog tourner; la fin est check juste après play via un interval léger)
+  // fin segment
+  endCheckId = setInterval(() => {
+    if (!segmentActive) return;
+    if (localToken !== roundToken) return;
+
+    const t = Math.max(videoPlayer.currentTime || 0, audioPlayer.currentTime || 0);
+    if (t >= segmentEnd - 0.05) {
+      try { videoPlayer.pause(); } catch {}
+      try { audioPlayer.pause(); } catch {}
+      clearSegment();
+      setMediaStatus("✅ À toi : Truth (match) ou Fake (pas match) ?");
+      btnTruth.disabled = false;
+      btnFake.disabled = false;
+    }
+  }, 120);
 }
 
 // ====== Pair selection (1/3 rules) ======
@@ -530,7 +572,6 @@ function resetControls() {
 }
 
 function finishRoundFailure(reasonText) {
-  // duel fini -> joueur clique pour passer
   btnTruth.disabled = true;
   btnFake.disabled = true;
 
@@ -570,37 +611,99 @@ function startNewRound() {
   autoStartPinned(localToken);
 }
 
-// ✅ Bonus warmup (muet)
-async function warmupMuted(localToken) {
-  if (localToken !== roundToken) return;
-  const prevVMuted = videoPlayer.muted;
-  const prevAMuted = audioPlayer.muted;
+// ====== START SYNC helpers ======
+function isNotAllowedError(reason) {
+  if (!reason) return false;
+  const name = reason.name || "";
+  const msg = String(reason.message || "");
+  return name === "NotAllowedError" || /notallowed/i.test(msg);
+}
 
-  // warmup muet -> meilleur buffer / moins de stalls
-  videoPlayer.muted = true;
-  audioPlayer.muted = true;
+async function waitBothAdvance(localToken, baseTime, delta, timeoutMs) {
+  const end = performance.now() + timeoutMs;
 
-  try {
-    await Promise.allSettled([videoPlayer.play(), audioPlayer.play()]);
-    await delay(250);
-  } catch {} finally {
-    try { videoPlayer.pause(); } catch {}
-    try { audioPlayer.pause(); } catch {}
-    videoPlayer.muted = prevVMuted;
-    audioPlayer.muted = prevAMuted;
+  const target = baseTime + delta;
+  while (performance.now() < end) {
+    if (localToken !== roundToken) return { ok: false };
+
+    const tv = videoPlayer.currentTime || 0;
+    const ta = audioPlayer.currentTime || 0;
+
+    if (tv >= target && ta >= target) return { ok: true };
+    await delay(60);
+  }
+
+  // diagnostic: lequel n'avance pas ?
+  const tv = videoPlayer.currentTime || 0;
+  const ta = audioPlayer.currentTime || 0;
+  return {
+    ok: false,
+    vOk: tv >= (baseTime + Math.min(0.03, delta)),
+    aOk: ta >= (baseTime + Math.min(0.03, delta)),
+  };
+}
+
+function snapVideoToAudio() {
+  const tv = videoPlayer.currentTime || 0;
+  const ta = audioPlayer.currentTime || 0;
+  const dv = ta - tv;
+
+  if (Math.abs(dv) > 0.10) {
+    try { videoPlayer.currentTime = ta; } catch {}
   }
 }
 
-// ✅ cœur du système : A pinned / retry uniquement celui qui échoue
+function microRateCorrector(localToken) {
+  // vidéo mute => on peut micro-ajuster sans "effet audio"
+  const start = performance.now();
+  const timer = setInterval(() => {
+    if (localToken !== roundToken) { clearInterval(timer); return; }
+    const tv = videoPlayer.currentTime || 0;
+    const ta = audioPlayer.currentTime || 0;
+    const dv = ta - tv;
+
+    // derrière => accélère un peu
+    if (dv > 0.08) videoPlayer.playbackRate = 1.06;
+    else if (dv < -0.08) videoPlayer.playbackRate = 0.94;
+    else videoPlayer.playbackRate = 1.0;
+
+    if (performance.now() - start > 900) {
+      videoPlayer.playbackRate = 1.0;
+      clearInterval(timer);
+    }
+  }, 120);
+}
+
+// ====== cœur du système : pinned + load gating + start sync ======
 async function autoStartPinned(localToken) {
   if (localToken !== roundToken) return;
 
-  // --- 1) Charger + pin A
+  // ---------- (A) Tentative 0: charge A+B en parallèle ----------
+  if (!pinnedA.ok && !pinnedB.ok && pinnedA.attempt === 0 && pinnedB.attempt === 0) {
+    setMediaStatus("⏳ Préchargement A+B…");
+
+    const [ra, rb] = await Promise.allSettled([
+      loadAndPin(videoPlayer, videoSong.url, 0, "Vidéo A", localToken),
+      loadAndPin(audioPlayer, audioSong.url, 0, "Audio B", localToken),
+    ]);
+
+    if (localToken !== roundToken) return;
+
+    const okA = ra.status === "fulfilled" && ra.value === true;
+    const okB = rb.status === "fulfilled" && rb.value === true;
+
+    pinnedA.ok = okA;
+    pinnedB.ok = okB;
+
+    if (!okA) pinnedA.attempt = 1;
+    if (!okB) pinnedB.attempt = 1;
+  }
+
+  // ---------- (B) Charger + pin A (retry A only) ----------
   while (!pinnedA.ok && pinnedA.attempt < RETRY_DELAYS.length) {
     if (localToken !== roundToken) return;
 
-    if (pinnedA.attempt > 0) await delay(RETRY_DELAYS[pinnedA.attempt]);
-
+    await delay(RETRY_DELAYS[pinnedA.attempt]);
     const okA = await loadAndPin(videoPlayer, videoSong.url, pinnedA.attempt, "Vidéo A", localToken);
     if (localToken !== roundToken) return;
 
@@ -613,12 +716,11 @@ async function autoStartPinned(localToken) {
     return finishRoundFailure("Vidéo A : échec après 6 tentatives.");
   }
 
-  // --- 2) Charger + pin B (retry B only si besoin)
+  // ---------- (C) Charger + pin B (retry B only) ----------
   while (!pinnedB.ok && pinnedB.attempt < RETRY_DELAYS.length) {
     if (localToken !== roundToken) return;
 
-    if (pinnedB.attempt > 0) await delay(RETRY_DELAYS[pinnedB.attempt]);
-
+    await delay(RETRY_DELAYS[pinnedB.attempt]);
     const okB = await loadAndPin(audioPlayer, audioSong.url, pinnedB.attempt, "Audio B", localToken);
     if (localToken !== roundToken) return;
 
@@ -631,7 +733,13 @@ async function autoStartPinned(localToken) {
     return finishRoundFailure("Audio B : échec après 6 tentatives.");
   }
 
-  // --- 3) Vérifier A encore OK à 45s (sans reload)
+  // ---------- (D) Buffer gating (ahead) sur A ET B ----------
+  setMediaStatus("🔄 Synchronisation…");
+
+  // uniformiser: même si A=B et tout est instant, on garde un min délai
+  const syncT0 = performance.now();
+
+  // repin si besoin
   if (!(videoPlayer.readyState >= 3 && isTimeBuffered(videoPlayer, LISTEN_START, 0.12))) {
     const okRepinA = await ensurePinnedAt(videoPlayer, LISTEN_START, localToken);
     if (!okRepinA) {
@@ -640,56 +748,89 @@ async function autoStartPinned(localToken) {
       return autoStartPinned(localToken);
     }
   }
+  if (!(audioPlayer.readyState >= 3 && isTimeBuffered(audioPlayer, LISTEN_START, 0.12))) {
+    const okRepinB = await ensurePinnedAt(audioPlayer, LISTEN_START, localToken);
+    if (!okRepinB) {
+      pinnedB.ok = false;
+      pinnedB.attempt = Math.min(pinnedB.attempt + 1, RETRY_DELAYS.length);
+      return autoStartPinned(localToken);
+    }
+  }
 
-  // --- 4) Warmup muet
-  await warmupMuted(localToken);
+  // attendre buffer ahead
+  const okBufA = await waitBufferAhead(videoPlayer, LISTEN_START, BUFFER_AHEAD_SEC, BUFFER_WAIT_MS, localToken);
   if (localToken !== roundToken) return;
+  if (!okBufA) {
+    pinnedA.ok = false;
+    pinnedA.attempt = Math.min(pinnedA.attempt + 1, RETRY_DELAYS.length);
+    return autoStartPinned(localToken);
+  }
 
-  // --- 5) Play ensemble
+  const okBufB = await waitBufferAhead(audioPlayer, LISTEN_START, BUFFER_AHEAD_SEC, BUFFER_WAIT_MS, localToken);
+  if (localToken !== roundToken) return;
+  if (!okBufB) {
+    pinnedB.ok = false;
+    pinnedB.attempt = Math.min(pinnedB.attempt + 1, RETRY_DELAYS.length);
+    return autoStartPinned(localToken);
+  }
+
+  // ---------- (E) Start muted + attendre progression des 2 + snap + unmute audio ----------
+  stopPlayback();
+  clearSegment();
   lockForRound();
+
+  // start muted BOTH (masque l'indice "ça lag")
+  const prevVMuted = videoPlayer.muted;
+  const prevAMuted = audioPlayer.muted;
+  videoPlayer.muted = true;
+  audioPlayer.muted = true;
+
   try { videoPlayer.currentTime = LISTEN_START; } catch {}
   try { audioPlayer.currentTime = LISTEN_START; } catch {}
 
-  setMediaStatus("▶️ Lecture…");
+  // on prépare le segment (stall watchdog + fin)
   armSegment(localToken);
 
-  // timer fin segment (plus robuste)
-  const endCheck = setInterval(() => {
-    if (localToken !== roundToken) { clearInterval(endCheck); return; }
-    const t = Math.max(videoPlayer.currentTime || 0, audioPlayer.currentTime || 0);
-    if (t >= (LISTEN_START + LISTEN_DURATION) - 0.05) {
-      clearInterval(endCheck);
-      try { videoPlayer.pause(); } catch {}
-      try { audioPlayer.pause(); } catch {}
-      clearSegment();
-      setMediaStatus("✅ À toi : Truth (match) ou Fake (pas match) ?");
-      btnTruth.disabled = false;
-      btnFake.disabled = false;
-    }
-  }, 120);
-
   const res = await Promise.allSettled([videoPlayer.play(), audioPlayer.play()]);
-  if (localToken !== roundToken) { clearInterval(endCheck); return; }
+  if (localToken !== roundToken) return;
 
-  const vFail = res[0].status === "rejected";
-  const aFail = res[1].status === "rejected";
-
-  // autoplay bloqué -> demander un clic
   const reasons = res.filter(r => r.status === "rejected").map(r => r.reason);
-  const anyNotAllowed = reasons.some(e => e && (e.name === "NotAllowedError" || /notallowed/i.test(String(e.message || ""))));
-
-  if (anyNotAllowed) {
+  if (reasons.some(isNotAllowedError)) {
+    // autoplay bloqué => on ne reload pas, on attend un clic puis on tente play à nouveau
     setMediaStatus("▶️ Clique dans la carte pour lancer");
     const onTap = async () => {
       containerEl.removeEventListener("click", onTap);
       if (localToken !== roundToken) return;
+
       try {
+        // toujours muted pour l'arm sync
+        videoPlayer.muted = true;
+        audioPlayer.muted = true;
+
         await Promise.all([videoPlayer.play(), audioPlayer.play()]);
+
+        // attendre que les deux avancent
+        const adv = await waitBothAdvance(localToken, LISTEN_START, START_ADVANCE_DELTA, START_ADVANCE_TIMEOUT_MS);
+        if (!adv.ok) throw new Error("advance-timeout");
+
+        snapVideoToAudio();
+        microRateCorrector(localToken);
+
+        // min delay
+        const left = MIN_SYNC_DELAY_MS - (performance.now() - syncT0);
+        if (left > 0) await delay(left);
+
+        // on unmute seulement l'audio B
+        videoPlayer.muted = true;
+        audioPlayer.muted = false;
+        applyVolume();
         setMediaStatus("▶️ Lecture…");
       } catch {
-        clearInterval(endCheck);
         stopPlayback();
         clearSegment();
+        // restore muted
+        videoPlayer.muted = prevVMuted;
+        audioPlayer.muted = prevAMuted;
         finishRoundFailure("Autoplay bloqué / impossible de lancer.");
       }
     };
@@ -697,9 +838,10 @@ async function autoStartPinned(localToken) {
     return;
   }
 
-  // si l'un foire -> stop + retry seulement celui-là
+  const vFail = res[0].status === "rejected";
+  const aFail = res[1].status === "rejected";
+
   if (vFail || aFail) {
-    clearInterval(endCheck);
     stopPlayback();
     clearSegment();
   }
@@ -707,23 +849,53 @@ async function autoStartPinned(localToken) {
   if (vFail) {
     pinnedA.ok = false;
     pinnedA.attempt = Math.min(pinnedA.attempt + 1, RETRY_DELAYS.length);
+    videoPlayer.muted = prevVMuted;
+    audioPlayer.muted = prevAMuted;
     return autoStartPinned(localToken);
   }
-
   if (aFail) {
     pinnedB.ok = false;
     pinnedB.attempt = Math.min(pinnedB.attempt + 1, RETRY_DELAYS.length);
+    videoPlayer.muted = prevVMuted;
+    audioPlayer.muted = prevAMuted;
     return autoStartPinned(localToken);
   }
 
-  // petit nudge anti-désync
-  setTimeout(() => {
-    if (localToken !== roundToken) return;
-    const dv = (audioPlayer.currentTime || 0) - (videoPlayer.currentTime || 0);
-    if (Math.abs(dv) > 0.12) {
-      try { audioPlayer.currentTime = videoPlayer.currentTime; } catch {}
+  // attendre que les deux aient réellement commencé (sinon ça part décalé)
+  const adv = await waitBothAdvance(localToken, LISTEN_START, START_ADVANCE_DELTA, START_ADVANCE_TIMEOUT_MS);
+  if (localToken !== roundToken) return;
+
+  if (!adv.ok) {
+    stopPlayback();
+    clearSegment();
+    // retry uniquement celui qui n'avance pas
+    if (adv.vOk === false) {
+      pinnedA.ok = false;
+      pinnedA.attempt = Math.min(pinnedA.attempt + 1, RETRY_DELAYS.length);
     }
-  }, 700);
+    if (adv.aOk === false) {
+      pinnedB.ok = false;
+      pinnedB.attempt = Math.min(pinnedB.attempt + 1, RETRY_DELAYS.length);
+    }
+    videoPlayer.muted = prevVMuted;
+    audioPlayer.muted = prevAMuted;
+    return autoStartPinned(localToken);
+  }
+
+  // snap sync + micro correction rate
+  snapVideoToAudio();
+  microRateCorrector(localToken);
+
+  // min delay pour uniformiser A=B vs A!=B
+  const left = MIN_SYNC_DELAY_MS - (performance.now() - syncT0);
+  if (left > 0) await delay(left);
+
+  // unmute seulement l'audio
+  videoPlayer.muted = true;
+  audioPlayer.muted = false;
+  applyVolume();
+
+  setMediaStatus("▶️ Lecture…");
 }
 
 // ====== Answer ======
