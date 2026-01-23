@@ -515,3 +515,7 @@ body.light footer { color: #888; }
   }
   .info-tip{ width: min(320px, 86vw); right: 0; }
 }
+
+#listen-buttons button#playOnce{
+  min-width: 320px;
+}
