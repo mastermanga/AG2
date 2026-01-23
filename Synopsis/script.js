@@ -1,32 +1,33 @@
 /**********************
- * Synopsis (mots-clés)
- * - Dataset: ../data/licenses_only.json (synopsis FR recommandé)
- * - 3 étapes: Hardcore -> Moyen -> Facile
- * - Hardcore: concepts très généraux (pas tout le synopsis)
- * - Moyen: concepts + 2-3 mots plus proches (vagues)
- * - Facile: vrais termes + 1 seul nom fort secondaire (si trouvé)
- * - Le synopsis complet s'affiche UNIQUEMENT au reveal (win/lose)
- * - Min 64 titres
+ * Synopsis (Mots-clés)
+ * - Dataset: ../data/licenses_only.json (synopsis FR)
+ * - 3 indices: Hardcore -> Moyen -> Facile
+ * - Chaque erreur débloque l’indice suivant (score -1000)
+ * - Synopsis complet visible uniquement après la réponse
+ * - Mots-clés filtrés (stopwords FR + anti-verbes)
+ * - Facile: +1 "nom fort" secondaire (hors top_characters)
  **********************/
 
 const MAX_SCORE = 3000;
-const STAGE_SCORES = [3000, 2000, 1000];
-const STAGE_LABELS = ["Hardcore", "Moyen", "Facile"];
+const STEP_SCORES = [3000, 2000, 1000, 0];
+const MAX_STEPS = 3;
 const MIN_TITLES_TO_START = 64;
 
-// ===== UI menu + theme =====
+// ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
   window.location.href = "../index.html";
 });
+
 document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
   localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
+
 window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
 });
 
-// ===== Helpers dataset =====
+// ====== Helpers ======
 function getDisplayTitle(a) {
   return (
     a.title_english ||
@@ -37,22 +38,25 @@ function getDisplayTitle(a) {
     "Titre inconnu"
   );
 }
-function getTitleVariants(a) {
-  const arr = [
-    a.title_english,
-    a.title_mal_default,
-    a.title_original,
-    a.title,
-    a.animethemes && a.animethemes.name
-  ].filter(Boolean);
-  return Array.from(new Set(arr.map(s => String(s).trim()).filter(Boolean)));
+
+function getAllAcceptableTitles(a) {
+  const set = new Set();
+  const push = (s) => { if (typeof s === "string" && s.trim()) set.add(s.trim()); };
+  push(a.title_english);
+  push(a.title_mal_default);
+  push(a.title_original);
+  push(a.title);
+  if (a.animethemes && a.animethemes.name) push(a.animethemes.name);
+  return [...set];
 }
+
 function getYear(a) {
   const s = (a.season || "").trim();
   const parts = s.split(/\s+/);
   const y = parseInt(parts[1] || parts[0] || "0", 10);
   return Number.isFinite(y) ? y : 0;
 }
+
 function clampYearSliders() {
   const minEl = document.getElementById("yearMin");
   const maxEl = document.getElementById("yearMax");
@@ -64,15 +68,333 @@ function clampYearSliders() {
     maxEl.value = b;
   }
 }
+
 function clampInt(n, a, b) {
   n = Number.isFinite(n) ? n : a;
   return Math.max(a, Math.min(b, n));
 }
-function escapeRegExp(s) {
-  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
 }
 
-// ===== DOM refs =====
+function stripAccents(str) {
+  return (str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalizeGuess(str) {
+  return stripAccents(String(str || "").toLowerCase())
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function setRangePct(el) {
+  const min = parseFloat(el.min || "0");
+  const max = parseFloat(el.max || "100");
+  const val = parseFloat(el.value || "0");
+  const pct = ((val - min) / (max - min)) * 100;
+  el.style.setProperty("--pct", `${Math.max(0, Math.min(100, pct))}%`);
+}
+
+// ====== Score bar ======
+const scoreBar = document.getElementById("score-bar");
+const scoreBarLabel = document.getElementById("score-bar-label");
+
+function getScoreBarColor(score) {
+  if (score >= 2500) return "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
+  if (score >= 1500) return "linear-gradient(90deg,#fff96a,#ffc34b 90%)";
+  if (score >= 1000) return "linear-gradient(90deg,#ffb347,#fd654c 90%)";
+  if (score > 0) return "linear-gradient(90deg,#fd654c,#cb202d 90%)";
+  return "linear-gradient(90deg,#444,#333 90%)";
+}
+
+function setScoreBar(score) {
+  const s = Math.max(0, Math.min(MAX_SCORE, score));
+  const pct = Math.max(0, Math.min(100, (s / MAX_SCORE) * 100));
+  scoreBar.style.width = pct + "%";
+  scoreBar.style.background = getScoreBarColor(s);
+  scoreBarLabel.textContent = `${s} / ${MAX_SCORE}`;
+}
+
+// ====== Stopwords / filtres (anti "soit / qu'il / envie" etc.) ======
+const STOP_FR = new Set([
+  // articles / pronoms / prépositions
+  "a","à","au","aux","avec","ce","ces","cet","cette","dans","de","des","du","elle","en","et","eux","il","ils",
+  "je","la","le","les","leur","leurs","lui","ma","mais","me","même","mes","moi","mon","ne","nos","notre","nous",
+  "on","ou","par","pas","pour","qu","que","qui","sa","se","ses","son","sur","ta","te","tes","toi","ton","tu",
+  "un","une","vos","votre","vous","y","d","l","s","c","t","j",
+  // formes fréquentes inutiles
+  "ainsi","alors","après","avant","aussi","bien","car","cependant","comme","contre","donc","encore","ensuite",
+  "entre","fait","fois","grâce","ici","là","leur","malgré","moins","plus","peu","plutôt","puis","quand","sans",
+  "selon","sous","tant","toute","toutes","tout","tous","très","vers",
+  // verbes / auxiliaires (conjugués courants)
+  "être","est","sont","étaient","était","été","serait","sera","soit","soyons","ayant","avoir","a","ont","avait",
+  "eut","peut","peuvent","pouvoir","doit","doivent","devoir","fait","faire","va","vont","aller","vient","venir",
+  "reste","rester","devient","devenir","semble","sembler","permet","permettre","continue","continuer",
+  "commence","commencer","fin","finit","finir","trouve","trouver","prend","prendre","donne","donner",
+  "voit","voir","sait","savoir","peine","envie",
+  // morceaux parasites fréquents
+  "quil","quelle","quelles","quels","quelles","quil","quelle","quelles","quels","quelles",
+]);
+
+const GENERIC_BAD = new Set([
+  // trop vagues et peu utiles en mots-clés
+  "histoire","monde","jour","jours","vie","gens","personne","personnes","chose","choses","temps","nouveau",
+  "nouvelle","nouveaux","grand","grande","petit","petite","groupe","série","route","simple","intense",
+  "récemment","désormais","toujours","souvent","autre","autres","premier","première","dernier","dernière",
+]);
+
+function cleanSynopsis(s) {
+  const raw = String(s || "");
+  return raw
+    .replace(/\[.*?\]/g, "")              // [Écrit par ...]
+    .replace(/MAL Rewrite/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractProperNouns(original) {
+  // mots qui apparaissent avec majuscule (hors début de phrase approximatif)
+  const text = String(original || "");
+  const matches = text.match(/\b[A-ZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ][a-zàâäçéèêëîïôöùûüÿœæ-]{2,}\b/g) || [];
+  const set = new Set();
+  for (const m of matches) {
+    set.add(normalizeGuess(m));
+  }
+  return set;
+}
+
+function tokenizeFrench(text) {
+  // récupère mots + mots composés simples
+  const matches = String(text || "").match(/[A-Za-zÀ-ÖØ-öø-ÿœæŒÆ-]+/g) || [];
+  return matches.map(w => w.trim()).filter(Boolean);
+}
+
+function normalizeTokenForFilter(tok) {
+  // enlève apostrophes/élisions courantes
+  let t = tok.toLowerCase();
+  t = t.replace(/^([ldjtmnscq]|qu|jusqu|lorsqu|puisqu|quoiqu)['’]/, "");
+  t = t.replace(/['’]/g, ""); // enlève apostrophes restantes
+  t = t.replace(/^-+|-+$/g, "");
+  return t.trim();
+}
+
+function buildTitleWordSet(title) {
+  const t = normalizeGuess(title);
+  const words = t.split(" ").filter(w => w.length >= 4);
+  return new Set(words);
+}
+
+// ====== Génération des 3 niveaux de mots-clés ======
+const hintsCache = new Map(); // key: mal_id (ou titre), value: {hardcore, medium, easy, strongName, fullSynopsis}
+
+const GENRE_MAP = {
+  "Action": "action",
+  "Drama": "drame",
+  "Suspense": "suspense",
+  "Comedy": "comédie",
+  "Romance": "romance",
+  "Fantasy": "fantasy",
+  "Sci-Fi": "science-fiction",
+  "Adventure": "aventure",
+  "Horror": "horreur",
+  "Mystery": "mystère",
+  "Sports": "sport",
+  "Slice of Life": "quotidien",
+  "Supernatural": "surnaturel",
+  "Award Winning": "primé",
+  "Gore": "gore",
+  "Military": "militaire",
+  "Survival": "survie",
+  "School": "école",
+};
+
+function mapGenreTheme(w) {
+  if (!w) return "";
+  return GENRE_MAP[w] || String(w).toLowerCase();
+}
+
+function pickSecondaryStrongName(anime, titleWordSet) {
+  const chars = Array.isArray(anime.characters) ? anime.characters : [];
+  const top = Array.isArray(anime.top_characters) ? anime.top_characters : [];
+  const topSet = new Set(top.map(c => normalizeGuess(c?.name || "")));
+
+  // 1) priorité : characters (secondaires), en excluant ceux présents dans top_characters
+  let pool = chars
+    .map(c => String(c?.name || "").trim())
+    .filter(n => n.length >= 4)
+    .filter(n => !topSet.has(normalizeGuess(n)))
+    .filter(n => {
+      const nw = normalizeGuess(n);
+      // évite d'avoir un mot très proche du titre
+      for (const w of titleWordSet) if (nw.includes(w)) return false;
+      return true;
+    });
+
+  // 2) fallback : top_characters mais on évite les 2 premiers (souvent le MC)
+  if (pool.length === 0 && top.length >= 4) {
+    pool = top.slice(2).map(c => String(c?.name || "").trim()).filter(n => n.length >= 4);
+  }
+
+  if (pool.length === 0) return "";
+
+  shuffleInPlace(pool);
+  return pool[0];
+}
+
+function pickKeywordsFromCounts(counts, excludeSet, max, minLen = 4) {
+  const entries = [...counts.entries()]
+    .filter(([k, v]) => k.length >= minLen)
+    .filter(([k]) => !excludeSet.has(k))
+    .sort((a, b) => {
+      // score: freq d'abord puis longueur
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return b[0].length - a[0].length;
+    })
+    .map(([k]) => k);
+
+  return entries.slice(0, max);
+}
+
+function buildHintsForAnime(anime) {
+  const key = anime.mal_id || anime.license_id || anime._title;
+  if (hintsCache.has(key)) return hintsCache.get(key);
+
+  const fullSynopsis = cleanSynopsis(anime.synopsis || "");
+  const titleWordSet = buildTitleWordSet(anime._title || "");
+  const properNouns = extractProperNouns(anime.synopsis || "");
+
+  // base tokens
+  const rawTokens = tokenizeFrench(fullSynopsis);
+  const filteredTokens = [];
+
+  for (const tok of rawTokens) {
+    const nf = normalizeTokenForFilter(tok);
+    const ng = normalizeGuess(nf);
+
+    if (!nf) continue;
+    if (nf.length < 4) continue;
+
+    // stop words / generic
+    if (STOP_FR.has(nf) || STOP_FR.has(ng)) continue;
+    if (GENERIC_BAD.has(nf) || GENERIC_BAD.has(ng)) continue;
+
+    // évite mots du titre
+    if (titleWordSet.has(ng)) continue;
+
+    // évite noms propres
+    if (properNouns.has(ng)) continue;
+
+    // évite chiffres
+    if (/\d/.test(nf)) continue;
+
+    filteredTokens.push(ng);
+  }
+
+  // counts
+  const counts = new Map();
+  for (const t of filteredTokens) counts.set(t, (counts.get(t) || 0) + 1);
+
+  // Hardcore: très général -> genres/themes + concepts trouvés
+  const hardcore = [];
+  const g = Array.isArray(anime.genres) ? anime.genres : [];
+  const th = Array.isArray(anime.themes) ? anime.themes : [];
+  const gen = [...g, ...th].map(mapGenreTheme).filter(Boolean);
+
+  // prendre 4-6 genres/themes max
+  for (const w of gen) {
+    const nw = normalizeGuess(w);
+    if (!nw || STOP_FR.has(nw) || GENERIC_BAD.has(nw)) continue;
+    if (!hardcore.includes(nw)) hardcore.push(nw);
+    if (hardcore.length >= 6) break;
+  }
+
+  // compléter avec concepts très généraux détectés dans le synopsis
+  const textLow = normalizeGuess(fullSynopsis);
+  const conceptRules = [
+    ["organisation", ["organisation","corps","unité","agence","gouvernement","société","groupe"]],
+    ["secret", ["secret","mystère","caché","mystérieux"]],
+    ["danger", ["danger","menace","risque","mort","catastrophe"]],
+    ["quête", ["quête","objectif","mission","trésor","recherche"]],
+    ["conflit", ["guerre","combat","conflit","affrontement","bataille"]],
+    ["survie", ["survie","survivre","échapper","fuir"]],
+    ["expérience", ["expérience","scientifique","invention","laboratoire"]],
+    ["pouvoir", ["pouvoir","don","capacité","aptitude"]],
+  ];
+
+  for (const [label, triggers] of conceptRules) {
+    if (hardcore.length >= 8) break;
+    if (triggers.some(t => textLow.includes(normalizeGuess(t)))) {
+      const nl = normalizeGuess(label);
+      if (!hardcore.includes(nl) && !STOP_FR.has(nl) && !GENERIC_BAD.has(nl)) hardcore.push(nl);
+    }
+  }
+
+  // si pas assez, on complète avec mots très fréquents mais “ok”
+  const hardcoreSet = new Set(hardcore);
+  if (hardcore.length < 8) {
+    const add = pickKeywordsFromCounts(counts, hardcoreSet, 8 - hardcore.length, 5);
+    for (const a of add) {
+      if (!hardcore.includes(a)) hardcore.push(a);
+      if (hardcore.length >= 8) break;
+    }
+  }
+
+  // Moyen: mots plus utiles, MAIS différents du hardcore (exclusion)
+  const medium = pickKeywordsFromCounts(counts, new Set(hardcore), 10, 5);
+
+  // Easy: plus spécifique (inclut quelques bigrams)
+  const easySetExclude = new Set([...hardcore, ...medium]);
+
+  // bigrams depuis tokens filtrés (sans stopwords déjà)
+  const bigramCounts = new Map();
+  for (let i = 0; i < filteredTokens.length - 1; i++) {
+    const a = filteredTokens[i];
+    const b = filteredTokens[i + 1];
+    if (!a || !b) continue;
+    if (a.length < 4 || b.length < 4) continue;
+    const phrase = `${a} ${b}`;
+    if (phrase.length > 28) continue;
+    if (easySetExclude.has(a) || easySetExclude.has(b)) continue; // force nouveauté
+    bigramCounts.set(phrase, (bigramCounts.get(phrase) || 0) + 1);
+  }
+
+  const bigrams = [...bigramCounts.entries()]
+    .sort((x, y) => y[1] - x[1])
+    .map(([p]) => p)
+    .slice(0, 4);
+
+  const easyTokens = pickKeywordsFromCounts(counts, easySetExclude, 12, 6);
+  const easy = [...bigrams, ...easyTokens].slice(0, 12);
+
+  // placeholders si vraiment trop court
+  while (hardcore.length < 7) hardcore.push("----");
+  while (medium.length < 8) medium.push("----");
+  while (easy.length < 10) easy.push("----");
+
+  // Nom fort (secondaire) uniquement en Facile
+  const strongName = pickSecondaryStrongName(anime, titleWordSet);
+
+  const hints = {
+    hardcore,
+    medium,
+    easy,
+    strongName,
+    fullSynopsis,
+  };
+
+  hintsCache.set(key, hints);
+  return hints;
+}
+
+// ====== DOM refs ======
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
 
@@ -90,6 +412,7 @@ const previewCountEl = document.getElementById("previewCount");
 const applyBtn = document.getElementById("applyFiltersBtn");
 const roundCountEl = document.getElementById("roundCount");
 
+// game refs
 const feedback = document.getElementById("feedback");
 const input = document.getElementById("characterInput");
 const submitBtn = document.getElementById("submit-btn");
@@ -97,39 +420,26 @@ const restartBtn = document.getElementById("restart-btn");
 const suggestions = document.getElementById("suggestions");
 const roundLabel = document.getElementById("roundLabel");
 
-const synopsisBadgeEl = document.getElementById("synopsisBadge");
-const synopsisStepEl = document.getElementById("synopsisStep");
-const keywordsWrapEl = document.getElementById("keywordsWrap");
+const keywordsWrap = document.getElementById("keywordsWrap");
+const synopsisBadge = document.getElementById("synopsisBadge");
+const synopsisStep = document.getElementById("synopsisStep");
 
-// score bar
-const scoreBar = document.getElementById("score-bar");
-const scoreBarLabel = document.getElementById("score-bar-label");
-
-// ===== Data =====
+// ====== Data ======
 let allAnimes = [];
 let filteredAnimes = [];
 
-// Autocomplete cache
-let titlesList = [];
-let titlesLowerSet = new Set();
-
-// Cache: stages + full synopsis
-const stageCache = new Map(); // key -> { stages:[[...],[...],[...]], strongName:string|null, full:string }
-let fullSynopsisClean = "";
-
-// ===== Session =====
+// ====== Session (Rounds) ======
 let totalRounds = 1;
 let currentRound = 1;
 let totalScore = 0;
 
-// ===== Round state =====
+// ====== Round state ======
 let currentAnime = null;
-let stageIndex = 0;
-let stageKeywords = [[], [], []];
-let strongNameUsed = null;
+let currentHints = null;
+let hintStep = 0; // 0 hardcore, 1 moyen, 2 facile
 let gameEnded = false;
 
-// ===== UI helpers =====
+// ====== UI show/hide ======
 function showCustomization() {
   customPanel.style.display = "block";
   gamePanel.style.display = "none";
@@ -138,445 +448,8 @@ function showGame() {
   customPanel.style.display = "none";
   gamePanel.style.display = "block";
 }
-function setRangePct(el) {
-  const min = parseFloat(el.min || "0");
-  const max = parseFloat(el.max || "100");
-  const val = parseFloat(el.value || "0");
-  const pct = ((val - min) / (max - min)) * 100;
-  el.style.setProperty("--pct", `${Math.max(0, Math.min(100, pct))}%`);
-}
-function getScoreBarColor(score) {
-  if (score >= 2500) return "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
-  if (score >= 1500) return "linear-gradient(90deg,#fff96a,#ffc34b 90%)";
-  if (score >= 1000) return "linear-gradient(90deg,#ffb347,#fd654c 90%)";
-  if (score > 0) return "linear-gradient(90deg,#fd654c,#cb202d 90%)";
-  return "linear-gradient(90deg,#444,#333 90%)";
-}
-function setScoreBar(score) {
-  const s = Math.max(0, Math.min(MAX_SCORE, score));
-  const pct = Math.max(0, Math.min(100, (s / MAX_SCORE) * 100));
-  scoreBar.style.width = pct + "%";
-  scoreBar.style.background = getScoreBarColor(s);
-  scoreBarLabel.textContent = `${s} / ${MAX_SCORE}`;
-}
-function safeHTML(s) {
-  return String(s || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
 
-// ===== Text cleaning =====
-function basicCleanSynopsis(text) {
-  let t = (text || "").replace(/\r/g, "").trim();
-  t = t.replace(/\[\s*(?:Écrit|Ecrit)\s+par\s+MAL\s+Rewrite\s*\]/giu, "");
-  t = t.replace(/\[\s*Written\s+by\s+MAL\s+Rewrite\s*\]/giu, "");
-  t = t.replace(/\[\s*(?:Écrit|Ecrit)\s+par[^\]]*\]/giu, "");
-  t = t.replace(/\[\s*Written\s+by[^\]]*\]/giu, "");
-  t = t.replace(/\n{3,}/g, "\n\n").trim();
-  return t;
-}
-
-// ===== Stopwords FR (compact mais efficace) =====
-const STOP_FR = new Set([
-  "a","à","alors","après","assez","au","aucun","aucune","aucuns","aussi","autre","autres","aux","avec","avoir","beaucoup","bien",
-  "ce","ces","cet","cette","ceux","chaque","chez","comme","comment","contre","côté","dans","de","des","depuis","devant","doit",
-  "donc","du","elle","elles","en","encore","entre","est","et","eux","faire","fait","fois","font","hors","ici","il","ils","je",
-  "juste","la","le","les","leur","leurs","lors","lorsque","lui","ma","mais","me","même","mes","moi","moins","mon","ne","nos",
-  "notre","nous","on","or","ou","où","par","pas","pendant","peu","plus","pour","pourquoi","près","qu","que","qui","quoi","sa",
-  "sans","se","ses","seulement","si","son","sont","sous","sur","ta","tes","toi","ton","tous","tout","toute","toutes","très",
-  "tu","un","une","vos","votre","vous","y","d","l","c","s","t","m","n"
-]);
-
-function normalizeWord(w) {
-  return (w || "")
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/’/g, "'")
-    .replace(/[^a-z0-9'-]/g, "");
-}
-
-function wordsFromTitle(title) {
-  return (title || "")
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/’/g, "'")
-    .replace(/[^a-z0-9\s'-]/g, " ")
-    .split(/\s+/)
-    .map(normalizeWord)
-    .filter(w => w.length >= 4 && !STOP_FR.has(w));
-}
-
-function buildTitleBanSet(variants) {
-  const out = new Set();
-  for (const v of (variants || [])) {
-    for (const w of wordsFromTitle(v)) out.add(w);
-  }
-  return out;
-}
-
-function buildTopCharactersBanSet(anime) {
-  const out = new Set();
-  const chars = Array.isArray(anime.top_characters) ? anime.top_characters : [];
-  for (const c of chars) {
-    const name = String(c && c.name ? c.name : "").trim();
-    if (!name) continue;
-    // split "Nom, Prénom" or "Prénom Nom"
-    const parts = name.split(/[,\s]+/).map(p => normalizeWord(p)).filter(Boolean);
-    for (const p of parts) if (p.length >= 3) out.add(p);
-  }
-  return out;
-}
-
-// ===== Proper nouns extraction (for "nom fort") =====
-function extractProperNounCandidates(text) {
-  const t = String(text || "");
-  if (!t) return [];
-
-  const candidates = new Set();
-
-  // Acronyms (SERN, etc.)
-  const acr = t.match(/\b[A-Z]{2,}\b/g);
-  if (acr) acr.forEach(x => candidates.add(x.trim()));
-
-  // Capitalized words not at start of sentence
-  const sentences = t.split(/(?<=[.!?])\s+/);
-  for (const s of sentences) {
-    const words = s.split(/\s+/).filter(Boolean);
-    for (let i = 1; i < words.length; i++) {
-      const raw = words[i].replace(/^[("«”'’]+|[)"»”'’.,;:!?]+$/g, "");
-      if (!raw) continue;
-      if (/^[A-ZÀ-ÖØ-Ý]/.test(raw) && raw.length >= 3) {
-        // accept "Koudo", "Ikusei", "SERN", "B-Komachi" etc.
-        candidates.add(raw);
-      }
-    }
-  }
-
-  return Array.from(candidates);
-}
-
-// ===== Keyword extraction (unigrams + bigrams) =====
-function tokenizeForKeywords(text) {
-  const t = String(text || "")
-    .replace(/[\u2013\u2014]/g, "-")
-    .replace(/[\n\r]+/g, " ")
-    .replace(/[“”«»]/g, '"');
-
-  // Keep letters, digits, apostrophe, hyphen
-  const rawTokens = t.split(/[^A-Za-zÀ-ÖØ-öø-ÿ0-9'’-]+/).filter(Boolean);
-
-  const tokens = rawTokens
-    .map(tok => tok.replace(/’/g, "'"))
-    .filter(tok => tok.length >= 3);
-
-  return tokens;
-}
-
-function isLikelyProperNounToken(tok) {
-  // Acronym or Capitalized
-  return /^[A-Z]{2,}$/.test(tok) || /^[A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÖØ-öø-ÿ'’-]{2,}$/.test(tok);
-}
-
-function extractTopKeywords(text, { titleBan, charBan, allowProperNouns, max = 18 } = {}) {
-  const tokens = tokenizeForKeywords(text);
-  const counts = new Map();
-  const bigrams = new Map();
-
-  // unigrams
-  for (const tok of tokens) {
-    const n = normalizeWord(tok);
-    if (!n || n.length < 4) continue;
-    if (STOP_FR.has(n)) continue;
-    if (titleBan && titleBan.has(n)) continue;
-    if (charBan && charBan.has(n)) continue;
-
-    if (!allowProperNouns && isLikelyProperNounToken(tok)) continue;
-
-    counts.set(n, (counts.get(n) || 0) + 1);
-  }
-
-  // bigrams
-  for (let i = 0; i < tokens.length - 1; i++) {
-    const a = tokens[i], b = tokens[i + 1];
-    const na = normalizeWord(a), nb = normalizeWord(b);
-    if (!na || !nb) continue;
-    if (na.length < 4 || nb.length < 4) continue;
-    if (STOP_FR.has(na) || STOP_FR.has(nb)) continue;
-    if (titleBan && (titleBan.has(na) || titleBan.has(nb))) continue;
-    if (charBan && (charBan.has(na) || charBan.has(nb))) continue;
-
-    if (!allowProperNouns && (isLikelyProperNounToken(a) || isLikelyProperNounToken(b))) continue;
-
-    const key = `${na} ${nb}`;
-    bigrams.set(key, (bigrams.get(key) || 0) + 1);
-  }
-
-  // score: frequency + length bonus + bigram bonus
-  const scored = [];
-
-  counts.forEach((v, k) => {
-    let score = v * 2 + Math.min(3, Math.floor(k.length / 6));
-    // small penalty for overly generic words
-    if (["histoire","personne","gens","monde","jour","temps","vie","groupe"].includes(k)) score -= 2;
-    scored.push({ text: k, score });
-  });
-
-  bigrams.forEach((v, k) => {
-    let score = v * 3 + 2; // bigrams are helpful
-    scored.push({ text: k, score });
-  });
-
-  scored.sort((x, y) => y.score - x.score);
-
-  // normalize display: keep original-ish casing (first letter)
-  const out = [];
-  const seen = new Set();
-  for (const item of scored) {
-    if (out.length >= max) break;
-    const key = item.text;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(key);
-  }
-  return out;
-}
-
-// ===== Concept tags (Hardcore = super général) =====
-function deriveConceptTags(text) {
-  const t = normalizeWord(String(text || "")).replace(/'/g, " ");
-  const tags = new Set();
-
-  const add = (cond, tag) => { if (cond) tags.add(tag); };
-
-  add(/secret|myster|verit|cache/.test(t), "secret");
-  add(/mensong|mentir|tromp/.test(t), "mensonges");
-  add(/enquet|decouvr|verif|piste/.test(t), "enquête");
-  add(/venge|revanche/.test(t), "vengeance");
-  add(/mort|meurt|assassin|tue|deces/.test(t), "morts suspectes");
-  add(/danger|menace|traque|surveil/.test(t), "danger");
-  add(/organisation|groupe|agence|mysterieu/.test(t), "organisation");
-  add(/conflit|guerre|combat|bataill/.test(t), "conflit");
-  add(/voyage|periple|route|chemin/.test(t), "voyage");
-  add(/objectif|but|quete|reussir|atteindre/.test(t), "quête");
-  add(/trahison|manipul|strategie/.test(t), "stratégie");
-  add(/amiti|equipe|compagn|allie/.test(t), "alliés");
-  add(/famill|proche|aime/.test(t), "proches");
-  add(/regret|souvenir|memoire/.test(t), "regrets");
-  add(/temps|passe|futur|chronolog|ligne/.test(t), "temps");
-  add(/ecole|lycee|classe|etudiant/.test(t), "classement");
-  add(/divertissement|idol|acteur|actrice|scene|celebrite/.test(t), "célébrité");
-  add(/pouvoir|magie|alchim|sort/.test(t), "pouvoir");
-  add(/monstre|creature|demon|titan/.test(t), "menace");
-
-  return Array.from(tags);
-}
-
-// ===== Choose "nom fort" secondaire (Facile only) =====
-function chooseSecondaryStrongName(anime, synopsis, titleBan, charBan) {
-  const cands = extractProperNounCandidates(synopsis);
-
-  // Build a ban list from title words (normalized) + top characters (normalized)
-  const bannedNorm = new Set();
-  if (titleBan) titleBan.forEach(x => bannedNorm.add(x));
-  if (charBan) charBan.forEach(x => bannedNorm.add(x));
-
-  // Also ban pieces of the main displayed title
-  for (const w of wordsFromTitle(anime._title || "")) bannedNorm.add(w);
-
-  // rank: acronyms first, then hyphenated, then others
-  const scored = [];
-  for (const cand of cands) {
-    const norm = normalizeWord(cand);
-    if (!norm) continue;
-    if (norm.length < 3) continue;
-
-    // Exclude if matches title/characters
-    if (bannedNorm.has(norm)) continue;
-
-    // Exclude if looks like the main character full name appears in top_characters strongly:
-    // (already excluded by charBan)
-
-    let score = 0;
-    if (/^[A-Z]{2,}$/.test(cand)) score += 50;       // acronym like SERN
-    if (cand.includes("-")) score += 15;             // B-Komachi
-    if (cand.length >= 6) score += 5;
-    if (/School|High|Laboratory|Lab/i.test(cand)) score += 3;
-
-    // Avoid very common capitalized words in FR
-    const normLow = norm;
-    if (["japon","monde","etat","classe"].includes(normLow)) score -= 10;
-
-    scored.push({ cand, score });
-  }
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored.length ? scored[0].cand : null;
-}
-
-// ===== Stage builders =====
-function uniqPush(arr, x) {
-  const k = String(x).trim();
-  if (!k) return;
-  if (!arr.includes(k)) arr.push(k);
-}
-
-// small generalization map for Medium/Hardcore keyword extraction
-function generalizeKeyword(k, level) {
-  const s = String(k || "");
-  const n = normalizeWord(s);
-
-  // Hardcore: push to very generic
-  if (level === "hardcore") {
-    if (/alchim|magie|sort|pouvoir/.test(n)) return "pouvoir";
-    if (/ecole|lyce|classe|etudiant/.test(n)) return "classement";
-    if (/pirat|tr[eé]sor|butin/.test(n)) return "quête";
-    if (/titan|demon|monstr|creatur/.test(n)) return "menace";
-    if (/temps|passe|futur|chronolog|timeline|ligne/.test(n)) return "temps";
-    if (/guerre|combat|bataill|conflit/.test(n)) return "conflit";
-    if (/idol|acteur|actrice|scene|divert/.test(n)) return "célébrité";
-    if (/enquet|verit|secret/.test(n)) return "secret";
-    if (/mensong|mentir/.test(n)) return "mensonges";
-    if (/venge|revanche/.test(n)) return "vengeance";
-    if (/organisation|agence|groupe/.test(n)) return "organisation";
-    if (/danger|menace|traque/.test(n)) return "danger";
-  }
-
-  // Medium: lighter
-  if (level === "medium") {
-    if (/alchim|magie|sort/.test(n)) return "pouvoir";
-    if (/ecole|lyce|classe/.test(n)) return "classes";
-    if (/temps|passe|futur|chronolog|ligne/.test(n)) return "temps";
-    if (/idol|acteur|actrice|divert/.test(n)) return "divertissement";
-    if (/organisation|agence/.test(n)) return "organisation";
-  }
-
-  return s;
-}
-
-function buildHardcoreKeywords(synopsis) {
-  // Pure concepts only, short
-  const tags = deriveConceptTags(synopsis);
-  // Pick 6-8 max
-  const out = [];
-  const order = [
-    "secret","enquête","mensonges","vengeance","morts suspectes","danger","organisation",
-    "quête","conflit","stratégie","alliés","proches","temps","classement","célébrité","pouvoir","menace","regrets","voyage"
-  ];
-  for (const tag of order) {
-    if (tags.includes(tag)) uniqPush(out, tag);
-    if (out.length >= 7) break;
-  }
-  // Fallback minimal
-  if (out.length < 5) {
-    const fallback = tags.slice(0, 7);
-    fallback.forEach(t => uniqPush(out, t));
-  }
-  if (out.length < 4) {
-    // super fallback
-    ["secret","danger","quête","conséquences","organisation"].forEach(t => uniqPush(out, t));
-  }
-  return out;
-}
-
-function buildMediumKeywords(synopsis, titleBan, charBan) {
-  const out = [];
-  const tags = deriveConceptTags(synopsis);
-
-  // 3-4 concept tags
-  for (const t of tags) {
-    uniqPush(out, t);
-    if (out.length >= 4) break;
-  }
-
-  // add 3-4 extracted keywords (light generalization)
-  const extracted = extractTopKeywords(synopsis, {
-    titleBan, charBan,
-    allowProperNouns: false,
-    max: 24
-  });
-
-  for (const k of extracted) {
-    const g = generalizeKeyword(k, "medium");
-    const clean = String(g).trim();
-    if (!clean) continue;
-    // avoid duplicating concept tags too much
-    if (out.includes(clean)) continue;
-    uniqPush(out, clean);
-    if (out.length >= 8) break;
-  }
-
-  return out.slice(0, 8);
-}
-
-function buildEasyKeywords(synopsis, titleBan, charBan, strongName) {
-  const out = [];
-
-  // extracted true terms (no proper nouns)
-  const extracted = extractTopKeywords(synopsis, {
-    titleBan, charBan,
-    allowProperNouns: false,
-    max: 30
-  });
-
-  for (const k of extracted) {
-    // Easy = keep as is (no generalization)
-    const clean = String(k).trim();
-    if (!clean) continue;
-    uniqPush(out, clean);
-    if (out.length >= 8) break;
-  }
-
-  // add exactly 1 strong name secondary if available
-  if (strongName) {
-    // insert near the front
-    out.unshift(strongName);
-    // ensure uniqueness and max
-    const uniq = [];
-    for (const x of out) if (!uniq.includes(x)) uniq.push(x);
-    return uniq.slice(0, 9);
-  }
-
-  return out.slice(0, 8);
-}
-
-function buildStagesForAnime(anime) {
-  const variants = getTitleVariants(anime);
-  const titleBan = buildTitleBanSet(variants);
-  const charBan = buildTopCharactersBanSet(anime);
-
-  const full = basicCleanSynopsis(anime.synopsis || "");
-  const syn = full;
-
-  const strongName = chooseSecondaryStrongName(anime, syn, titleBan, charBan);
-
-  const hard = buildHardcoreKeywords(syn).map(x => generalizeKeyword(x, "hardcore"));
-  const med = buildMediumKeywords(syn, titleBan, charBan).map(x => generalizeKeyword(x, "medium"));
-  const easy = buildEasyKeywords(syn, titleBan, charBan, strongName);
-
-  // final cleanup: remove title words if they slipped in
-  const finalClean = (arr) => {
-    const res = [];
-    for (const kw of arr) {
-      const norm = normalizeWord(kw);
-      if (!norm) continue;
-      if (titleBan.has(norm)) continue;
-      res.push(kw);
-    }
-    // limit + make sure not empty
-    return res.length ? res.slice(0, 9) : ["mystère","quête","danger"];
-  };
-
-  return {
-    stages: [finalClean(hard), finalClean(med), finalClean(easy)],
-    strongName,
-    full
-  };
-}
-
-// ===== Filters =====
+// ====== Filters ======
 function applyFilters() {
   const popPercent = parseInt(popEl.value, 10);
   const scorePercent = parseInt(scoreEl.value, 10);
@@ -587,12 +460,12 @@ function applyFilters() {
   if (allowedTypes.length === 0) return [];
 
   let pool = allAnimes.filter((a) => {
-    const syn = basicCleanSynopsis(a.synopsis || "");
     return (
       a._year >= yearMin &&
       a._year <= yearMax &&
       allowedTypes.includes(a._type) &&
-      syn.length >= 80
+      typeof a.synopsis === "string" &&
+      a.synopsis.trim().length >= 40
     );
   });
 
@@ -607,6 +480,7 @@ function applyFilters() {
   return pool;
 }
 
+// ====== Preview ======
 function updatePreview() {
   const pool = applyFilters();
   const count = pool.length;
@@ -621,15 +495,7 @@ function updatePreview() {
   applyBtn.setAttribute("aria-disabled", (!ok).toString());
 }
 
-// ===== Autocomplete cache =====
-function rebuildTitlesCache() {
-  const uniq = new Map();
-  for (const a of filteredAnimes) uniq.set(a._titleLower, a._title);
-  titlesList = Array.from(uniq.values());
-  titlesLowerSet = new Set(Array.from(uniq.keys()));
-}
-
-// ===== Custom UI =====
+// ====== UI init ======
 function initCustomUI() {
   function syncLabels() {
     clampYearSliders();
@@ -651,7 +517,6 @@ function initCustomUI() {
     el.addEventListener("input", syncLabels)
   );
 
-  // type pills
   document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -667,8 +532,6 @@ function initCustomUI() {
       return;
     }
 
-    rebuildTitlesCache();
-
     totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
     currentRound = 1;
     totalScore = 0;
@@ -680,16 +543,55 @@ function initCustomUI() {
   syncLabels();
 }
 
-// ===== Round flow =====
+// ====== Render keywords ======
+function setBadgeAndStep() {
+  const labels = ["Hardcore", "Moyen", "Facile"];
+  synopsisBadge.textContent = labels[hintStep] || "Hardcore";
+  synopsisStep.textContent = `Indice ${Math.min(hintStep + 1, 3)} / 3`;
+}
+
+function renderKeywords() {
+  keywordsWrap.innerHTML = "";
+
+  if (!currentHints) return;
+
+  let list = [];
+  if (hintStep === 0) list = currentHints.hardcore || [];
+  else if (hintStep === 1) list = currentHints.medium || [];
+  else list = currentHints.easy || [];
+
+  // Facile : +1 nom fort (secondaire)
+  const strong = (hintStep === 2 && currentHints.strongName) ? currentHints.strongName : "";
+
+  const finalList = [...list];
+
+  // Ajoute le nom fort en premier (si présent), pour qu’il “aide” mais sans en mettre 10
+  if (strong) finalList.unshift(strong);
+
+  // Limite pour éviter un mur
+  const maxShow = hintStep === 0 ? 8 : hintStep === 1 ? 11 : 13;
+  const clipped = finalList.slice(0, maxShow);
+
+  clipped.forEach((w) => {
+    const pill = document.createElement("span");
+    pill.className = "keyword-pill";
+    pill.textContent = w;
+
+    if (strong && w === strong) pill.classList.add("strong");
+    keywordsWrap.appendChild(pill);
+  });
+
+  setBadgeAndStep();
+}
+
+// ====== Round flow ======
 function resetRoundUI() {
   if (roundLabel) roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
 
   feedback.textContent = "";
   feedback.className = "";
 
-  stageIndex = 0;
-  stageKeywords = [[], [], []];
-  strongNameUsed = null;
+  hintStep = 0;
   gameEnded = false;
 
   input.value = "";
@@ -697,96 +599,41 @@ function resetRoundUI() {
   submitBtn.disabled = true;
 
   restartBtn.style.display = "none";
-  restartBtn.textContent = (currentRound < totalRounds) ? "Suivant" : "Terminer";
+  restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Terminer";
 
   suggestions.innerHTML = "";
 
-  synopsisBadgeEl.textContent = STAGE_LABELS[stageIndex];
-  synopsisStepEl.textContent = `Indice ${stageIndex + 1} / 3`;
-  keywordsWrapEl.innerHTML = "";
+  setScoreBar(STEP_SCORES[0]);
 
-  setScoreBar(STAGE_SCORES[stageIndex]);
-}
-
-function renderStage() {
-  synopsisBadgeEl.textContent = STAGE_LABELS[stageIndex];
-  synopsisStepEl.textContent = `Indice ${stageIndex + 1} / 3`;
-  setScoreBar(STAGE_SCORES[stageIndex]);
-
-  keywordsWrapEl.innerHTML = "";
-  const kws = stageKeywords[stageIndex] || [];
-  for (const kw of kws) {
-    const span = document.createElement("span");
-    span.className = "keyword-pill";
-    if (stageIndex === 2 && strongNameUsed && kw === strongNameUsed) span.classList.add("strong");
-    span.textContent = kw;
-    keywordsWrapEl.appendChild(span);
-  }
+  // supprime un reveal précédent
+  document.querySelectorAll(".reveal-details").forEach(el => el.remove());
 }
 
 function startNewRound() {
   resetRoundUI();
 
   currentAnime = filteredAnimes[Math.floor(Math.random() * filteredAnimes.length)];
-  const key = String(currentAnime.mal_id || currentAnime._title);
+  currentHints = buildHintsForAnime(currentAnime);
 
-  if (stageCache.has(key)) {
-    const pack = stageCache.get(key);
-    stageKeywords = pack.stages;
-    strongNameUsed = pack.strongName || null;
-    fullSynopsisClean = pack.full || "";
-  } else {
-    const pack = buildStagesForAnime(currentAnime);
-    stageCache.set(key, pack);
-    stageKeywords = pack.stages;
-    strongNameUsed = pack.strongName || null;
-    fullSynopsisClean = pack.full || "";
-  }
-
-  renderStage();
+  renderKeywords();
 }
 
-// ===== Guess logic =====
-function normalizeTitle(s) {
-  return (s || "")
-    .trim()
-    .toLowerCase()
-    .replace(/’/g, "'")
-    .replace(/[^a-z0-9\s'&:-]/g, "")
-    .replace(/\s{2,}/g, " ");
-}
+// ====== End round ======
+function showFullSynopsisReveal() {
+  const container = document.getElementById("container");
+  const details = document.createElement("details");
+  details.className = "reveal-details";
 
-function checkGuess() {
-  if (!currentAnime || gameEnded) return;
+  const sum = document.createElement("summary");
+  sum.textContent = "Voir le synopsis complet";
 
-  const guess = input.value.trim();
-  if (!guess) {
-    feedback.textContent = "⚠️ Tu dois écrire un nom d'anime.";
-    feedback.className = "error";
-    return;
-  }
+  const div = document.createElement("div");
+  div.className = "reveal-synopsis";
+  div.textContent = currentHints?.fullSynopsis || cleanSynopsis(currentAnime?.synopsis || "");
 
-  const ok = normalizeTitle(guess) === normalizeTitle(currentAnime._title);
-  if (ok) {
-    winRound();
-    return;
-  }
-
-  if (stageIndex < 2) {
-    stageIndex += 1;
-    renderStage();
-
-    feedback.textContent = `❌ Mauvaise réponse. Indice débloqué (${STAGE_LABELS[stageIndex]}).`;
-    feedback.className = "info";
-
-    input.value = "";
-    submitBtn.disabled = true;
-    suggestions.innerHTML = "";
-    input.focus();
-    return;
-  }
-
-  loseRound();
+  details.appendChild(sum);
+  details.appendChild(div);
+  container.appendChild(details);
 }
 
 function endRound(roundScore, won, messageHtml) {
@@ -798,44 +645,30 @@ function endRound(roundScore, won, messageHtml) {
 
   setScoreBar(roundScore);
 
-  const reveal = `
-    <details class="reveal-details">
-      <summary>Voir le synopsis complet</summary>
-      <div class="reveal-synopsis">${safeHTML(fullSynopsisClean || "Synopsis indisponible.")}</div>
-    </details>
-  `;
-
-  feedback.innerHTML = messageHtml + reveal;
+  feedback.innerHTML = messageHtml;
   feedback.className = won ? "success" : "error";
 
   totalScore += roundScore;
+
+  showFullSynopsisReveal();
 
   restartBtn.style.display = "inline-block";
   restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
 
   restartBtn.onclick = () => {
-    if (currentRound >= totalRounds) showFinalRecap();
-    else { currentRound += 1; startNewRound(); }
+    if (currentRound >= totalRounds) {
+      showFinalRecap();
+    } else {
+      currentRound += 1;
+      startNewRound();
+    }
   };
-}
-
-function winRound() {
-  const score = STAGE_SCORES[stageIndex];
-  if (score > 0) launchFireworks();
-
-  const msg = `🎉 Bonne réponse !<br><b>${safeHTML(currentAnime._title)}</b><br>Score : <b>${score}</b> / ${MAX_SCORE}`;
-  endRound(score, true, msg);
-}
-
-function loseRound() {
-  const msg = `❌ Raté…<br>Réponse : <b>${safeHTML(currentAnime._title)}</b><br>Score : <b>0</b> / ${MAX_SCORE}`;
-  endRound(0, false, msg);
 }
 
 function showFinalRecap() {
   const gameContainer = document.getElementById("container");
   gameContainer.innerHTML = `
-    <div style="width:100%;max-width:560px;text-align:center;">
+    <div style="width:100%;max-width:720px;text-align:center;">
       <div style="font-size:1.35rem;font-weight:900;opacity:0.95;margin-bottom:10px;">🏆 Série terminée !</div>
       <div style="font-size:1.15rem;font-weight:900;margin-bottom:14px;">
         Score total : <b>${totalScore}</b> / <b>${totalRounds * MAX_SCORE}</b>
@@ -848,26 +681,89 @@ function showFinalRecap() {
   document.getElementById("backToSettings").onclick = () => window.location.reload();
 }
 
-// ===== Autocomplete =====
+function winRound() {
+  const score = STEP_SCORES[hintStep] ?? 0;
+  if (score > 0) launchFireworks();
+
+  const msg = `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>Score : <b>${score}</b> / ${MAX_SCORE}`;
+  endRound(score, true, msg);
+}
+
+function loseRound() {
+  const msg = `❌ Raté…<br>Réponse : <b>${currentAnime._title}</b><br>Score : <b>0</b> / ${MAX_SCORE}`;
+  endRound(0, false, msg);
+}
+
+// ====== Guess logic ======
+function checkGuess() {
+  if (!currentAnime || gameEnded) return;
+
+  const guess = input.value.trim();
+  if (!guess) {
+    feedback.textContent = "⚠️ Tu dois écrire un nom d'anime.";
+    feedback.className = "error";
+    return;
+  }
+
+  const g = normalizeGuess(guess);
+
+  const acceptable = currentAnime._titlesNorm || [];
+  const ok = acceptable.includes(g);
+
+  if (ok) {
+    winRound();
+    return;
+  }
+
+  // mauvaise réponse -> débloque indice suivant
+  if (hintStep < MAX_STEPS - 1) {
+    hintStep += 1;
+    setScoreBar(STEP_SCORES[hintStep] ?? 0);
+    renderKeywords();
+
+    const labels = ["Hardcore", "Moyen", "Facile"];
+    feedback.textContent = `❌ Mauvaise réponse. Indice débloqué (${labels[hintStep]}).`;
+    feedback.className = "info";
+
+    input.value = "";
+    submitBtn.disabled = true;
+    input.focus();
+    suggestions.innerHTML = "";
+    return;
+  }
+
+  // déjà en Facile -> perdre
+  loseRound();
+}
+
+submitBtn.addEventListener("click", checkGuess);
+
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) {
+    checkGuess();
+  }
+});
+
+// ====== Autocomplete ======
 input.addEventListener("input", function () {
   if (gameEnded) return;
 
   const val = this.value.toLowerCase().trim();
   suggestions.innerHTML = "";
   feedback.textContent = "";
+  feedback.className = "";
   submitBtn.disabled = true;
 
   if (!val) return;
 
-  // limit to 7 suggestions with a fast scan
-  let shown = 0;
-  for (const title of titlesList) {
-    if (shown >= 7) break;
-    const tl = title.toLowerCase();
-    if (!tl.includes(val)) continue;
+  const titles = [...new Set(filteredAnimes.map(a => a._title))];
+  const matches = titles
+    .filter(t => t.toLowerCase().includes(val))
+    .slice(0, 7);
 
+  matches.forEach((title) => {
     const div = document.createElement("div");
-    div.innerHTML = `<span>${safeHTML(title).replace(new RegExp(escapeRegExp(val), "i"), (m) => `<b>${safeHTML(m)}</b>`)}</span>`;
+    div.innerHTML = `<span>${title.replace(new RegExp(val, "i"), (m) => `<b>${m}</b>`)}</span>`;
     div.addEventListener("mousedown", (e) => {
       e.preventDefault();
       input.value = title;
@@ -876,33 +772,32 @@ input.addEventListener("input", function () {
       input.focus();
     });
     suggestions.appendChild(div);
-    shown++;
-  }
+  });
 
-  submitBtn.disabled = !titlesLowerSet.has(val);
+  // autorise submit uniquement si titre exact (évite fautes)
+  const exact = titles.map(t => t.toLowerCase()).includes(val);
+  submitBtn.disabled = !exact;
 });
 
-input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) checkGuess();
-});
-submitBtn.addEventListener("click", checkGuess);
-
-// ===== Tooltip =====
+// ====== Tooltip ======
 document.addEventListener("click", (e) => {
   const icon = e.target.closest(".info-icon");
   if (!icon) return;
+
   e.preventDefault();
   e.stopPropagation();
+
   const wrap = icon.closest(".info-wrap");
   if (wrap) wrap.classList.toggle("open");
 });
+
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
     document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
   }
 });
 
-// ===== Fireworks =====
+// ====== Fireworks ======
 function launchFireworks() {
   const canvas = document.getElementById("fireworks");
   if (!canvas) return;
@@ -943,16 +838,20 @@ function launchFireworks() {
   animate();
 }
 
-// ===== Load dataset =====
+// ====== Load dataset ======
 fetch("../data/licenses_only.json")
   .then((r) => r.json())
   .then((data) => {
     allAnimes = (Array.isArray(data) ? data : []).map((a) => {
       const title = getDisplayTitle(a);
+      const titlesAll = getAllAcceptableTitles(a);
+      const titlesNorm = titlesAll.map(normalizeGuess);
+
       return {
         ...a,
         _title: title,
-        _titleLower: title.toLowerCase(),
+        _titlesAll: titlesAll,
+        _titlesNorm: titlesNorm,
         _year: getYear(a),
         _members: Number.isFinite(+a.members) ? +a.members : 0,
         _score: Number.isFinite(+a.score) ? +a.score : 0,
