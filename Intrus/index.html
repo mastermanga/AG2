@@ -28,10 +28,9 @@
           <span class="info-tip" id="help-intrus" role="tooltip">
             4 choix (A–D). Un seul est l’intrus.
             <br><br>
-            🎵 En mode Songs : tu écoutes 4 extraits à la suite (Song A, B, C, D).
-            Ensuite seulement, le thème s’affiche pour t’aider, puis tu choisis l’intrus.
+            🎵 Mode Songs : tu écoutes 4 extraits à la suite (A→D). Le thème s’affiche ensuite.
             <br><br>
-            📺 En mode Anime : les 4 affiches sont visibles, puis tu choisis l’intrus.
+            📺 Mode Anime : tu choisis l’intrus sans thème. Le thème est révélé après ta réponse.
           </span>
         </span>
       </div>
@@ -124,7 +123,7 @@
     </div>
 
     <div class="start-wrap">
-      <button id="applyFiltersBtn" class="menu-btn">✅ Lancer avec ces réglages</button>
+      <button id="applyFiltersBtn" class="menu-btn">✅ Lancer</button>
     </div>
   </div>
 
@@ -138,19 +137,18 @@
         <ul id="choice-list" class="anime-list intrus-list"></ul>
       </div>
 
-      <!-- Panneau info + player -->
+      <!-- Panneau info -->
       <div class="anime-container">
         <div class="anime-item" id="infoCard">
-
-          <!-- Affiché APRES les 4 écoutes (songs) / tout de suite (anime) -->
+          <!-- Thème (affiché selon mode: songs après écoutes, anime après réponse) -->
           <p id="themeName" class="tp-theme-title" style="display:none;">Thème</p>
           <p id="themeDesc" class="tp-theme-desc" style="display:none;"></p>
 
           <div id="revealStatus" class="preview-count bad" style="display:none;">⏳ En cours…</div>
           <div id="pickStatus" class="preview-count" style="display:none;"></div>
 
-          <!-- Player (Songs) - caché visuellement -->
-          <div id="player-zone" style="display:none;">
+          <!-- Player Songs : totalement caché visuellement (ne doit jamais pop) -->
+          <div id="player-zone" class="player-hidden">
             <div class="now-playing" id="nowPlaying">🎵 Écoute</div>
             <video id="songPlayer" preload="metadata" playsinline></video>
           </div>
@@ -176,4 +174,3 @@
   <script src="script.js"></script>
 </body>
 </html>
-
