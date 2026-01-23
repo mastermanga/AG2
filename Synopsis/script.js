@@ -2,18 +2,18 @@
  * CLUE (Synopsis)
  * - Dataset: ../data/licenses_only.json (synopsis FR)
  * - Personnalisation: popularité/score/années/types + rounds
- * - Round = révélations automatiques toutes les 3s
- * - Chaque révélation = -500 sur 3000 (si trouvé avec 1 indice => 3000)
- * - Pool d’indices (sans répétition dans le round) :
- *   - CLUE 3 mots (tirés du synopsis, sans mots de structure, sans titre)
+ * - Reveal: 1 indice immédiat, puis un indice toutes les 3s (sans doublon)
+ * - Score: 3000 - 500*(indicesAffichés-1)
+ * - Indices possibles:
+ *   - CLUE 3 mots (synopsis)
  *   - saison, studio, genres, thèmes, score, popularité (Top %), personnage, épisodes
- * - Bouton Pause/Reprendre : stop le timer + les révélations
- * - Le synopsis complet n’est visible qu’à la révélation de la réponse (win/lose)
+ * - Pause: stop countdown + reveals
+ * - Synopsis complet visible seulement après win/lose
  **********************/
 
 const MAX_SCORE = 3000;
 const REVEAL_PENALTY = 500;
-const REVEAL_INTERVAL_MS = 3000;
+const REVEAL_INTERVAL_SEC = 3;
 const MAX_REVEALS_PER_ROUND = 6;
 const MIN_TITLES_TO_START = 64;
 
@@ -33,9 +33,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
 // ====== Helpers ======
 function stripAccents(str) {
-  return (str || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+  return (str || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 function normalizeGuess(str) {
@@ -110,7 +108,7 @@ function cleanSynopsis(s) {
     .trim();
 }
 
-// ====== DOM refs ======
+// ====== DOM refs (TON HTML) ======
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
 
@@ -136,10 +134,12 @@ const restartBtn = document.getElementById("restart-btn");
 const suggestions = document.getElementById("suggestions");
 const roundLabel = document.getElementById("roundLabel");
 
-// clue area (ids venant de “Synopsis”)
-const cluesWrap = document.getElementById("keywordsWrap");   // conteneur indices
-const badgeEl = document.getElementById("synopsisBadge");    // badge à gauche
-const stepEl = document.getElementById("synopsisStep");      // "Indice x/y"
+const pauseBtn = document.getElementById("pauseBtn");        // ✅
+const clueBadgeEl = document.getElementById("clueBadge");    // ✅
+const clueStepEl = document.getElementById("clueStep");      // ✅
+const clueMainEl = document.getElementById("clueMain");      // ✅
+const revealListEl = document.getElementById("revealList");  // ✅
+const revealTimerEl = document.getElementById("revealTimer");// ✅
 
 // score bar
 const scoreBar = document.getElementById("score-bar");
@@ -182,7 +182,6 @@ function setScoreBar(score) {
 }
 
 function currentPotentialScore() {
-  // 1 indice => 3000 ; 2 => 2500 ; ...
   const penalty = Math.max(0, (revealsShown - 1) * REVEAL_PENALTY);
   return Math.max(MAX_SCORE - penalty, 0);
 }
@@ -198,19 +197,20 @@ let totalScore = 0;
 
 // ====== Round state ======
 let currentAnime = null;
-let revealPool = [];        // catégories restantes
-let usedKinds = new Set();  // sécurité anti-dup
+let revealPool = [];
+let usedKinds = new Set();
 let revealsShown = 0;
 
-let revealTimer = null;
 let paused = false;
-let pauseBtn = null;
-
 let gameEnded = false;
 
-// ====== Stopwords / extraction "3 mots" ======
+// Countdown loop
+let countdown = REVEAL_INTERVAL_SEC;
+let countdownIntervalId = null;
+
+// ====== 3 mots (CLUE) ======
 const STOP = new Set([
-  // FR
+  // FR basique + structure
   "a","à","au","aux","avec","ce","ces","cet","cette","dans","de","des","du","elle","en","et","eux","il","ils",
   "je","la","le","les","leur","leurs","lui","ma","mais","me","mes","moi","mon","ne","nos","notre","nous",
   "on","ou","par","pas","pour","qu","que","qui","sa","se","ses","son","sur","ta","te","tes","toi","ton","tu",
@@ -218,13 +218,13 @@ const STOP = new Set([
   "ainsi","alors","après","avant","aussi","bien","car","cependant","comme","contre","donc","encore","ensuite",
   "entre","ici","là","malgré","moins","plus","peu","plutôt","puis","quand","sans","selon","sous","tant",
   "toute","toutes","tout","tous","très","vers","souvent","toujours","désormais",
-  // verbes courants
-  "être","est","sont","étaient","était","été","sera","serait","avoir","a","ont","avait","fait","faire",
+  // verbes
+  "être","est","sont","étaient","était","été","sera","serait","avoir","ont","avait","fait","faire",
   "peut","peuvent","doit","doivent","va","vont","vient","venir","reste","rester","devient","devenir",
   "semble","sembler","continue","continuer","commence","commencer","finit","finir",
   "passe","passer","poursuit","poursuivre","cherche","chercher","trouve","trouver",
   "découvre","découvrir","produit","produire","renvoie","renvoyer","retrouve","retrouver",
-  // très génériques
+  // trop générique
   "histoire","monde","vie","temps","gens","personne","personnes","chose","choses","jour","jours"
 ]);
 
@@ -262,12 +262,8 @@ function buildTitleBlockSet(anime) {
 
 function extractProperNounPhrases(originalSynopsis) {
   const text = String(originalSynopsis || "");
-
-  // 2 mots max en "Nom Propre" (ex: "Roi Démon", "Demon King")
   const re = /\b[A-ZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ][A-Za-zÀ-ÖØ-öø-ÿœæŒÆ-]{2,}(?:\s+[A-ZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ][A-Za-zÀ-ÖØ-öø-ÿœæŒÆ-]{2,})?\b/g;
   const matches = text.match(re) || [];
-
-  // dédoublonnage
   const seen = new Set();
   const out = [];
   for (const m of matches) {
@@ -283,24 +279,18 @@ function extractProperNounPhrases(originalSynopsis) {
 function pick3WordClue(anime) {
   const syn = cleanSynopsis(anime.synopsis || "");
   const titleBlock = buildTitleBlockSet(anime);
-  const synNorm = normalizeGuess(syn);
 
-  // 1) candidats "noms propres" (souvent très parlants)
   const proper = extractProperNounPhrases(anime.synopsis || "")
     .filter(p => {
       const k = normalizeGuess(p);
       if (!k || k.length < 4) return false;
       if (STOP.has(k)) return false;
-      // interdit titre
       for (const w of titleBlock) {
         if (k.includes(w)) return false;
       }
-      // évite des trucs trop communs en majuscule
-      if (["japon","france","tokyo"].includes(k)) return false;
       return true;
     });
 
-  // 2) candidats "noms/concepts" via fréquence, surtout après déterminant/préposition
   const words = tokenizeWords(syn);
   const norms = words.map(w => normalizeGuess(w));
   const counts = new Map();
@@ -312,8 +302,7 @@ function pick3WordClue(anime) {
     if (titleBlock.has(w)) continue;
 
     const prev = norms[i - 1] || "";
-    const ok = DET_OR_PREP.has(prev);
-    if (!ok) continue;
+    if (!DET_OR_PREP.has(prev)) continue;
 
     counts.set(w, (counts.get(w) || 0) + 1);
   }
@@ -322,36 +311,31 @@ function pick3WordClue(anime) {
     .sort((a,b) => (b[1]-a[1]) || (b[0].length - a[0].length))
     .map(([k]) => k);
 
-  // sélection: 2 noms propres + 1 concept (si possible)
   const clue = [];
 
   for (const p of proper) {
     if (clue.length >= 2) break;
-    clue.push(p); // conserve casing
+    clue.push(p);
   }
 
   for (const n of nounish) {
     if (clue.length >= 3) break;
-    const exists = clue.some(x => normalizeGuess(x) === n);
-    if (exists) continue;
-    // évite mots trop faibles
+    if (clue.some(x => normalizeGuess(x) === n)) continue;
     if (["année","années","fois","partie","groupe","route","chemin"].includes(n)) continue;
     clue.push(n);
   }
 
-  // fallback si manque
   while (clue.length < 3) clue.push("----");
-
   return clue.slice(0, 3);
 }
 
-// ====== Indices (pool) ======
+// ====== Indices pool ======
 const SEASON_FR = {
-  "winter": "Hiver",
-  "spring": "Printemps",
-  "summer": "Été",
-  "fall": "Automne",
-  "autumn": "Automne"
+  winter: "Hiver",
+  spring: "Printemps",
+  summer: "Été",
+  fall: "Automne",
+  autumn: "Automne",
 };
 
 function formatSeason(seasonStr) {
@@ -366,7 +350,6 @@ function formatSeason(seasonStr) {
 }
 
 function computePopularityTopPercent(anime, pool) {
-  // pool = filteredAnimes actuel
   const arr = [...pool].sort((a,b) => (b._members - a._members));
   const idx = arr.findIndex(x => x === anime);
   if (idx < 0) return "";
@@ -382,7 +365,6 @@ function pickRandomCharacterName(anime) {
   const pool = [...a, ...b]
     .map(x => String(x?.name || "").trim())
     .filter(n => n.length >= 3);
-
   if (!pool.length) return "";
   return pool[Math.floor(Math.random() * pool.length)];
 }
@@ -395,183 +377,211 @@ function buildRevealPool(anime) {
     items.push({ kind: "CLUE", label: "Clue (3 mots)", value: pick3WordClue(anime) });
   }
 
-  // Saison
   const season = formatSeason(anime.season);
   if (season) items.push({ kind: "SEASON", label: "Saison", value: season });
 
-  // Studio
-  if (anime.studio && String(anime.studio).trim()) items.push({ kind: "STUDIO", label: "Studio", value: String(anime.studio).trim() });
+  if (anime.studio && String(anime.studio).trim()) {
+    items.push({ kind: "STUDIO", label: "Studio", value: String(anime.studio).trim() });
+  }
 
-  // Genres
   if (Array.isArray(anime.genres) && anime.genres.length) {
-    const g = anime.genres.slice(0, 4).map(x => String(x).trim()).filter(Boolean);
+    const g = anime.genres.slice(0, 4).map(String).map(s => s.trim()).filter(Boolean);
     if (g.length) items.push({ kind: "GENRES", label: "Genres", value: g });
   }
 
-  // Thèmes
   if (Array.isArray(anime.themes) && anime.themes.length) {
-    const t = anime.themes.slice(0, 4).map(x => String(x).trim()).filter(Boolean);
+    const t = anime.themes.slice(0, 4).map(String).map(s => s.trim()).filter(Boolean);
     if (t.length) items.push({ kind: "THEMES", label: "Thèmes", value: t });
   }
 
-  // Score
   const sc = Number.isFinite(+anime.score) ? +anime.score : 0;
   if (sc > 0) items.push({ kind: "SCORE", label: "Score", value: sc.toFixed(2) });
 
-  // Popularité Top %
   const topPct = computePopularityTopPercent(anime, filteredAnimes);
   if (topPct) items.push({ kind: "POPULARITY", label: "Popularité", value: topPct });
 
-  // Personnage
   const ch = pickRandomCharacterName(anime);
   if (ch) items.push({ kind: "CHAR", label: "Personnage", value: ch });
 
-  // Episodes
   const ep = Number.isFinite(+anime.episodes) ? +anime.episodes : 0;
   if (ep > 0) items.push({ kind: "EPS", label: "Épisodes", value: ep });
 
-  // On mélange
   shuffleInPlace(items);
   return items;
 }
 
-// ====== Rendering clues ======
-function ensurePauseButton() {
-  if (pauseBtn) return;
-
-  // essaye de trouver un bouton existant
-  pauseBtn = document.getElementById("pause-btn");
-  if (pauseBtn) return;
-
-  // sinon on le crée dynamiquement dans #controls
-  const controls = document.getElementById("controls");
-  if (!controls) return;
-
-  pauseBtn = document.createElement("button");
-  pauseBtn.id = "pause-btn";
-  pauseBtn.textContent = "⏸ Pause";
-  pauseBtn.style.marginTop = "6px";
-
-  controls.insertBefore(pauseBtn, restartBtn || null);
-
-  pauseBtn.addEventListener("click", togglePause);
+// ====== Rendering (TON UI) ======
+function setStepUI() {
+  if (!clueBadgeEl || !clueStepEl) return;
+  clueBadgeEl.textContent = "Indice";
+  clueStepEl.textContent = `${Math.min(revealsShown + 1, MAX_REVEALS_PER_ROUND)} / ${MAX_REVEALS_PER_ROUND}`;
 }
 
-function setBadgeAndStep() {
-  if (!badgeEl || !stepEl) return;
-
-  badgeEl.textContent = "Indices";
-  const total = Math.min(MAX_REVEALS_PER_ROUND, revealPoolOriginalCount || MAX_REVEALS_PER_ROUND);
-  stepEl.textContent = `Indice ${Math.min(revealsShown + 1, total)} / ${total}`;
+function setCountdownUI() {
+  if (!revealTimerEl) return;
+  if (gameEnded) {
+    revealTimerEl.textContent = "";
+    return;
+  }
+  if (paused) {
+    revealTimerEl.textContent = "En pause";
+    return;
+  }
+  // si plus d'indices à venir
+  if (revealsShown >= MAX_REVEALS_PER_ROUND || revealPool.length === 0) {
+    revealTimerEl.textContent = "Plus d’indices";
+    return;
+  }
+  revealTimerEl.textContent = `Prochain indice : ${countdown}s`;
 }
 
-function createClueRow(label, value) {
-  const row = document.createElement("div");
-  row.className = "clue-row";
+function clearNewHighlight() {
+  if (!revealListEl) return;
+  [...revealListEl.querySelectorAll(".reveal-item.new")].forEach(el => el.classList.remove("new"));
+}
 
-  const left = document.createElement("div");
-  left.className = "clue-kind";
-  left.textContent = label;
+function renderClueMain(item) {
+  if (!clueMainEl) return;
+  clueMainEl.innerHTML = "";
 
-  const right = document.createElement("div");
-  right.className = "clue-values";
-
-  const makePill = (txt) => {
-    const s = document.createElement("span");
-    s.className = "keyword-pill";
-    s.textContent = txt;
-    return s;
-  };
-
-  if (Array.isArray(value)) {
-    value.forEach(v => right.appendChild(makePill(v)));
-  } else {
-    right.appendChild(makePill(String(value)));
+  // CLUE 3 mots -> pills
+  if (item.kind === "CLUE") {
+    const row = document.createElement("div");
+    row.className = "keyword-row";
+    (item.value || []).forEach(w => {
+      const pill = document.createElement("span");
+      pill.className = "keyword-pill";
+      pill.textContent = w;
+      row.appendChild(pill);
+    });
+    clueMainEl.appendChild(row);
+    return;
   }
 
-  row.appendChild(left);
-  row.appendChild(right);
-  return row;
+  // arrays => pills
+  if (Array.isArray(item.value)) {
+    const row = document.createElement("div");
+    row.className = "keyword-row";
+    item.value.forEach(v => {
+      const pill = document.createElement("span");
+      pill.className = "keyword-pill";
+      pill.textContent = v;
+      row.appendChild(pill);
+    });
+    clueMainEl.appendChild(row);
+    return;
+  }
+
+  // otherwise => text
+  const div = document.createElement("div");
+  div.className = "clue-text";
+  div.innerHTML = `<b>${item.label} :</b> ${String(item.value)}`;
+  clueMainEl.appendChild(div);
 }
 
-function renderNewClue(item) {
-  if (!cluesWrap) return;
+function renderRevealHistory(item) {
+  if (!revealListEl) return;
 
-  // Ajoute une nouvelle ligne (au lieu de remplacer)
-  const row = createClueRow(item.label, item.value);
-  cluesWrap.appendChild(row);
+  clearNewHighlight();
 
-  // update badge/step
-  setBadgeAndStep();
+  const box = document.createElement("div");
+  box.className = "reveal-item new";
+
+  const tag = document.createElement("span");
+  tag.className = "tag";
+  tag.textContent = item.label;
+
+  const content = document.createElement("span");
+  const val = Array.isArray(item.value) ? item.value.join(", ") : String(item.value);
+  content.textContent = val;
+
+  box.appendChild(tag);
+  box.appendChild(content);
+
+  // prepend (dernier en haut) ou append (dernier en bas)
+  revealListEl.prepend(box);
 }
 
 function resetCluesUI() {
-  if (cluesWrap) cluesWrap.innerHTML = "";
-  if (badgeEl) badgeEl.textContent = "Indices";
-  if (stepEl) stepEl.textContent = `Indice 1 / ${MAX_REVEALS_PER_ROUND}`;
+  if (clueMainEl) clueMainEl.innerHTML = "";
+  if (revealListEl) revealListEl.innerHTML = "";
+  revealsShown = 0;
+  setStepUI();
+  countdown = REVEAL_INTERVAL_SEC;
+  setCountdownUI();
 }
 
-// ====== Reveal flow ======
-let revealPoolOriginalCount = 0;
+// ====== Reveal loop (countdown visible) ======
+function stopCountdownLoop() {
+  if (countdownIntervalId) clearInterval(countdownIntervalId);
+  countdownIntervalId = null;
+}
 
-function startRevealTimer() {
-  stopRevealTimer();
-  revealTimer = setInterval(() => {
+function startCountdownLoop() {
+  stopCountdownLoop();
+  countdown = REVEAL_INTERVAL_SEC;
+  setCountdownUI();
+
+  countdownIntervalId = setInterval(() => {
     if (gameEnded) return;
     if (paused) return;
-    revealNextClue();
-  }, REVEAL_INTERVAL_MS);
-}
 
-function stopRevealTimer() {
-  if (revealTimer) clearInterval(revealTimer);
-  revealTimer = null;
+    if (revealsShown >= MAX_REVEALS_PER_ROUND || revealPool.length === 0) {
+      setCountdownUI();
+      stopCountdownLoop();
+      return;
+    }
+
+    countdown -= 1;
+    if (countdown <= 0) {
+      revealNextClue();
+      countdown = REVEAL_INTERVAL_SEC;
+    }
+    setCountdownUI();
+  }, 1000);
 }
 
 function togglePause() {
   if (gameEnded) return;
   paused = !paused;
-  if (pauseBtn) pauseBtn.textContent = paused ? "▶️ Reprendre" : "⏸ Pause";
+  pauseBtn.textContent = paused ? "▶️ Reprendre" : "⏸️ Pause";
   feedback.textContent = paused ? "⏸️ Pause." : "";
   feedback.className = paused ? "info" : "";
+  setCountdownUI();
 }
 
+if (pauseBtn) pauseBtn.addEventListener("click", togglePause);
+
+// ====== Reveal logic ======
 function revealNextClue() {
   if (gameEnded) return;
 
-  // si on a déjà atteint la limite
-  if (revealsShown >= MAX_REVEALS_PER_ROUND) {
-    stopRevealTimer();
-    return;
-  }
+  if (revealsShown >= MAX_REVEALS_PER_ROUND) return;
 
-  // trouver un item non utilisé
+  // pick first non-used
   let idx = -1;
   for (let i = 0; i < revealPool.length; i++) {
     if (!usedKinds.has(revealPool[i].kind)) { idx = i; break; }
   }
 
   if (idx === -1) {
-    // plus rien à révéler
-    stopRevealTimer();
+    setCountdownUI();
     return;
   }
 
   const item = revealPool.splice(idx, 1)[0];
   usedKinds.add(item.kind);
 
-  renderNewClue(item);
+  // render current + history
+  renderClueMain(item);
+  renderRevealHistory(item);
 
+  // book-keeping
   revealsShown += 1;
   setScoreBar(currentPotentialScore());
+  setStepUI();
 
-  // si on a fini
-  if (revealsShown >= MAX_REVEALS_PER_ROUND) {
-    stopRevealTimer();
-    // message léger (optionnel)
-    // feedback.textContent = "Tous les indices sont révélés.";
-    // feedback.className = "info";
-  }
+  setCountdownUI();
 }
 
 // ====== Filters ======
@@ -630,28 +640,24 @@ function resetRoundUI() {
   gameEnded = false;
   paused = false;
 
+  if (pauseBtn) pauseBtn.textContent = "⏸️ Pause";
+
   input.value = "";
   input.disabled = false;
-  submitBtn.disabled = true; // activé dès qu’il y a du texte
-
+  submitBtn.disabled = true;
   suggestions.innerHTML = "";
 
   restartBtn.style.display = "none";
   restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Terminer";
 
-  revealsShown = 0;
   usedKinds = new Set();
   revealPool = [];
-  revealPoolOriginalCount = 0;
 
   resetCluesUI();
-  stopRevealTimer();
+  stopCountdownLoop();
   setScoreBar(MAX_SCORE);
 
-  ensurePauseButton();
-  if (pauseBtn) pauseBtn.textContent = "⏸ Pause";
-
-  // retire les reveals synopsis d’avant
+  // retire anciens synopsis
   document.querySelectorAll(".reveal-details").forEach(el => el.remove());
 }
 
@@ -660,11 +666,12 @@ function startNewRound() {
 
   currentAnime = filteredAnimes[Math.floor(Math.random() * filteredAnimes.length)];
   revealPool = buildRevealPool(currentAnime);
-  revealPoolOriginalCount = revealPool.length;
 
-  // on révèle directement le 1er indice puis on lance le timer
+  // 1er indice immédiat
   revealNextClue();
-  startRevealTimer();
+
+  // puis countdown + reveals
+  startCountdownLoop();
 }
 
 // ====== End round ======
@@ -689,7 +696,7 @@ function showFullSynopsisReveal() {
 
 function endRound(roundScore, won, messageHtml) {
   gameEnded = true;
-  stopRevealTimer();
+  stopCountdownLoop();
 
   input.disabled = true;
   submitBtn.disabled = true;
@@ -702,33 +709,30 @@ function endRound(roundScore, won, messageHtml) {
 
   totalScore += roundScore;
 
-  // synopsis complet uniquement à la révélation de la réponse
   showFullSynopsisReveal();
 
   restartBtn.style.display = "inline-block";
   restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
 
   restartBtn.onclick = () => {
-    if (currentRound >= totalRounds) {
-      showFinalRecap();
-    } else {
+    if (currentRound >= totalRounds) showFinalRecap();
+    else {
       currentRound += 1;
       startNewRound();
     }
   };
+
+  setCountdownUI();
 }
 
 function winRound() {
   const score = currentPotentialScore();
   if (score > 0) launchFireworks();
-
-  const msg = `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>Score : <b>${score}</b> / ${MAX_SCORE}`;
-  endRound(score, true, msg);
+  endRound(score, true, `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>Score : <b>${score}</b> / ${MAX_SCORE}`);
 }
 
 function loseRound() {
-  const msg = `❌ Raté…<br>Réponse : <b>${currentAnime._title}</b><br>Score : <b>0</b> / ${MAX_SCORE}`;
-  endRound(0, false, msg);
+  endRound(0, false, `❌ Raté…<br>Réponse : <b>${currentAnime._title}</b><br>Score : <b>0</b> / ${MAX_SCORE}`);
 }
 
 function showFinalRecap() {
@@ -762,17 +766,13 @@ function checkGuess() {
   const acceptable = currentAnime._titlesNorm || [];
   const ok = acceptable.includes(g);
 
-  if (ok) {
-    winRound();
-    return;
+  if (ok) winRound();
+  else {
+    feedback.textContent = "❌ Mauvaise réponse.";
+    feedback.className = "error";
+    input.select();
+    input.focus();
   }
-
-  // mauvais guess : simple feedback (les indices continuent auto)
-  feedback.textContent = "❌ Mauvaise réponse.";
-  feedback.className = "error";
-
-  input.select();
-  input.focus();
 }
 
 submitBtn.addEventListener("click", checkGuess);
@@ -893,7 +893,6 @@ function initCustomUI() {
     el.addEventListener("input", syncLabels)
   );
 
-  // type pills
   document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -904,8 +903,6 @@ function initCustomUI() {
 
   applyBtn.addEventListener("click", () => {
     filteredAnimes = applyFilters();
-
-    // règle min 64
     if (filteredAnimes.length < MIN_TITLES_TO_START) {
       updatePreview();
       return;
