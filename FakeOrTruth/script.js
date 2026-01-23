@@ -1,17 +1,19 @@
+// script.js
 /**********************
  * Fake Or Truth — Anti-bug media (A pinned) + Sync improvements
- * ✅ Extrait: 0s → 20s
+ * ✅ Start à 1s (au lieu de 0) + 20s
  * ✅ 6 tentatives: 0,2,4,6,8,10s
- * ✅ Buffer-ahead adaptatif: 1.2s puis 0.7s après 2 tentatives
- * ✅ Warmup muet 0.25s après pin (si possible)
- * ✅ Start muted + attendre progression des 2 + snap sync + unmute audio seulement
+ * ✅ Soft buffer gating: ne re-télécharge plus A “pour rien”
+ * ✅ Warmup muet + start muted + wait advance + snap sync + audio unmute
+ * ✅ Reveal: vidéo A avec le bon audio (A), depuis 0s
  * ✅ Score: 1000 points / round
  **********************/
 
 const MAX_SCORE = 1000;
 const MIN_REQUIRED_SONGS = 64;
 
-const LISTEN_START = 0;
+// ✅ START À 1s
+const LISTEN_START = 1;
 const LISTEN_DURATION = 20;
 
 // ✅ 6 tentatives
@@ -20,25 +22,27 @@ const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const LOAD_TIMEOUT_MS = 16000;
 const SEEK_TIMEOUT_MS = 8000;
 
-// ✅ buffer gating adaptatif
+// buffer gating adaptatif
 const BUFFER_AHEAD_PRIMARY = 1.2;
 const BUFFER_AHEAD_FALLBACK = 0.7;
-const BUFFER_AHEAD_DROP_AFTER = 2; // >= 2 tentatives -> fallback
+const BUFFER_AHEAD_DROP_AFTER = 2;
 
-const BUFFER_WAIT_MS = 5500;
+// si un navigateur buffer bizarrement près de 0 (moins utile à 1s, mais safe)
+const START_BUFFER_TOLERANCE_SEC = 0.95;
 
-// ✅ warmup
+const BUFFER_WAIT_MS = 6500;
+
+// warmup
 const WARMUP_SEC = 0.25;
-const WARMUP_TIMEOUT_MS = 1200;
+const WARMUP_TIMEOUT_MS = 1400;
 
-// ✅ uniformiser
 const MIN_SYNC_DELAY_MS = 450;
 
-// ✅ start gating (progress)
+// start gating (progress)
 const START_ADVANCE_DELTA = 0.10;
-const START_ADVANCE_TIMEOUT_MS = 3500;
+const START_ADVANCE_TIMEOUT_MS = 3800;
 
-// stall léger (moins agressif maintenant que start=0)
+// stall
 const STALL_TIMEOUT_MS = 14000;
 const STALL_POLL_MS = 500;
 
@@ -119,11 +123,15 @@ function withCacheBuster(url) {
   return url + sep + "t=" + Date.now();
 }
 
-function isTimeBuffered(el, t, margin = 0.25) {
+// buffer check
+function isTimeBuffered(el, t, ahead = 0.25) {
   try {
     const b = el.buffered;
+    const tol = (t <= 0.05) ? START_BUFFER_TOLERANCE_SEC : 0.25;
     for (let i = 0; i < b.length; i++) {
-      if (b.start(i) <= t && b.end(i) >= t + margin) return true;
+      const s = b.start(i);
+      const e = b.end(i);
+      if (s <= (t + tol) && e >= (t + ahead)) return true;
     }
   } catch {}
   return false;
@@ -134,7 +142,7 @@ async function waitBufferAhead(el, baseT, aheadSec, maxWaitMs, localToken) {
   while (performance.now() < end) {
     if (localToken !== roundToken) return false;
     if (el.readyState >= 3 && isTimeBuffered(el, baseT, aheadSec)) return true;
-    await delay(110);
+    await delay(120);
   }
   return el.readyState >= 3 && isTimeBuffered(el, baseT, Math.min(0.20, aheadSec));
 }
@@ -317,15 +325,18 @@ function lockForRound() {
 
   applyVolume();
 }
+
+// ✅ Reveal: vidéo A + audio A depuis 0s
 function revealVideoAWithAudio() {
   stopPlayback();
+  // coupe l'audio B
   try { audioPlayer.removeAttribute("src"); audioPlayer.load(); } catch {}
 
   videoPlayer.muted = false;
   videoPlayer.controls = true;
   videoPlayer.setAttribute("controls", "controls");
 
-  try { videoPlayer.currentTime = LISTEN_START; } catch {}
+  try { videoPlayer.currentTime = 0; } catch {}
 }
 
 // ====== waitEvent ======
@@ -376,7 +387,6 @@ async function warmupPlayMuted(el, localToken) {
     el.muted = true;
     el.playbackRate = 1.0;
 
-    // tentative de play muet (souvent autorisé)
     const p = el.play();
     if (p && typeof p.then === "function") await p;
 
@@ -391,10 +401,8 @@ async function warmupPlayMuted(el, localToken) {
 
     try { el.pause(); } catch {}
     try { el.currentTime = LISTEN_START; } catch {}
-
     return true;
   } catch {
-    // si autoplay/warmup bloqué, on ignore (pas grave)
     try { el.pause(); } catch {}
     try { el.currentTime = LISTEN_START; } catch {}
     return false;
@@ -408,21 +416,6 @@ async function warmupPlayMuted(el, localToken) {
 async function ensurePinnedAt(el, t, localToken) {
   if (localToken !== roundToken) return false;
 
-  // cas start=0 : ne pas attendre "seeked" (souvent pas émis)
-  if (t <= 0.01) {
-    try { el.pause(); } catch {}
-    // attendre un état jouable
-    if (el.readyState >= 3 && isTimeBuffered(el, 0, 0.20)) return true;
-    try {
-      await waitEvent(el, "canplay", ["error"], SEEK_TIMEOUT_MS, localToken);
-    } catch {
-      return false;
-    }
-    try { el.pause(); } catch {}
-    try { el.currentTime = 0; } catch {}
-    return el.readyState >= 3;
-  }
-
   if (el.readyState >= 3 && isTimeBuffered(el, t, 0.20)) {
     try { el.pause(); } catch {}
     return true;
@@ -430,7 +423,6 @@ async function ensurePinnedAt(el, t, localToken) {
 
   try { el.currentTime = t; } catch {}
 
-  // seeked peut ne pas arriver si clamp, donc on ne bloque pas trop
   try {
     await waitEvent(el, "seeked", ["error"], Math.min(2500, SEEK_TIMEOUT_MS), localToken);
   } catch {}
@@ -479,11 +471,33 @@ async function loadAndPin(el, url, attempt, label, localToken) {
   const okPin = await ensurePinnedAt(el, LISTEN_START, localToken);
   if (!okPin || localToken !== roundToken) return false;
 
-  // warmup muet (améliore la stabilité du premier play)
   await warmupPlayMuted(el, localToken);
-
   try { el.pause(); } catch {}
   return true;
+}
+
+// ====== buffer gating SOFT ======
+async function ensureBufferReady(el, label, localToken) {
+  if (localToken !== roundToken) return false;
+
+  const ahead1 = computeAhead();
+  let ok = await waitBufferAhead(el, LISTEN_START, ahead1, BUFFER_WAIT_MS, localToken);
+  if (localToken !== roundToken) return false;
+  if (ok) return true;
+
+  ok = await waitBufferAhead(el, LISTEN_START, BUFFER_AHEAD_FALLBACK, BUFFER_WAIT_MS, localToken);
+  if (localToken !== roundToken) return false;
+  if (ok) return true;
+
+  setMediaStatus(`🔄 Rebuffer ${label}…`);
+  const repin = await ensurePinnedAt(el, LISTEN_START, localToken);
+  if (localToken !== roundToken) return false;
+  if (!repin) return false;
+
+  await warmupPlayMuted(el, localToken);
+  ok = await waitBufferAhead(el, LISTEN_START, BUFFER_AHEAD_FALLBACK, BUFFER_WAIT_MS, localToken);
+  if (localToken !== roundToken) return false;
+  return ok;
 }
 
 // ====== Segment + Stall watchdog ======
@@ -513,7 +527,6 @@ function handleStall(localToken) {
   stopPlayback();
   clearSegment();
 
-  // décider quel média relancer en priorité
   const aBad = videoPlayer.readyState < 3 || !isTimeBuffered(videoPlayer, videoPlayer.currentTime || 0, 0.10);
   const bBad = audioPlayer.readyState < 3 || !isTimeBuffered(audioPlayer, audioPlayer.currentTime || 0, 0.10);
 
@@ -728,11 +741,16 @@ function microRateCorrector(localToken) {
   }, 120);
 }
 
+function computeAhead() {
+  const severity = Math.max(pinnedA.attempt, pinnedB.attempt);
+  return severity >= BUFFER_AHEAD_DROP_AFTER ? BUFFER_AHEAD_FALLBACK : BUFFER_AHEAD_PRIMARY;
+}
+
 // ====== cœur pinned + gating + start ======
 async function autoStartPinned(localToken) {
   if (localToken !== roundToken) return;
 
-  // Tentative 0: charge A+B en parallèle
+  // tentative 0: charge A+B en parallèle
   if (!pinnedA.ok && !pinnedB.ok && pinnedA.attempt === 0 && pinnedB.attempt === 0) {
     setMediaStatus("⏳ Préchargement A+B…");
 
@@ -753,14 +771,12 @@ async function autoStartPinned(localToken) {
     if (!okB) pinnedB.attempt = 1;
   }
 
-  // Charger + pin A (retry A only)
+  // retry A uniquement
   while (!pinnedA.ok && pinnedA.attempt < RETRY_DELAYS.length) {
     if (localToken !== roundToken) return;
-
     await delay(RETRY_DELAYS[pinnedA.attempt]);
     const okA = await loadAndPin(videoPlayer, videoSong.url, pinnedA.attempt, "Vidéo A", localToken);
     if (localToken !== roundToken) return;
-
     if (okA) { pinnedA.ok = true; break; }
     pinnedA.attempt++;
   }
@@ -770,14 +786,12 @@ async function autoStartPinned(localToken) {
     return finishRoundFailure("Vidéo A : échec après 6 tentatives.");
   }
 
-  // Charger + pin B (retry B only)
+  // retry B uniquement
   while (!pinnedB.ok && pinnedB.attempt < RETRY_DELAYS.length) {
     if (localToken !== roundToken) return;
-
     await delay(RETRY_DELAYS[pinnedB.attempt]);
     const okB = await loadAndPin(audioPlayer, audioSong.url, pinnedB.attempt, "Audio B", localToken);
     if (localToken !== roundToken) return;
-
     if (okB) { pinnedB.ok = true; break; }
     pinnedB.attempt++;
   }
@@ -787,12 +801,11 @@ async function autoStartPinned(localToken) {
     return finishRoundFailure("Audio B : échec après 6 tentatives.");
   }
 
-  // Buffer gating adaptatif
+  // buffer gating soft
   setMediaStatus("🔄 Synchronisation…");
   const syncT0 = performance.now();
-  const ahead = computeAhead();
 
-  const okBufA = await waitBufferAhead(videoPlayer, LISTEN_START, ahead, BUFFER_WAIT_MS, localToken);
+  const okBufA = await ensureBufferReady(videoPlayer, "Vidéo A", localToken);
   if (localToken !== roundToken) return;
   if (!okBufA) {
     pinnedA.ok = false;
@@ -800,7 +813,7 @@ async function autoStartPinned(localToken) {
     return autoStartPinned(localToken);
   }
 
-  const okBufB = await waitBufferAhead(audioPlayer, LISTEN_START, ahead, BUFFER_WAIT_MS, localToken);
+  const okBufB = await ensureBufferReady(audioPlayer, "Audio B", localToken);
   if (localToken !== roundToken) return;
   if (!okBufB) {
     pinnedB.ok = false;
@@ -808,7 +821,7 @@ async function autoStartPinned(localToken) {
     return autoStartPinned(localToken);
   }
 
-  // Start muted + wait both advance + snap + unmute audio
+  // start muted + wait both advance + snap sync + unmute audio
   stopPlayback();
   clearSegment();
   lockForRound();
