@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>🎬 Sound Match</title>
+  <title>⭐ TopPick 3v3</title>
   <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -11,91 +11,83 @@
 <body>
   <!-- HEADER -->
   <header id="main-header">
-    <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+    <div class="header-row">
       <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
-      <h1>🎬 Sound Match 🎬</h1>
+      <h1>⭐ TopPick 3v3 ⭐</h1>
 
       <div class="header-right">
         <button id="themeToggle" class="toggle-btn">🌓</button>
 
         <span class="info-wrap header-help">
-          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-match">
+          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-toppick">
             <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor"
-                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+                d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
             </svg>
           </span>
-
-          <span class="info-tip" id="help-match" role="tooltip">
-            Regarde la vidéo (Song A) et écoute le son (Song B).
-            Dis si le son correspond à la vidéo : ✅ Match / ❌ Pas match.
-            Tu as 3 écoutes max : Début (15s), Refrain (15s), puis Complet.
-            Score : 3000 / 2000 / 1500 selon l’écoute utilisée au moment de ta réponse.
+          <span class="info-tip" id="help-toppick" role="tooltip">
+            2 équipes de 3 (Ligne 1 vs Ligne 2) se révèlent progressivement, en alternant :
+            L1#1 → L2#1 → L1#2 → L2#2 → L1#3 → L2#3.
+            À la fin, tu choisis LA meilleure ligne.
+            Chaque round a un filtre “contenu” (année, studio, tag, artiste…) — parfois Libre.
           </span>
         </span>
       </div>
     </div>
   </header>
 
-  <!-- =========================
-       PERSONNALISATION (AU DÉPART)
-  ========================== -->
-  <div id="custom-panel" class="main-container" style="max-width: 1400px; width: 98vw; padding: 1.7rem 1.8rem; margin: 0 auto 1.2rem auto;">
-    <h2 style="margin:0 0 1.0rem 0; text-align:center;">⚙️ Personnalisation</h2>
+  <!-- ========================= PERSONNALISATION (AU DÉPART) ========================== -->
+  <div id="custom-panel" class="main-container">
+    <h2>⚙️ Personnalisation</h2>
 
     <!-- Mode -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Mode</div>
-      <div class="opt-col" style="flex:1; min-width:280px;">
-        <div id="modePills" class="opt-pill-group" style="display:flex; gap:10px; flex-wrap:wrap;">
-          <button type="button" class="pill active" data-mode="songs" aria-pressed="true">Songs</button>
+    <div class="opt-row">
+      <div class="opt-label">Mode</div>
+      <div class="opt-col">
+        <div id="modePills" class="opt-pill-group">
+          <button type="button" class="pill active" data-mode="anime" aria-pressed="true">Animes</button>
+          <button type="button" class="pill" data-mode="songs" aria-pressed="false">Songs</button>
         </div>
       </div>
     </div>
 
     <!-- Popularité -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Popularité</div>
-      <div class="opt-col" style="flex:1; min-width:280px;">
+    <div class="opt-row">
+      <div class="opt-label">Popularité</div>
+      <div class="opt-col">
         <input id="popPercent" type="range" min="5" max="100" step="5" value="30" />
-        <div class="opt-value" style="margin-top:6px; font-weight:900; opacity:0.92; text-align:right;">
-          Top <span id="popPercentVal">30</span>%
-        </div>
+        <div class="opt-value">Top <span id="popPercentVal">30</span>%</div>
       </div>
     </div>
 
     <!-- Score -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Score</div>
-      <div class="opt-col" style="flex:1; min-width:280px;">
+    <div class="opt-row">
+      <div class="opt-label">Score</div>
+      <div class="opt-col">
         <input id="scorePercent" type="range" min="5" max="100" step="5" value="100" />
-        <div class="opt-value" style="margin-top:6px; font-weight:900; opacity:0.92; text-align:right;">
-          Top <span id="scorePercentVal">100</span>%
-        </div>
+        <div class="opt-value">Top <span id="scorePercentVal">100</span>%</div>
       </div>
     </div>
 
     <!-- Années -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Années</div>
-      <div class="opt-col" style="flex:1; min-width:280px;">
-        <div style="display:flex; flex-direction:column; gap:8px;">
-          <div style="display:flex; gap:12px; align-items:center;">
-            <input id="yearMin" type="range" min="1950" max="2026" step="1" value="1950" style="flex:1;">
-            <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026" style="flex:1;">
+    <div class="opt-row">
+      <div class="opt-label">Années</div>
+      <div class="opt-col">
+        <div class="year-wrap">
+          <div class="year-sliders">
+            <input id="yearMin" type="range" min="1950" max="2026" step="1" value="1950">
+            <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026">
           </div>
-          <div class="opt-value" style="font-weight:900; opacity:0.92; text-align:right;">
-            <span id="yearMinVal">1950</span> → <span id="yearMaxVal">2026</span>
-          </div>
+          <div class="opt-value"><span id="yearMinVal">1950</span> → <span id="yearMaxVal">2026</span></div>
         </div>
       </div>
     </div>
 
     <!-- Types -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Types</div>
-      <div class="opt-col" style="flex:1; min-width:280px;">
-        <div id="typePills" class="opt-pill-group" style="display:flex; gap:10px; flex-wrap:wrap;">
+    <div class="opt-row">
+      <div class="opt-label">Types</div>
+      <div class="opt-col">
+        <div id="typePills" class="opt-pill-group">
           <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
           <button type="button" class="pill active" data-type="Movie" aria-pressed="true">Movie</button>
           <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
@@ -105,11 +97,11 @@
       </div>
     </div>
 
-    <!-- Songs -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Songs</div>
-      <div class="opt-col" style="flex:1; min-width:280px;">
-        <div id="songPills" class="opt-pill-group" style="display:flex; gap:10px; flex-wrap:wrap;">
+    <!-- Songs (visible seulement si mode = songs) -->
+    <div class="opt-row" id="songsRow">
+      <div class="opt-label">Songs</div>
+      <div class="opt-col">
+        <div id="songPills" class="opt-pill-group">
           <button type="button" class="pill active" data-song="OP" aria-pressed="true">Opening</button>
           <button type="button" class="pill" data-song="ED" aria-pressed="false">Ending</button>
           <button type="button" class="pill" data-song="IN" aria-pressed="false">Insert</button>
@@ -118,93 +110,84 @@
     </div>
 
     <!-- Preview -->
-    <div id="previewCount" class="preview-count bad" style="margin-top:14px; width:100%; font-weight:900; text-align:center; padding:10px 12px; border-radius:14px; border:1px solid #00bcd455; background: rgba(0,0,0,0.15);">
-      ⏳ Chargement de la base…
-    </div>
+    <div id="previewCount" class="preview-count bad">⏳ Chargement de la base…</div>
 
     <!-- Rounds -->
-    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:14px;">
-      <div class="opt-label" style="font-weight:900; min-width:160px;">Rounds</div>
-      <div class="opt-col" style="flex:1; min-width:280px; display:flex; gap:12px; align-items:center; justify-content:flex-end; flex-wrap:wrap;">
-        <input
-          id="roundCount"
-          type="number"
-          min="1"
-          max="100"
-          step="1"
-          value="1"
-          style="width:120px; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,188,212,0.35); background:rgba(0,0,0,0.18); color:inherit; font-weight:900; outline:none;"
-        />
-        <div style="opacity:0.85; font-weight:700; font-size:0.95rem;">
-          (1 à 100 — enchaîne plusieurs rounds avec la même config.)
-        </div>
+    <div class="opt-row">
+      <div class="opt-label">Rounds</div>
+      <div class="opt-col opt-rounds">
+        <input id="roundCount" class="round-input" type="number" min="1" max="100" step="1" value="1" />
+        <div class="opt-hint">(1 à 100) — Enchaîne plusieurs parties avec la même config.</div>
       </div>
     </div>
 
-    <!-- Start -->
-    <div style="display:flex; justify-content:center; margin-top:12px;">
-      <button id="applyFiltersBtn" class="menu-btn" style="font-size:1.05rem; padding:0.85rem 1.6rem;">
-        ✅ Lancer avec ces réglages
-      </button>
+    <div class="start-wrap">
+      <button id="applyFiltersBtn" class="menu-btn">✅ Lancer avec ces réglages</button>
     </div>
   </div>
 
-  <!-- =========================
-       JEU (CACHÉ AU DÉPART)
-  ========================== -->
+  <!-- ========================= JEU (CACHÉ AU DÉPART) ========================== -->
   <div id="game-panel" style="display:none;">
-    <div id="container">
-      <!-- BARRE DE SCORE -->
-      <div id="score-bar-container" style="margin-bottom:12px;">
-        <div id="score-bar" style="width:100%;position:relative;">
-          <span id="score-bar-label" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-weight:bold;">3000 / 3000</span>
+    <div id="game-shell" class="split-layout">
+
+      <!-- 2 lignes x 3 -->
+      <div class="ranking-container">
+        <div class="mini-pill" id="roundLabel"></div>
+
+        <div class="tp-rows" id="teamsWrap">
+          <div class="tp-row" id="teamRowA" data-team="0">
+            <div class="tp-row-head">
+              <div class="tp-row-title">Ligne 1</div>
+              <div class="tp-row-sub">Équipe A</div>
+            </div>
+            <ul id="teamAList" class="anime-list topPick-list tp-team-list"></ul>
+          </div>
+
+          <div class="tp-row" id="teamRowB" data-team="1">
+            <div class="tp-row-head">
+              <div class="tp-row-title">Ligne 2</div>
+              <div class="tp-row-sub">Équipe B</div>
+            </div>
+            <ul id="teamBList" class="anime-list topPick-list tp-team-list"></ul>
+          </div>
         </div>
       </div>
 
-      <!-- Round label -->
-      <div id="roundLabel" style="margin:0 0 10px 0; font-weight:900; opacity:0.9; text-align:center;"></div>
+      <!-- Panneau info + player -->
+      <div class="anime-container">
+        <div class="anime-item" id="infoCard">
 
-      <!-- VIDEO (Song A) -->
-      <div id="videoWrapper">
-        <div class="video-head">🎞️ Vidéo (Song A)</div>
-        <video id="videoPlayer" playsinline preload="metadata"></video>
-      </div>
+          <p id="themeName" class="tp-theme-title" style="display:none;">Thème</p>
+          <p id="themeDesc" class="tp-theme-desc" style="display:none;"></p>
 
-      <!-- Volume (audio) -->
-      <div id="volumeRow" class="volume-row" style="width:100%; max-width:520px; margin:10px auto 12px auto;">
-        <div class="vol-label">🔊 Volume</div>
-        <input id="volumeSlider" type="range" min="0" max="100" value="50" style="flex:1; max-width:320px;">
-        <div id="volumeVal" style="min-width:44px; text-align:right; font-weight:900; opacity:0.9;">50%</div>
-      </div>
+          <div id="revealStatus" class="preview-count bad" style="display:none;">⏳ Révélation en cours…</div>
+          <div id="pickStatus" class="preview-count" style="display:none;"></div>
 
-      <!-- Boutons d’écoute (jouent VIDEO + AUDIO en même temps) -->
-      <div id="listen-buttons" style="display:flex; justify-content:center; gap:12px; margin-bottom:12px;">
-        <button id="playTry1">Début</button>
-        <button id="playTry2" disabled>Refrain</button>
-        <button id="playTry3" disabled>Complet</button>
-      </div>
+          <!-- Player (Songs) -->
+          <div id="player-zone" style="display:none;">
+            <div class="now-playing" id="nowPlaying">🎵 Extrait</div>
+            <video id="songPlayer" controls preload="metadata" playsinline></video>
+          </div>
 
-      <!-- Réponse -->
-      <div id="answer-buttons">
-        <button id="btnMatch" class="answer-btn yes" disabled>✅ Match</button>
-        <button id="btnNoMatch" class="answer-btn no" disabled>❌ Pas match</button>
-      </div>
+          <!-- Volume (Songs only) -->
+          <div id="volumeRow" class="volume-row" style="display:none;">
+            <div class="vol-label"><span class="vol-icon">🔊</span> Volume</div>
+            <input id="volumeSlider" type="range" min="0" max="100" value="30" />
+            <div id="volumeVal" class="vol-val">30%</div>
+          </div>
 
-      <div id="result"></div>
-      <button id="nextBtn" style="display:none; margin-top:1.1rem;"></button>
+          <div id="result" class="result"></div>
+        </div>
 
-      <canvas id="fireworks"></canvas>
-
-      <!-- AUDIO PLAYER (Song B) — caché pendant le jeu, révélé à la fin -->
-      <div id="audioRevealWrapper" style="display:none;">
-        <div class="audio-head">🎧 Audio (Song B)</div>
-        <video id="audioPlayer" playsinline preload="metadata"></video>
+        <div class="tp-actions">
+          <button id="confirmBtn" class="menu-btn disabled" disabled>✅ Valider</button>
+          <button id="nextBtn" class="menu-btn" style="display:none;">Suivant</button>
+        </div>
       </div>
     </div>
   </div>
 
   <footer>© 2025 mastermanga</footer>
-
   <script src="script.js"></script>
 </body>
 </html>
