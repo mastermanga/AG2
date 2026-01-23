@@ -1,46 +1,50 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>🎭 Fake Or Truth</title>
+  <title>🎬 Fake Or Truth</title>
   <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
   <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
+  <!-- HEADER -->
   <header id="main-header">
     <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
       <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
-      <h1>🎭 Fake Or Truth 🎭</h1>
+      <h1>🎬 Fake Or Truth 🎬</h1>
 
       <div class="header-right">
         <button id="themeToggle" class="toggle-btn">🌓</button>
 
         <span class="info-wrap header-help">
-          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-fot">
+          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-tip">
             <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor"
                 d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
             </svg>
           </span>
 
-          <span class="info-tip" id="help-fot" role="tooltip">
-            Le jeu lance automatiquement un extrait (0s → 20s).<br>
-            Vidéo = Song A (muette) / Audio = Song B.<br>
-            À toi de décider : <b>Truth</b> (match) ou <b>Fake</b> (pas match).<br>
-            Reveal : vidéo A avec son vrai audio.<br>
-            <b>Score :</b> 1000 points par round.
+          <span class="info-tip" id="help-tip" role="tooltip">
+            Le jeu démarre automatiquement : tu vois la vidéo d’un opening/ending (A) mais tu entends potentiellement le son d’un autre (B).
+            Après 20 secondes, choisis : <b>Truth</b> si le son correspond à la vidéo, <b>Fake</b> sinon.
+            Règles : 1/3 A=B, 1/3 anime différent, 1/3 même anime mais song différent (si possible).
+            1000 points par round si tu as bon.
           </span>
         </span>
       </div>
     </div>
   </header>
 
-  <!-- PERSONNALISATION -->
+  <!-- =========================
+       PERSONNALISATION
+  ========================== -->
   <div id="custom-panel" class="main-container" style="max-width: 1400px; width: 98vw; padding: 1.7rem 1.8rem; margin: 0 auto 1.2rem auto;">
     <h2 style="margin:0 0 1.0rem 0; text-align:center;">⚙️ Personnalisation</h2>
 
+    <!-- Mode -->
     <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
       <div class="opt-label" style="font-weight:900; min-width:160px;">Mode</div>
       <div class="opt-col" style="flex:1; min-width:280px;">
@@ -50,39 +54,49 @@
       </div>
     </div>
 
-    <div class="opt-row" style="margin-top:12px;">
-      <div class="opt-label">Popularité</div>
-      <div class="opt-col">
+    <!-- Popularité -->
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Popularité</div>
+      <div class="opt-col" style="flex:1; min-width:280px;">
         <input id="popPercent" type="range" min="5" max="100" step="5" value="30" />
-        <div class="opt-value">Top <span id="popPercentVal">30</span>%</div>
+        <div class="opt-value" style="margin-top:6px; font-weight:900; opacity:0.92; text-align:right;">
+          Top <span id="popPercentVal">30</span>%
+        </div>
       </div>
     </div>
 
-    <div class="opt-row" style="margin-top:12px;">
-      <div class="opt-label">Score</div>
-      <div class="opt-col">
+    <!-- Score -->
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Score</div>
+      <div class="opt-col" style="flex:1; min-width:280px;">
         <input id="scorePercent" type="range" min="5" max="100" step="5" value="100" />
-        <div class="opt-value">Top <span id="scorePercentVal">100</span>%</div>
+        <div class="opt-value" style="margin-top:6px; font-weight:900; opacity:0.92; text-align:right;">
+          Top <span id="scorePercentVal">100</span>%
+        </div>
       </div>
     </div>
 
-    <div class="opt-row" style="margin-top:12px;">
-      <div class="opt-label">Années</div>
-      <div class="opt-col">
+    <!-- Années -->
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Années</div>
+      <div class="opt-col" style="flex:1; min-width:280px;">
         <div style="display:flex; flex-direction:column; gap:8px;">
           <div style="display:flex; gap:12px; align-items:center;">
             <input id="yearMin" type="range" min="1950" max="2026" step="1" value="1950" style="flex:1;">
             <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026" style="flex:1;">
           </div>
-          <div class="opt-value"><span id="yearMinVal">1950</span> → <span id="yearMaxVal">2026</span></div>
+          <div class="opt-value" style="font-weight:900; opacity:0.92; text-align:right;">
+            <span id="yearMinVal">1950</span> → <span id="yearMaxVal">2026</span>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="opt-row" style="margin-top:12px;">
-      <div class="opt-label">Types</div>
-      <div class="opt-col">
-        <div id="typePills" class="opt-pill-group">
+    <!-- Types -->
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Types</div>
+      <div class="opt-col" style="flex:1; min-width:280px;">
+        <div id="typePills" class="opt-pill-group" style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
           <button type="button" class="pill active" data-type="Movie" aria-pressed="true">Movie</button>
           <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
@@ -92,10 +106,11 @@
       </div>
     </div>
 
-    <div class="opt-row" style="margin-top:12px;">
-      <div class="opt-label">Songs</div>
-      <div class="opt-col">
-        <div id="songPills" class="opt-pill-group">
+    <!-- Songs -->
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:12px;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Songs</div>
+      <div class="opt-col" style="flex:1; min-width:280px;">
+        <div id="songPills" class="opt-pill-group" style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="button" class="pill active" data-song="OP" aria-pressed="true">Opening</button>
           <button type="button" class="pill" data-song="ED" aria-pressed="false">Ending</button>
           <button type="button" class="pill" data-song="IN" aria-pressed="false">Insert</button>
@@ -103,18 +118,31 @@
       </div>
     </div>
 
-    <div id="previewCount" class="preview-count bad" style="margin-top:14px;">
+    <!-- Preview -->
+    <div id="previewCount" class="preview-count bad" style="margin-top:14px; width:100%; font-weight:900; text-align:center; padding:10px 12px; border-radius:14px; border:1px solid #00bcd455; background: rgba(0,0,0,0.15);">
       ⏳ Chargement de la base…
     </div>
 
-    <div class="opt-row" style="margin-top:14px;">
-      <div class="opt-label">Rounds</div>
-      <div class="opt-col" style="display:flex; gap:12px; align-items:center; justify-content:flex-end; flex-wrap:wrap;">
-        <input id="roundCount" type="number" min="1" max="100" step="1" value="1" class="round-input" style="width:120px;" />
-        <div style="opacity:0.85; font-weight:700; font-size:0.95rem;">(1 à 100)</div>
+    <!-- Rounds -->
+    <div class="opt-row" style="width:100%; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:14px;">
+      <div class="opt-label" style="font-weight:900; min-width:160px;">Rounds</div>
+      <div class="opt-col" style="flex:1; min-width:280px; display:flex; gap:12px; align-items:center; justify-content:flex-end; flex-wrap:wrap;">
+        <input
+          id="roundCount"
+          type="number"
+          min="1"
+          max="100"
+          step="1"
+          value="1"
+          style="width:120px; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,188,212,0.35); background:rgba(0,0,0,0.18); color:inherit; font-weight:900; outline:none;"
+        />
+        <div style="opacity:0.85; font-weight:700; font-size:0.95rem;">
+          (1 à 100 — enchaîne plusieurs parties avec la même config.)
+        </div>
       </div>
     </div>
 
+    <!-- Start -->
     <div style="display:flex; justify-content:center; margin-top:12px;">
       <button id="applyFiltersBtn" class="menu-btn" style="font-size:1.05rem; padding:0.85rem 1.6rem;">
         ✅ Lancer avec ces réglages
@@ -122,32 +150,40 @@
     </div>
   </div>
 
-  <!-- JEU -->
+  <!-- =========================
+       JEU (CACHÉ AU DÉPART)
+  ========================== -->
   <div id="game-panel" style="display:none;">
     <div id="container">
+
+      <!-- BARRE DE SCORE -->
       <div id="score-bar-container" style="margin-bottom:12px;">
         <div id="score-bar" style="width:100%;position:relative;">
           <span id="score-bar-label" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-weight:bold;">1000 / 1000</span>
         </div>
       </div>
 
+      <!-- Round label -->
       <div id="roundLabel" style="margin:0 0 8px 0; font-weight:900; opacity:0.9; text-align:center;"></div>
-      <div id="mediaStatus"></div>
 
-      <div id="videoWrapper">
+      <!-- Status anti-bug -->
+      <div id="mediaStatus" style="margin:6px 0 12px 0; font-weight:900; opacity:0.9; font-size:0.98rem; text-align:center; min-height:1.2em;"></div>
+
+      <!-- Player -->
+      <div id="playerWrapper">
         <video id="videoPlayer" playsinline preload="auto"></video>
+        <video id="audioPlayer" playsinline preload="auto"></video>
       </div>
 
-      <!-- audio invisible mais chargé -->
-      <video id="audioPlayer" playsinline preload="auto" style="display:none;"></video>
-
+      <!-- Volume -->
       <div id="volumeRow" class="volume-row">
         <div class="vol-label">🔊 Volume</div>
         <input id="volumeSlider" type="range" min="0" max="100" value="50">
         <div id="volumeVal">50%</div>
       </div>
 
-      <div id="choiceRow">
+      <!-- Buttons -->
+      <div id="choice-buttons">
         <button id="btnTruth" class="choice-btn truth" disabled>✅ Truth</button>
         <button id="btnFake" class="choice-btn fake" disabled>❌ Fake</button>
       </div>
@@ -160,6 +196,7 @@
   </div>
 
   <footer>© 2025 mastermanga</footer>
+
   <script src="script.js"></script>
 </body>
 </html>
