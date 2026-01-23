@@ -1,39 +1,36 @@
 /**********************
  * Fake Or Truth — Anti-bug media (A pinned) + Sync improvements
- * ✅ 6 tentatives: 0,2,4,6,8,10s
- * ✅ Buffer gating (ahead) sur A ET B avant start
- * ✅ Tentative 0: charge A+B en parallèle
- * ✅ Start muted + attendre progression des 2 + snap sync + unmute audio seulement
- * ✅ Min-delay "Synchronisation..." pour uniformiser (A=B ne démarre pas "trop vite")
- * ✅ Correction de désync: snap + micro playbackRate temporaire (vidéo mute)
- * ✅ Stall FIX: watchdog "le temps n'avance plus"
- * ✅ Si échec total -> duel fini, joueur clique "Round suivant"
+ * ✅ retries plus courts: 0, 1200, 2500, 4500, 7000, 9500
+ * ✅ preset BALANCED : buffer gating + sync delay + advance gating
+ * ✅ extrait : start=3s, durée=20s
+ * ✅ "ne pas relancer si ça progresse" (buffer progress-aware)
  **********************/
 
 const MAX_SCORE = 3000;
 const MIN_REQUIRED_SONGS = 64;
 
-const LISTEN_START = 45;
-const LISTEN_DURATION = 30;
+// ✅ extrait (nouveau)
+const LISTEN_START = 3;
+const LISTEN_DURATION = 20;
 
-// ✅ 6 tentatives
-const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
+// ✅ retries (nouveau)
+const RETRY_DELAYS = [0, 1200, 2500, 4500, 7000, 9500];
 
 const LOAD_TIMEOUT_MS = 16000;
 const SEEK_TIMEOUT_MS = 10000;
 
-// ✅ gating buffer
-const BUFFER_AHEAD_SEC = 1.5;     // on exige 1.5s de buffer après 45s sur A et B
-const BUFFER_WAIT_MS = 6500;      // temps max pour attendre le buffer avant de considérer retry
+// ✅ BALANCED
+const BUFFER_AHEAD_SEC = 0.8;     // (avant: 1.5)
+const BUFFER_WAIT_MS = 3500;      // (avant: 6500)
+const MIN_SYNC_DELAY_MS = 180;    // (avant: 550)
+const START_ADVANCE_DELTA = 0.07; // (avant: 0.10)
+const START_ADVANCE_TIMEOUT_MS = 3600; // (avant: 4500)
 
-// ✅ uniformiser l'expérience (A=B ne "part" pas instant)
-const MIN_SYNC_DELAY_MS = 550;
+// ✅ buffer progress-aware (évite de relancer si ça progresse)
+const BUFFER_HARD_CAP_MS = 22000;      // on accepte que ça prenne longtemps si le buffer avance
+const BUFFER_NO_PROGRESS_GRACE_MS = 1200; // après BUFFER_WAIT_MS, si le buffer n’avance plus pendant 1.2s => retry
 
-// ✅ start gating (progress)
-const START_ADVANCE_DELTA = 0.10; // on attend que les deux aient avancé au moins 0.10s
-const START_ADVANCE_TIMEOUT_MS = 4500;
-
-// ✅ stall "réel"
+// ✅ stall “réel”
 const STALL_TIMEOUT_MS = 14000;
 const STALL_POLL_MS = 500;
 
@@ -124,13 +121,51 @@ function isTimeBuffered(el, t, margin = 0.25) {
   return false;
 }
 
-async function waitBufferAhead(el, baseT, aheadSec, maxWaitMs, localToken) {
-  const end = performance.now() + maxWaitMs;
-  while (performance.now() < end) {
+// ✅ mesure "jusqu’où" c’est bufferisé autour de baseT (pour détecter progrès)
+function bufferedEndAfter(el, baseT) {
+  let best = -1;
+  try {
+    const b = el.buffered;
+    for (let i = 0; i < b.length; i++) {
+      const s = b.start(i);
+      const e = b.end(i);
+      if (s <= baseT && e > best) best = e;
+    }
+  } catch {}
+  return best;
+}
+
+// ✅ attend le buffer "ahead", mais continue si ça progresse (au lieu de retry trop tôt)
+async function waitBufferAheadSmart(el, baseT, aheadSec, softWaitMs, localToken) {
+  const t0 = performance.now();
+  const hardCap = Math.max(softWaitMs, BUFFER_HARD_CAP_MS);
+
+  let lastEnd = bufferedEndAfter(el, baseT);
+  let lastProgressAt = performance.now();
+
+  while (performance.now() - t0 < hardCap) {
     if (localToken !== roundToken) return false;
+
     if (el.readyState >= 3 && isTimeBuffered(el, baseT, aheadSec)) return true;
+
+    const now = performance.now();
+    const end = bufferedEndAfter(el, baseT);
+
+    if (end > lastEnd + 0.12) {
+      lastEnd = end;
+      lastProgressAt = now;
+    }
+
+    const elapsed = now - t0;
+
+    // Après le "soft wait", on ne stoppe QUE si aucune progression buffer depuis un moment
+    if (elapsed >= softWaitMs && (now - lastProgressAt) >= BUFFER_NO_PROGRESS_GRACE_MS) {
+      break;
+    }
+
     await delay(120);
   }
+
   return el.readyState >= 3 && isTimeBuffered(el, baseT, Math.min(0.25, aheadSec));
 }
 
@@ -318,7 +353,7 @@ function revealVideoAWithAudio() {
   videoPlayer.controls = true;
   videoPlayer.setAttribute("controls", "controls");
 
-  // reveal au même endroit (45s)
+  // reveal au même endroit
   try { videoPlayer.currentTime = LISTEN_START; } catch {}
 }
 
@@ -396,7 +431,9 @@ async function loadMeta(el, url, attempt, label, localToken) {
   if (localToken !== roundToken) return false;
 
   hardReset(el);
-  const src = attempt === 0 ? url : withCacheBuster(url);
+
+  // ✅ cache-buster seulement à partir de la tentative 3 (attempt >= 2)
+  const src = attempt <= 1 ? url : withCacheBuster(url);
 
   el.preload = "auto";
   el.src = src;
@@ -578,7 +615,7 @@ function finishRoundFailure(reasonText) {
   resultDiv.innerHTML = `
     ❌ Duel annulé (problème média).<br>
     <em>${reasonText || "Impossible de charger après plusieurs tentatives."}</em>
-    <div style="margin-top:8px;">Score : <b>0</b> / 3000</div>
+    <div style="margin-top:8px;">Score : <b>0</b> / ${MAX_SCORE}</div>
   `;
   resultDiv.className = "incorrect";
   updateScoreBar(0);
@@ -621,8 +658,8 @@ function isNotAllowedError(reason) {
 
 async function waitBothAdvance(localToken, baseTime, delta, timeoutMs) {
   const end = performance.now() + timeoutMs;
-
   const target = baseTime + delta;
+
   while (performance.now() < end) {
     if (localToken !== roundToken) return { ok: false };
 
@@ -633,7 +670,6 @@ async function waitBothAdvance(localToken, baseTime, delta, timeoutMs) {
     await delay(60);
   }
 
-  // diagnostic: lequel n'avance pas ?
   const tv = videoPlayer.currentTime || 0;
   const ta = audioPlayer.currentTime || 0;
   return {
@@ -654,7 +690,6 @@ function snapVideoToAudio() {
 }
 
 function microRateCorrector(localToken) {
-  // vidéo mute => on peut micro-ajuster sans "effet audio"
   const start = performance.now();
   const timer = setInterval(() => {
     if (localToken !== roundToken) { clearInterval(timer); return; }
@@ -662,7 +697,6 @@ function microRateCorrector(localToken) {
     const ta = audioPlayer.currentTime || 0;
     const dv = ta - tv;
 
-    // derrière => accélère un peu
     if (dv > 0.08) videoPlayer.playbackRate = 1.06;
     else if (dv < -0.08) videoPlayer.playbackRate = 0.94;
     else videoPlayer.playbackRate = 1.0;
@@ -733,10 +767,8 @@ async function autoStartPinned(localToken) {
     return finishRoundFailure("Audio B : échec après 6 tentatives.");
   }
 
-  // ---------- (D) Buffer gating (ahead) sur A ET B ----------
+  // ---------- (D) Buffer gating (progress-aware) sur A ET B ----------
   setMediaStatus("🔄 Synchronisation…");
-
-  // uniformiser: même si A=B et tout est instant, on garde un min délai
   const syncT0 = performance.now();
 
   // repin si besoin
@@ -757,8 +789,7 @@ async function autoStartPinned(localToken) {
     }
   }
 
-  // attendre buffer ahead
-  const okBufA = await waitBufferAhead(videoPlayer, LISTEN_START, BUFFER_AHEAD_SEC, BUFFER_WAIT_MS, localToken);
+  const okBufA = await waitBufferAheadSmart(videoPlayer, LISTEN_START, BUFFER_AHEAD_SEC, BUFFER_WAIT_MS, localToken);
   if (localToken !== roundToken) return;
   if (!okBufA) {
     pinnedA.ok = false;
@@ -766,7 +797,7 @@ async function autoStartPinned(localToken) {
     return autoStartPinned(localToken);
   }
 
-  const okBufB = await waitBufferAhead(audioPlayer, LISTEN_START, BUFFER_AHEAD_SEC, BUFFER_WAIT_MS, localToken);
+  const okBufB = await waitBufferAheadSmart(audioPlayer, LISTEN_START, BUFFER_AHEAD_SEC, BUFFER_WAIT_MS, localToken);
   if (localToken !== roundToken) return;
   if (!okBufB) {
     pinnedB.ok = false;
@@ -779,7 +810,6 @@ async function autoStartPinned(localToken) {
   clearSegment();
   lockForRound();
 
-  // start muted BOTH (masque l'indice "ça lag")
   const prevVMuted = videoPlayer.muted;
   const prevAMuted = audioPlayer.muted;
   videoPlayer.muted = true;
@@ -788,7 +818,6 @@ async function autoStartPinned(localToken) {
   try { videoPlayer.currentTime = LISTEN_START; } catch {}
   try { audioPlayer.currentTime = LISTEN_START; } catch {}
 
-  // on prépare le segment (stall watchdog + fin)
   armSegment(localToken);
 
   const res = await Promise.allSettled([videoPlayer.play(), audioPlayer.play()]);
@@ -796,31 +825,26 @@ async function autoStartPinned(localToken) {
 
   const reasons = res.filter(r => r.status === "rejected").map(r => r.reason);
   if (reasons.some(isNotAllowedError)) {
-    // autoplay bloqué => on ne reload pas, on attend un clic puis on tente play à nouveau
     setMediaStatus("▶️ Clique dans la carte pour lancer");
     const onTap = async () => {
       containerEl.removeEventListener("click", onTap);
       if (localToken !== roundToken) return;
 
       try {
-        // toujours muted pour l'arm sync
         videoPlayer.muted = true;
         audioPlayer.muted = true;
 
         await Promise.all([videoPlayer.play(), audioPlayer.play()]);
 
-        // attendre que les deux avancent
         const adv = await waitBothAdvance(localToken, LISTEN_START, START_ADVANCE_DELTA, START_ADVANCE_TIMEOUT_MS);
         if (!adv.ok) throw new Error("advance-timeout");
 
         snapVideoToAudio();
         microRateCorrector(localToken);
 
-        // min delay
         const left = MIN_SYNC_DELAY_MS - (performance.now() - syncT0);
         if (left > 0) await delay(left);
 
-        // on unmute seulement l'audio B
         videoPlayer.muted = true;
         audioPlayer.muted = false;
         applyVolume();
@@ -828,7 +852,6 @@ async function autoStartPinned(localToken) {
       } catch {
         stopPlayback();
         clearSegment();
-        // restore muted
         videoPlayer.muted = prevVMuted;
         audioPlayer.muted = prevAMuted;
         finishRoundFailure("Autoplay bloqué / impossible de lancer.");
@@ -861,14 +884,13 @@ async function autoStartPinned(localToken) {
     return autoStartPinned(localToken);
   }
 
-  // attendre que les deux aient réellement commencé (sinon ça part décalé)
   const adv = await waitBothAdvance(localToken, LISTEN_START, START_ADVANCE_DELTA, START_ADVANCE_TIMEOUT_MS);
   if (localToken !== roundToken) return;
 
   if (!adv.ok) {
     stopPlayback();
     clearSegment();
-    // retry uniquement celui qui n'avance pas
+
     if (adv.vOk === false) {
       pinnedA.ok = false;
       pinnedA.attempt = Math.min(pinnedA.attempt + 1, RETRY_DELAYS.length);
@@ -877,20 +899,18 @@ async function autoStartPinned(localToken) {
       pinnedB.ok = false;
       pinnedB.attempt = Math.min(pinnedB.attempt + 1, RETRY_DELAYS.length);
     }
+
     videoPlayer.muted = prevVMuted;
     audioPlayer.muted = prevAMuted;
     return autoStartPinned(localToken);
   }
 
-  // snap sync + micro correction rate
   snapVideoToAudio();
   microRateCorrector(localToken);
 
-  // min delay pour uniformiser A=B vs A!=B
   const left = MIN_SYNC_DELAY_MS - (performance.now() - syncT0);
   if (left > 0) await delay(left);
 
-  // unmute seulement l'audio
   videoPlayer.muted = true;
   audioPlayer.muted = false;
   applyVolume();
@@ -906,7 +926,7 @@ function endRoundAndMaybeNext(roundScore) {
     resultDiv.innerHTML += `
       <div style="margin-top:10px; font-weight:900; opacity:0.95;">
         ✅ Série terminée !<br>
-        Score total : <b>${totalScore}</b> / <b>${totalRounds * 3000}</b>
+        Score total : <b>${totalScore}</b> / <b>${totalRounds * MAX_SCORE}</b>
       </div>
     `;
 
@@ -949,7 +969,7 @@ function checkAnswer(userSaysMatch) {
       🎉 Bonne réponse !<br><b>${verdict}</b>
       <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
       <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
-      <div style="margin-top:8px;">Score : <b>${score}</b> / 3000</div>
+      <div style="margin-top:8px;">Score : <b>${score}</b> / ${MAX_SCORE}</div>
     `;
     resultDiv.className = "correct";
     updateScoreBar(score);
@@ -961,7 +981,7 @@ function checkAnswer(userSaysMatch) {
       Réponse correcte : <b>${verdict}</b>
       <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
       <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
-      <div style="margin-top:8px;">Score : <b>0</b> / 3000</div>
+      <div style="margin-top:8px;">Score : <b>0</b> / ${MAX_SCORE}</div>
     `;
     resultDiv.className = "incorrect";
     updateScoreBar(0);
