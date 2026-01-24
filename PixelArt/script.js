@@ -1,11 +1,8 @@
 /**********************
- * Pixel Art (Fix)
+ * Pixel Art (Harder + Grid VH + Puzzle déplacé)
  * - 3 manches : difficile -> moyen -> facile
- * - Pas de timer : avance sur guess raté OU bouton "Suivant"
- * - Effet random par round (reste le même sur les 3 manches)
- * - Fix : jamais d’image “en clair” pendant le jeu (classe .ready)
- * - Fix : overlays mosaic/blinds (pas de display:none inline)
- * - Effets beaucoup plus forts en manche 1
+ * - Avance sur guess raté OU bouton "Suivant"
+ * - 7 effets random par round
  **********************/
 
 const MAX_SCORE = 3000;
@@ -13,14 +10,15 @@ const STAGE_SCORES = [3000, 2000, 1000];
 const STAGE_NAMES = ["Difficile", "Moyen", "Facile"];
 const MIN_TITLES_TO_START = 64;
 
+// 7 effets (pixel + blurzoom + mosaic + gridVH + poster + puzzle + glitch)
 const EFFECTS = [
-  { id: "pixel",  label: "Pixel" },
-  { id: "blur",   label: "Flou" },
-  { id: "zoom",   label: "Zoom" },
-  { id: "mosaic", label: "Mosaïque" },
-  { id: "poster", label: "Poster" },
-  { id: "blinds", label: "Volets" },
-  { id: "glitch", label: "Glitch" },
+  { id: "pixel",    label: "Pixel" },
+  { id: "blurzoom", label: "Flou + Dézoom" },
+  { id: "mosaic",   label: "Mosaïque" },
+  { id: "grid",     label: "Quadrillage" },   // V + H
+  { id: "poster",   label: "Poster" },
+  { id: "puzzle",   label: "Puzzle" },        // morceaux déplacés
+  { id: "glitch",   label: "Glitch" },
 ];
 
 // ====== UI: menu + theme ======
@@ -144,7 +142,7 @@ let totalScore = 0;
 // ====== Round state ======
 let currentAnime = null;
 let currentEffect = null;
-let stage = 0; // 0..2
+let stage = 0;
 let gameEnded = false;
 
 // art nodes
@@ -153,12 +151,17 @@ let artImg = null;
 let artImgA = null;
 let artImgB = null;
 let artCanvas = null;
+
 let overlayMosaic = null;
-let overlayBlinds = null;
+let overlayGridV = null;
+let overlayGridH = null;
+let overlayPuzzle = null;
 
+// orders / maps
 let mosaicOrder = [];
-let blindsOrder = [];
-
+let gridVOrder = [];
+let gridHOrder = [];
+let puzzlePerm = []; // destination cell per piece (stage 1)
 let zoomDx = 0;
 let zoomDy = 0;
 
@@ -295,13 +298,12 @@ function ensureArtDOM() {
   container.innerHTML = "";
 
   artWrap = document.createElement("div");
-  artWrap.className = "art-wrap"; // pas de .ready => rien n’apparait
+  artWrap.className = "art-wrap";
 
   artImg = document.createElement("img");
   artImg.className = "art-img base";
   artImg.alt = "Cover anime";
 
-  // glitch layers (cachées par CSS sauf .effect-glitch)
   artImgA = document.createElement("img");
   artImgA.className = "art-img glitch-layer";
   artImgA.alt = "";
@@ -315,16 +317,29 @@ function ensureArtDOM() {
 
   overlayMosaic = document.createElement("div");
   overlayMosaic.id = "overlayMosaic";
+  overlayMosaic.className = "overlay";
 
-  overlayBlinds = document.createElement("div");
-  overlayBlinds.id = "overlayBlinds";
+  overlayGridV = document.createElement("div");
+  overlayGridV.id = "overlayGridV";
+  overlayGridV.className = "overlay";
+
+  overlayGridH = document.createElement("div");
+  overlayGridH.id = "overlayGridH";
+  overlayGridH.className = "overlay";
+
+  overlayPuzzle = document.createElement("div");
+  overlayPuzzle.id = "overlayPuzzle";
+  overlayPuzzle.className = "overlay";
 
   artWrap.appendChild(artImg);
   artWrap.appendChild(artImgA);
   artWrap.appendChild(artImgB);
   artWrap.appendChild(artCanvas);
+
   artWrap.appendChild(overlayMosaic);
-  artWrap.appendChild(overlayBlinds);
+  artWrap.appendChild(overlayGridV);
+  artWrap.appendChild(overlayGridH);
+  artWrap.appendChild(overlayPuzzle);
 
   container.appendChild(artWrap);
 }
@@ -332,23 +347,28 @@ function ensureArtDOM() {
 function resetVisualState() {
   if (!artWrap) return;
 
-  // reset classes (on garde juste art-wrap, la visibilité se fait via .ready)
   artWrap.className = "art-wrap";
+  artWrap.classList.remove("ready");
 
-  // reset vars
   [
-    "--blur","--scale","--dx","--dy","--zblur",
+    "--blur","--scale","--dx","--dy",
     "--gs","--ct","--br","--sat","--gAlpha","--ghue","--gdx","--gdy","--gblur"
   ].forEach(v => artWrap.style.removeProperty(v));
 
-  // hide glitch layers
   artImgA.style.opacity = "0";
   artImgB.style.opacity = "0";
   artImgB.style.transform = "";
 
-  // remove show classes (sans casser le DOM)
-  overlayMosaic.querySelectorAll(".tile.show").forEach(x => x.classList.remove("show"));
-  overlayBlinds.querySelectorAll(".strip.show").forEach(x => x.classList.remove("show"));
+  // reset overlays
+  [overlayMosaic, overlayGridV, overlayGridH, overlayPuzzle].forEach(ov => {
+    ov.style.display = "none";
+    ov.innerHTML = "";
+  });
+
+  mosaicOrder = [];
+  gridVOrder = [];
+  gridHOrder = [];
+  puzzlePerm = [];
 }
 
 // ====== Round UI ======
@@ -373,11 +393,11 @@ function resetRoundUI() {
   setScoreBar(STAGE_SCORES[0]);
 }
 
-// ====== Load images ======
+// ====== Load image ======
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous"; // utile pour canvas si le serveur autorise
+    img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error("Image load failed"));
     img.src = src;
@@ -393,24 +413,19 @@ async function startNewRound() {
   currentEffect = pickRandom(EFFECTS);
 
   feedback.textContent = "⏳ Chargement de l'image...";
-  feedback.className = "";
 
-  zoomDx = (Math.random() * 2 - 1) * 120;
-  zoomDy = (Math.random() * 2 - 1) * 120;
+  zoomDx = (Math.random() * 2 - 1) * 140;
+  zoomDy = (Math.random() * 2 - 1) * 140;
 
   try {
     const loaded = await loadImage(currentAnime.image);
 
-    // set all sources
     artImg.src = loaded.src;
     artImgA.src = loaded.src;
     artImgB.src = loaded.src;
     artWrap._loadedImage = loaded;
 
-    // build overlays only if needed
-    buildOverlaysOnce();
-
-    // APPLY effect + show (ready)
+    buildEffectOverlay();
     applyStage();
 
     feedback.textContent = "";
@@ -434,14 +449,13 @@ async function startNewRound() {
   }
 }
 
-function buildOverlaysOnce() {
-  overlayMosaic.innerHTML = "";
-  overlayBlinds.innerHTML = "";
-  mosaicOrder = [];
-  blindsOrder = [];
+function buildEffectOverlay() {
+  // On construit uniquement ce qu’il faut pour l’effet choisi
+  const src = artImg.src;
 
   if (currentEffect.id === "mosaic") {
-    const cols = 6, rows = 8; // 48 cases => plus dur
+    const cols = 8, rows = 10; // 80 tuiles => plus dur
+    overlayMosaic.style.display = "grid";
     overlayMosaic.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
     overlayMosaic.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
 
@@ -449,7 +463,7 @@ function buildOverlaysOnce() {
       for (let c = 0; c < cols; c++) {
         const tile = document.createElement("div");
         tile.className = "tile";
-        tile.style.backgroundImage = `url("${artImg.src}")`;
+        tile.style.backgroundImage = `url("${src}")`;
         tile.style.backgroundSize = `${cols * 100}% ${rows * 100}%`;
         tile.style.backgroundPosition = `${(c / (cols - 1)) * 100}% ${(r / (rows - 1)) * 100}%`;
         overlayMosaic.appendChild(tile);
@@ -459,21 +473,72 @@ function buildOverlaysOnce() {
     shuffleInPlace(mosaicOrder);
   }
 
-  if (currentEffect.id === "blinds") {
-    const strips = 16; // plus dur
-    overlayBlinds.style.gridTemplateColumns = `repeat(${strips}, 1fr)`;
-    overlayBlinds.style.gridTemplateRows = `1fr`;
+  if (currentEffect.id === "grid") {
+    // Quadrillage V + H (bandes verticales + horizontales)
+    const v = 16; // vertical stripes
+    const h = 12; // horizontal stripes
 
-    for (let i = 0; i < strips; i++) {
+    overlayGridV.style.display = "grid";
+    overlayGridV.style.gridTemplateColumns = `repeat(${v}, 1fr)`;
+    overlayGridV.style.gridTemplateRows = `1fr`;
+
+    overlayGridH.style.display = "grid";
+    overlayGridH.style.gridTemplateColumns = `1fr`;
+    overlayGridH.style.gridTemplateRows = `repeat(${h}, 1fr)`;
+
+    for (let i = 0; i < v; i++) {
       const strip = document.createElement("div");
       strip.className = "strip";
-      strip.style.backgroundImage = `url("${artImg.src}")`;
-      strip.style.backgroundSize = `${strips * 100}% 100%`;
-      strip.style.backgroundPosition = `${(i / (strips - 1)) * 100}% 50%`;
-      overlayBlinds.appendChild(strip);
-      blindsOrder.push(i);
+      strip.style.backgroundImage = `url("${src}")`;
+      strip.style.backgroundSize = `${v * 100}% 100%`;
+      strip.style.backgroundPosition = `${(i / (v - 1)) * 100}% 50%`;
+      overlayGridV.appendChild(strip);
+      gridVOrder.push(i);
     }
-    shuffleInPlace(blindsOrder);
+
+    for (let j = 0; j < h; j++) {
+      const strip = document.createElement("div");
+      strip.className = "strip";
+      strip.style.backgroundImage = `url("${src}")`;
+      strip.style.backgroundSize = `100% ${h * 100}%`;
+      strip.style.backgroundPosition = `50% ${(j / (h - 1)) * 100}%`;
+      overlayGridH.appendChild(strip);
+      gridHOrder.push(j);
+    }
+
+    shuffleInPlace(gridVOrder);
+    shuffleInPlace(gridHOrder);
+  }
+
+  if (currentEffect.id === "puzzle") {
+    // Puzzle déplacé: on met les morceaux dans de mauvaises cases
+    const cols = 4, rows = 6;
+    const n = cols * rows;
+
+    overlayPuzzle.style.display = "grid";
+    overlayPuzzle.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    overlayPuzzle.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+    overlayPuzzle.style.gap = "6px";
+    overlayPuzzle.style.padding = "8px";
+
+    // permutation de destination
+    puzzlePerm = Array.from({ length: n }, (_, i) => i);
+    shuffleInPlace(puzzlePerm);
+
+    for (let i = 0; i < n; i++) {
+      const piece = document.createElement("div");
+      piece.className = "piece";
+
+      // contenu = morceau i (position d’origine)
+      const r = Math.floor(i / cols);
+      const c = i % cols;
+
+      piece.style.backgroundImage = `url("${src}")`;
+      piece.style.backgroundSize = `${cols * 100}% ${rows * 100}%`;
+      piece.style.backgroundPosition = `${(c / (cols - 1)) * 100}% ${(r / (rows - 1)) * 100}%`;
+
+      overlayPuzzle.appendChild(piece);
+    }
   }
 }
 
@@ -481,14 +546,30 @@ function buildOverlaysOnce() {
 function applyStage() {
   if (!currentAnime || !currentEffect || !artWrap) return;
 
-  resetVisualState();
+  // reset classes but keep overlays already built
+  artWrap.className = "art-wrap";
+  artWrap.style.removeProperty("--blur");
+  artWrap.style.removeProperty("--scale");
+  artWrap.style.removeProperty("--dx");
+  artWrap.style.removeProperty("--dy");
+
+  artWrap.style.removeProperty("--gs");
+  artWrap.style.removeProperty("--ct");
+  artWrap.style.removeProperty("--br");
+  artWrap.style.removeProperty("--sat");
+  artWrap.style.removeProperty("--gAlpha");
+  artWrap.style.removeProperty("--ghue");
+  artWrap.style.removeProperty("--gdx");
+  artWrap.style.removeProperty("--gdy");
+  artWrap.style.removeProperty("--gblur");
+
+  artImgA.style.opacity = "0";
+  artImgB.style.opacity = "0";
+  artImgB.style.transform = "";
 
   // score + info
   setScoreBar(currentPotentialScore());
   infoLine.textContent = `Manche ${stage + 1}/3 — ${STAGE_NAMES[stage]} — Effet : ${currentEffect.label}`;
-
-  // set effect class
-  artWrap.classList.add(`effect-${currentEffect.id}`);
 
   // bouton suivant
   if (!gameEnded) {
@@ -497,47 +578,97 @@ function applyStage() {
   }
 
   const id = currentEffect.id;
+  artWrap.classList.add(`effect-${id}`);
 
-  // ===== intensités plus violentes =====
-  if (id === "blur") {
-    const blur = [46, 22, 8][stage];
+  // ==== Intensités HARD ====
+  if (id === "blurzoom") {
+    // stage 1: énorme blur + zoom serré
+    const blur  = [40, 18, 7][stage];
+    const scale = [8.5, 3.8, 1.55][stage];
+    const mult  = [1.0, 0.55, 0.18][stage];
     artWrap.style.setProperty("--blur", `${blur}px`);
-  }
-
-  if (id === "zoom") {
-    const scale = [7.2, 3.6, 1.6][stage];
-    const mult  = [1.0, 0.55, 0.20][stage];
-    const zblur = [3.5, 1.5, 0][stage];
     artWrap.style.setProperty("--scale", `${scale}`);
     artWrap.style.setProperty("--dx", `${zoomDx * mult}px`);
     artWrap.style.setProperty("--dy", `${zoomDy * mult}px`);
-    artWrap.style.setProperty("--zblur", `${zblur}px`);
   }
 
   if (id === "mosaic") {
-    const revealN = [1, 8, 22][stage]; // sur 48
+    // stage 1: quasi rien visible
+    const revealN = [2, 14, 42][stage]; // sur 80
     const tiles = overlayMosaic.querySelectorAll(".tile");
+    tiles.forEach(t => t.classList.remove("show"));
     for (let i = 0; i < Math.min(revealN, mosaicOrder.length); i++) {
       const idx = mosaicOrder[i];
       if (tiles[idx]) tiles[idx].classList.add("show");
     }
   }
 
-  if (id === "blinds") {
-    const revealN = [1, 4, 10][stage]; // sur 16
-    const strips = overlayBlinds.querySelectorAll(".strip");
-    for (let i = 0; i < Math.min(revealN, blindsOrder.length); i++) {
-      const idx = blindsOrder[i];
-      if (strips[idx]) strips[idx].classList.add("show");
+  if (id === "grid") {
+    // Quadrillage = bandes verticales + horizontales
+    const vShow = [1, 4, 8][stage];
+    const hShow = [1, 3, 7][stage];
+
+    const vStrips = overlayGridV.querySelectorAll(".strip");
+    const hStrips = overlayGridH.querySelectorAll(".strip");
+    vStrips.forEach(s => s.classList.remove("show"));
+    hStrips.forEach(s => s.classList.remove("show"));
+
+    for (let i = 0; i < Math.min(vShow, gridVOrder.length); i++) {
+      const idx = gridVOrder[i];
+      if (vStrips[idx]) vStrips[idx].classList.add("show");
+    }
+    for (let j = 0; j < Math.min(hShow, gridHOrder.length); j++) {
+      const idx = gridHOrder[j];
+      if (hStrips[idx]) hStrips[idx].classList.add("show");
+    }
+  }
+
+  if (id === "puzzle") {
+    // Stage 1: presque tout mal placé
+    // Stage 2: 50% corrigé
+    // Stage 3: 80% corrigé
+    const keepRatio = [0.10, 0.50, 0.80][stage];
+
+    const pieces = overlayPuzzle.querySelectorAll(".piece");
+    const cols = 4, rows = 6;
+    const n = cols * rows;
+
+    // indices qu’on garde à la bonne place
+    const keepCount = Math.floor(n * keepRatio);
+    const idxs = Array.from({ length: n }, (_, i) => i);
+    shuffleInPlace(idxs);
+    const keepSet = new Set(idxs.slice(0, keepCount));
+
+    for (let i = 0; i < n; i++) {
+      const piece = pieces[i];
+      if (!piece) continue;
+
+      // destination (cell index)
+      const dest = keepSet.has(i) ? i : puzzlePerm[i];
+
+      // placer la pièce dans la grille (déplacement réel)
+      const dr = Math.floor(dest / cols);
+      const dc = dest % cols;
+
+      piece.style.gridRow = `${dr + 1}`;
+      piece.style.gridColumn = `${dc + 1}`;
+
+      // petit jitter en stage 1/2 pour rendre plus “puzzle”
+      const jitter = [10, 5, 0][stage];
+      const rx = (Math.random() * 2 - 1) * jitter;
+      const ry = (Math.random() * 2 - 1) * jitter;
+      const rot = (Math.random() * 2 - 1) * (stage === 0 ? 6 : stage === 1 ? 3 : 0);
+      piece.style.transform = `translate(${rx}px, ${ry}px) rotate(${rot}deg)`;
     }
   }
 
   if (id === "glitch") {
-    const gs    = [1.0, 0.75, 0.20][stage];
-    const ct    = [2.35, 1.70, 1.12][stage];
-    const br    = [0.72, 0.90, 1.00][stage];
-    const sat   = [0.35, 0.75, 1.00][stage];
-    const gblur = [2.2, 1.0, 0][stage];
+    // plus violent (mais jouable)
+    const gs    = [1.0, 0.70, 0.20][stage];
+    const ct    = [2.6, 1.8, 1.12][stage];
+    const br    = [0.65, 0.88, 1.00][stage];
+    const sat   = [0.25, 0.65, 1.00][stage];
+    const gblur = [2.8, 1.2, 0][stage];
 
     artWrap.style.setProperty("--gs", `${gs}`);
     artWrap.style.setProperty("--ct", `${ct}`);
@@ -545,42 +676,47 @@ function applyStage() {
     artWrap.style.setProperty("--sat", `${sat}`);
     artWrap.style.setProperty("--gblur", `${gblur}px`);
 
-    const gAlpha = [0.60, 0.34, 0.12][stage];
+    const gAlpha = [0.65, 0.35, 0.12][stage];
     artWrap.style.setProperty("--gAlpha", `${gAlpha}`);
 
-    const off = [16, 8, 2][stage];
+    const off = [22, 10, 2][stage];
     artWrap.style.setProperty("--gdx", `${off}px`);
     artWrap.style.setProperty("--gdy", `${-off}px`);
-    artWrap.style.setProperty("--ghue", `${[75, 35, 0][stage]}deg`);
+    artWrap.style.setProperty("--ghue", `${[90, 35, 0][stage]}deg`);
 
     artImgA.style.opacity = "1";
     artImgB.style.opacity = "1";
     artImgB.style.transform = `translate(${-off}px, ${off}px)`;
   }
 
-  if (id === "pixel" || id === "poster") {
+  if (id === "pixel") {
     artWrap.classList.add("use-canvas");
-    const img = artWrap._loadedImage;
-
     try {
-      if (id === "pixel") {
-        // plus pixelisé (plus petit = plus dur)
-        const samples = [6, 14, 34][stage];
-        renderPixelated(img, samples);
-      } else {
-        // poster très rude
-        const levels = [2, 4, 8][stage];
-        renderPosterize(img, levels);
-      }
+      const samples = [4, 8, 18][stage]; // plus dur
+      renderPixelated(artWrap._loadedImage, samples);
     } catch (e) {
-      // fallback dur: blur si posterize bloqué par CORS
-      currentEffect = EFFECTS.find(x => x.id === "blur") || currentEffect;
+      // fallback si CORS bloque: blurzoom
+      currentEffect = EFFECTS.find(x => x.id === "blurzoom") || currentEffect;
       applyStage();
       return;
     }
   }
 
-  // FIN : on rend visible tout le bloc (évite le flash clair)
+  if (id === "poster") {
+    artWrap.classList.add("use-canvas");
+    try {
+      // poster + petite pixelation (très dur)
+      const levels = [2, 3, 6][stage];
+      const px = [10, 18, 34][stage];
+      renderPosterPixel(artWrap._loadedImage, levels, px);
+    } catch (e) {
+      currentEffect = EFFECTS.find(x => x.id === "blurzoom") || currentEffect;
+      applyStage();
+      return;
+    }
+  }
+
+  // afficher une fois que tout est prêt
   artWrap.classList.add("ready");
 }
 
@@ -609,8 +745,8 @@ function endRound(roundScore, won, messageHtml) {
   gameEnded = true;
 
   // afficher en clair à la fin
-  resetVisualState();
   artWrap.className = "art-wrap ready";
+  artImg.style.opacity = "1";
 
   input.disabled = true;
   submitBtn.disabled = true;
@@ -712,7 +848,6 @@ input.addEventListener("input", function () {
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) checkGuess();
 });
-
 submitBtn.addEventListener("click", checkGuess);
 
 // ====== Tooltip ======
@@ -748,8 +883,8 @@ function renderPixelated(img, samples) {
   const offCtx = off.getContext("2d");
 
   const ratio = h / w;
-  off.width = Math.max(4, samples);
-  off.height = Math.max(4, Math.floor(samples * ratio));
+  off.width = Math.max(3, samples);
+  off.height = Math.max(3, Math.floor(samples * ratio));
 
   offCtx.imageSmoothingEnabled = true;
   offCtx.clearRect(0, 0, off.width, off.height);
@@ -760,20 +895,34 @@ function renderPixelated(img, samples) {
   ctx.drawImage(off, 0, 0, w, h);
 }
 
-function renderPosterize(img, levels) {
+function renderPosterPixel(img, levels, px) {
+  // 1) d’abord on pixelise (petit offscreen)
   fitCanvasToWrap();
-  const ctx = artCanvas.getContext("2d", { willReadFrequently: true });
   const w = artCanvas.width;
   const h = artCanvas.height;
 
-  ctx.imageSmoothingEnabled = true;
-  ctx.clearRect(0, 0, w, h);
-  ctx.drawImage(img, 0, 0, w, h);
+  const ratio = h / w;
+  const smallW = Math.max(6, px);
+  const smallH = Math.max(6, Math.floor(px * ratio));
 
+  const off = document.createElement("canvas");
+  off.width = smallW;
+  off.height = smallH;
+  const offCtx = off.getContext("2d");
+  offCtx.imageSmoothingEnabled = true;
+  offCtx.drawImage(img, 0, 0, smallW, smallH);
+
+  // 2) on upscale sans smoothing
+  const ctx = artCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(off, 0, 0, w, h);
+
+  // 3) posterize dur
   const imageData = ctx.getImageData(0, 0, w, h);
   const data = imageData.data;
-
   const step = 255 / Math.max(1, (levels - 1));
+
   for (let i = 0; i < data.length; i += 4) {
     data[i]     = Math.round(data[i] / step) * step;
     data[i + 1] = Math.round(data[i + 1] / step) * step;
@@ -839,7 +988,6 @@ fetch("../data/licenses_only.json")
       return {
         ...a,
         _title: title,
-        _titleLower: title.toLowerCase(),
         _year: getYear(a),
         _members: Number.isFinite(+a.members) ? +a.members : 0,
         _score: Number.isFinite(+a.score) ? +a.score : 0,
