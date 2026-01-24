@@ -13,6 +13,7 @@
     <div class="header-inner">
       <button id="back-to-menu" class="menu-btn">⬅️ Menu</button>
       <h1>🖼️ Pixel Art 🖼️</h1>
+
       <div class="header-right">
         <button id="themeToggle" class="toggle-btn">🌓</button>
 
@@ -26,8 +27,8 @@
           <span class="info-tip" id="help-pixelart" role="tooltip">
             Devine l’anime à partir de sa cover modifiée.<br>
             3 manches (difficile → facile).<br>
-            Un nouvel indice apparaît après un essai raté ou en cliquant sur “Suivant”.<br>
-            L’effet est choisi aléatoirement à chaque round.
+            Manche suivante après un essai raté ou en cliquant “Suivant”.<br>
+            L’effet est aléatoire à chaque round.
           </span>
         </span>
       </div>
@@ -38,7 +39,6 @@
   <div id="custom-panel" class="main-container">
     <h2>⚙️ Personnalisation</h2>
 
-    <!-- Mode (Animes uniquement) -->
     <div class="opt-row">
       <div class="opt-label">Mode</div>
       <div class="opt-col">
@@ -49,7 +49,6 @@
       <div class="opt-value"></div>
     </div>
 
-    <!-- Popularité -->
     <div class="opt-row">
       <div class="opt-label">Popularité</div>
       <div class="opt-col">
@@ -58,7 +57,6 @@
       <div class="opt-value">Top <span id="popPercentVal">30</span>%</div>
     </div>
 
-    <!-- Score -->
     <div class="opt-row">
       <div class="opt-label">Score</div>
       <div class="opt-col">
@@ -67,7 +65,6 @@
       <div class="opt-value">Top <span id="scorePercentVal">100</span>%</div>
     </div>
 
-    <!-- Années (2 barres sur la même ligne) -->
     <div class="opt-row">
       <div class="opt-label">Années</div>
       <div class="opt-col">
@@ -79,7 +76,6 @@
       <div class="opt-value"><span id="yearMinVal">1950</span> → <span id="yearMaxVal">2026</span></div>
     </div>
 
-    <!-- Types -->
     <div class="opt-row">
       <div class="opt-label">Types</div>
       <div class="opt-col">
@@ -94,10 +90,8 @@
       <div class="opt-value"></div>
     </div>
 
-    <!-- Preview count -->
     <div id="previewCount" class="preview-count bad"> ⏳ Chargement de la base… </div>
 
-    <!-- Rounds -->
     <div class="opt-row">
       <div class="opt-label">Rounds</div>
       <div class="opt-col"></div>
@@ -115,8 +109,6 @@
   <!-- JEU -->
   <div id="game-panel" style="display:none;">
     <div id="container">
-
-      <!-- SCORE -->
       <div id="score-bar-container">
         <div id="score-bar"></div>
         <span id="score-bar-label">3000 / 3000</span>
@@ -124,8 +116,8 @@
 
       <div id="roundLabel"></div>
 
-      <!-- Affichage cover modifiée -->
-      <div id="character-container" class="grid-2"></div>
+      <!-- Zone cover -->
+      <div id="character-container"></div>
 
       <div id="controls">
         <div class="input-container">
@@ -135,7 +127,7 @@
 
         <div class="btn-row">
           <button id="submit-btn" disabled>Valider</button>
-          <button id="restart-btn">Suivant</button>
+          <button id="restart-btn" disabled>Suivant</button>
         </div>
       </div>
 
@@ -147,7 +139,6 @@
   </div>
 
   <footer> © 2025 mastermanga </footer>
-
   <script src="script.js"></script>
 </body>
 </html>
