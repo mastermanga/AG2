@@ -1,8 +1,9 @@
 /**********************
- * Pixel Art (Harder + Grid VH + Puzzle déplacé)
+ * Pixel Art
  * - 3 manches : difficile -> moyen -> facile
  * - Avance sur guess raté OU bouton "Suivant"
  * - 7 effets random par round
+ * - Recalibrage difficulté (ancien moyen => hard, ancien facile => medium, + nouveau easy)
  **********************/
 
 const MAX_SCORE = 3000;
@@ -10,15 +11,14 @@ const STAGE_SCORES = [3000, 2000, 1000];
 const STAGE_NAMES = ["Difficile", "Moyen", "Facile"];
 const MIN_TITLES_TO_START = 64;
 
-// 7 effets (pixel + blurzoom + mosaic + gridVH + poster + puzzle + glitch)
 const EFFECTS = [
   { id: "pixel",    label: "Pixel" },
   { id: "blurzoom", label: "Flou + Dézoom" },
   { id: "mosaic",   label: "Mosaïque" },
   { id: "grid",     label: "Quadrillage" },   // V + H
-  { id: "poster",   label: "Poster" },
-  { id: "puzzle",   label: "Puzzle" },        // morceaux déplacés
-  { id: "glitch",   label: "Glitch" },
+  { id: "poster",   label: "Poster / Contraste" },
+  { id: "puzzle",   label: "Puzzle" },        // morceaux déplacés + masques
+  { id: "glitch",   label: "Glitch" },        // canvas glitch slices + masks
 ];
 
 // ====== UI: menu + theme ======
@@ -148,8 +148,6 @@ let gameEnded = false;
 // art nodes
 let artWrap = null;
 let artImg = null;
-let artImgA = null;
-let artImgB = null;
 let artCanvas = null;
 
 let overlayMosaic = null;
@@ -157,11 +155,15 @@ let overlayGridV = null;
 let overlayGridH = null;
 let overlayPuzzle = null;
 
-// orders / maps
+// orders / maps (stables par round)
 let mosaicOrder = [];
 let gridVOrder = [];
 let gridHOrder = [];
-let puzzlePerm = []; // destination cell per piece (stage 1)
+
+let puzzlePerm = [];
+let puzzleKeepOrder = [];
+let puzzleHideOrder = [];
+
 let zoomDx = 0;
 let zoomDy = 0;
 
@@ -304,14 +306,6 @@ function ensureArtDOM() {
   artImg.className = "art-img base";
   artImg.alt = "Cover anime";
 
-  artImgA = document.createElement("img");
-  artImgA.className = "art-img glitch-layer";
-  artImgA.alt = "";
-
-  artImgB = document.createElement("img");
-  artImgB.className = "art-img glitch-layer";
-  artImgB.alt = "";
-
   artCanvas = document.createElement("canvas");
   artCanvas.id = "artCanvas";
 
@@ -332,10 +326,7 @@ function ensureArtDOM() {
   overlayPuzzle.className = "overlay";
 
   artWrap.appendChild(artImg);
-  artWrap.appendChild(artImgA);
-  artWrap.appendChild(artImgB);
   artWrap.appendChild(artCanvas);
-
   artWrap.appendChild(overlayMosaic);
   artWrap.appendChild(overlayGridV);
   artWrap.appendChild(overlayGridH);
@@ -350,15 +341,6 @@ function resetVisualState() {
   artWrap.className = "art-wrap";
   artWrap.classList.remove("ready");
 
-  [
-    "--blur","--scale","--dx","--dy",
-    "--gs","--ct","--br","--sat","--gAlpha","--ghue","--gdx","--gdy","--gblur"
-  ].forEach(v => artWrap.style.removeProperty(v));
-
-  artImgA.style.opacity = "0";
-  artImgB.style.opacity = "0";
-  artImgB.style.transform = "";
-
   // reset overlays
   [overlayMosaic, overlayGridV, overlayGridH, overlayPuzzle].forEach(ov => {
     ov.style.display = "none";
@@ -368,7 +350,10 @@ function resetVisualState() {
   mosaicOrder = [];
   gridVOrder = [];
   gridHOrder = [];
+
   puzzlePerm = [];
+  puzzleKeepOrder = [];
+  puzzleHideOrder = [];
 }
 
 // ====== Round UI ======
@@ -421,8 +406,6 @@ async function startNewRound() {
     const loaded = await loadImage(currentAnime.image);
 
     artImg.src = loaded.src;
-    artImgA.src = loaded.src;
-    artImgB.src = loaded.src;
     artWrap._loadedImage = loaded;
 
     buildEffectOverlay();
@@ -450,11 +433,10 @@ async function startNewRound() {
 }
 
 function buildEffectOverlay() {
-  // On construit uniquement ce qu’il faut pour l’effet choisi
   const src = artImg.src;
 
   if (currentEffect.id === "mosaic") {
-    const cols = 8, rows = 10; // 80 tuiles => plus dur
+    const cols = 8, rows = 10; // 80 tuiles
     overlayMosaic.style.display = "grid";
     overlayMosaic.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
     overlayMosaic.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
@@ -474,9 +456,8 @@ function buildEffectOverlay() {
   }
 
   if (currentEffect.id === "grid") {
-    // Quadrillage V + H (bandes verticales + horizontales)
-    const v = 16; // vertical stripes
-    const h = 12; // horizontal stripes
+    const v = 16;
+    const h = 12;
 
     overlayGridV.style.display = "grid";
     overlayGridV.style.gridTemplateColumns = `repeat(${v}, 1fr)`;
@@ -511,7 +492,6 @@ function buildEffectOverlay() {
   }
 
   if (currentEffect.id === "puzzle") {
-    // Puzzle déplacé: on met les morceaux dans de mauvaises cases
     const cols = 4, rows = 6;
     const n = cols * rows;
 
@@ -521,15 +501,18 @@ function buildEffectOverlay() {
     overlayPuzzle.style.gap = "6px";
     overlayPuzzle.style.padding = "8px";
 
-    // permutation de destination
     puzzlePerm = Array.from({ length: n }, (_, i) => i);
     shuffleInPlace(puzzlePerm);
+
+    puzzleKeepOrder = Array.from({ length: n }, (_, i) => i);
+    puzzleHideOrder = Array.from({ length: n }, (_, i) => i);
+    shuffleInPlace(puzzleKeepOrder);
+    shuffleInPlace(puzzleHideOrder);
 
     for (let i = 0; i < n; i++) {
       const piece = document.createElement("div");
       piece.className = "piece";
 
-      // contenu = morceau i (position d’origine)
       const r = Math.floor(i / cols);
       const c = i % cols;
 
@@ -546,26 +529,8 @@ function buildEffectOverlay() {
 function applyStage() {
   if (!currentAnime || !currentEffect || !artWrap) return;
 
-  // reset classes but keep overlays already built
   artWrap.className = "art-wrap";
-  artWrap.style.removeProperty("--blur");
-  artWrap.style.removeProperty("--scale");
-  artWrap.style.removeProperty("--dx");
-  artWrap.style.removeProperty("--dy");
-
-  artWrap.style.removeProperty("--gs");
-  artWrap.style.removeProperty("--ct");
-  artWrap.style.removeProperty("--br");
-  artWrap.style.removeProperty("--sat");
-  artWrap.style.removeProperty("--gAlpha");
-  artWrap.style.removeProperty("--ghue");
-  artWrap.style.removeProperty("--gdx");
-  artWrap.style.removeProperty("--gdy");
-  artWrap.style.removeProperty("--gblur");
-
-  artImgA.style.opacity = "0";
-  artImgB.style.opacity = "0";
-  artImgB.style.transform = "";
+  artWrap.classList.remove("ready");
 
   // score + info
   setScoreBar(currentPotentialScore());
@@ -580,21 +545,36 @@ function applyStage() {
   const id = currentEffect.id;
   artWrap.classList.add(`effect-${id}`);
 
-  // ==== Intensités HARD ====
+  // ===== Difficile/Moyen/Facile recalibré =====
+  // Pixel : ancien [4,8,18] -> nouveau [8,18,36]
+  if (id === "pixel") {
+    artWrap.classList.add("use-canvas");
+    try {
+      const samples = [8, 18, 36][stage];
+      renderPixelated(artWrap._loadedImage, samples);
+    } catch (e) {
+      // fallback
+      currentEffect = EFFECTS.find(x => x.id === "blurzoom") || currentEffect;
+      applyStage();
+      return;
+    }
+  }
+
+  // BlurZoom : ancien très violent -> baisse (hard=ancien moyen)
   if (id === "blurzoom") {
-    // stage 1: énorme blur + zoom serré
-    const blur  = [40, 18, 7][stage];
-    const scale = [8.5, 3.8, 1.55][stage];
-    const mult  = [1.0, 0.55, 0.18][stage];
+    const blur  = [18, 7, 2.4][stage];
+    const scale = [3.8, 1.55, 1.12][stage];
+    const mult  = [0.55, 0.18, 0.06][stage];
+
     artWrap.style.setProperty("--blur", `${blur}px`);
     artWrap.style.setProperty("--scale", `${scale}`);
     artWrap.style.setProperty("--dx", `${zoomDx * mult}px`);
     artWrap.style.setProperty("--dy", `${zoomDy * mult}px`);
   }
 
+  // Mosaic : hard=ancien moyen, medium=ancien facile, + nouveau easy
   if (id === "mosaic") {
-    // stage 1: quasi rien visible
-    const revealN = [2, 14, 42][stage]; // sur 80
+    const revealN = [14, 42, 68][stage]; // sur 80
     const tiles = overlayMosaic.querySelectorAll(".tile");
     tiles.forEach(t => t.classList.remove("show"));
     for (let i = 0; i < Math.min(revealN, mosaicOrder.length); i++) {
@@ -603,10 +583,10 @@ function applyStage() {
     }
   }
 
+  // Grid V/H : hard plus caché
   if (id === "grid") {
-    // Quadrillage = bandes verticales + horizontales
-    const vShow = [1, 4, 8][stage];
-    const hShow = [1, 3, 7][stage];
+    const vShow = [3, 8, 12][stage];
+    const hShow = [2, 7, 10][stage];
 
     const vStrips = overlayGridV.querySelectorAll(".strip");
     const hStrips = overlayGridH.querySelectorAll(".strip");
@@ -623,92 +603,87 @@ function applyStage() {
     }
   }
 
-  if (id === "puzzle") {
-    // Stage 1: presque tout mal placé
-    // Stage 2: 50% corrigé
-    // Stage 3: 80% corrigé
-    const keepRatio = [0.10, 0.50, 0.80][stage];
+  // Poster/Contraste : durci + anti-image-plate + nouveau easy
+  if (id === "poster") {
+    artWrap.classList.add("use-canvas");
+    try {
+      const opts = [
+        // Difficile (plus “mystère” mais jamais uni)
+        { px: 14, levels: 6, contrast: 1.55, brightness: 0.92, gamma: 0.88, sat: 0.35, noise: 14, dither: 0.55, vignette: 0.38 },
+        // Moyen
+        { px: 24, levels: 9, contrast: 1.25, brightness: 0.98, gamma: 0.95, sat: 0.65, noise: 10, dither: 0.35, vignette: 0.28 },
+        // Facile (nouveau)
+        { px: 40, levels: 14, contrast: 1.08, brightness: 1.02, gamma: 1.00, sat: 0.88, noise: 6, dither: 0.18, vignette: 0.16 },
+      ][stage];
 
-    const pieces = overlayPuzzle.querySelectorAll(".piece");
+      renderPosterMystery(artWrap._loadedImage, opts);
+    } catch (e) {
+      currentEffect = EFFECTS.find(x => x.id === "blurzoom") || currentEffect;
+      applyStage();
+      return;
+    }
+  }
+
+  // Puzzle : hard = plus de pièces cachées + scramble
+  if (id === "puzzle") {
     const cols = 4, rows = 6;
     const n = cols * rows;
 
-    // indices qu’on garde à la bonne place
-    const keepCount = Math.floor(n * keepRatio);
-    const idxs = Array.from({ length: n }, (_, i) => i);
-    shuffleInPlace(idxs);
-    const keepSet = new Set(idxs.slice(0, keepCount));
+    // progression stable + plus caché en hard
+    const correctRatio = [0.65, 0.85, 0.95][stage];
+    const visibleRatio = [0.55, 0.82, 0.97][stage];
+    const jitter = [10, 5, 0][stage];
+    const rotMax = [6, 3, 0][stage];
 
+    const keepCount = Math.floor(n * correctRatio);
+    const hideCount = Math.floor(n * (1 - visibleRatio));
+
+    const keepSet = new Set(puzzleKeepOrder.slice(0, keepCount));
+    const hideSet = new Set(puzzleHideOrder.slice(0, hideCount));
+
+    const pieces = overlayPuzzle.querySelectorAll(".piece");
     for (let i = 0; i < n; i++) {
       const piece = pieces[i];
       if (!piece) continue;
 
-      // destination (cell index)
-      const dest = keepSet.has(i) ? i : puzzlePerm[i];
+      const hidden = hideSet.has(i);
+      piece.style.opacity = hidden ? "0" : "1";
+      piece.style.pointerEvents = "none";
 
-      // placer la pièce dans la grille (déplacement réel)
+      // si caché: on garde la place mais invisible (grand “trou” noir)
+      if (hidden) {
+        piece.style.transform = "none";
+        piece.style.gridRow = `${Math.floor(i / cols) + 1}`;
+        piece.style.gridColumn = `${(i % cols) + 1}`;
+        continue;
+      }
+
+      // destination
+      const dest = keepSet.has(i) ? i : puzzlePerm[i];
       const dr = Math.floor(dest / cols);
       const dc = dest % cols;
 
       piece.style.gridRow = `${dr + 1}`;
       piece.style.gridColumn = `${dc + 1}`;
 
-      // petit jitter en stage 1/2 pour rendre plus “puzzle”
-      const jitter = [10, 5, 0][stage];
       const rx = (Math.random() * 2 - 1) * jitter;
       const ry = (Math.random() * 2 - 1) * jitter;
-      const rot = (Math.random() * 2 - 1) * (stage === 0 ? 6 : stage === 1 ? 3 : 0);
+      const rot = (Math.random() * 2 - 1) * rotMax;
       piece.style.transform = `translate(${rx}px, ${ry}px) rotate(${rot}deg)`;
     }
   }
 
+  // Glitch : canvas slices + scanlines + masks (moins “simple”)
   if (id === "glitch") {
-    // plus violent (mais jouable)
-    const gs    = [1.0, 0.70, 0.20][stage];
-    const ct    = [2.6, 1.8, 1.12][stage];
-    const br    = [0.65, 0.88, 1.00][stage];
-    const sat   = [0.25, 0.65, 1.00][stage];
-    const gblur = [2.8, 1.2, 0][stage];
-
-    artWrap.style.setProperty("--gs", `${gs}`);
-    artWrap.style.setProperty("--ct", `${ct}`);
-    artWrap.style.setProperty("--br", `${br}`);
-    artWrap.style.setProperty("--sat", `${sat}`);
-    artWrap.style.setProperty("--gblur", `${gblur}px`);
-
-    const gAlpha = [0.65, 0.35, 0.12][stage];
-    artWrap.style.setProperty("--gAlpha", `${gAlpha}`);
-
-    const off = [22, 10, 2][stage];
-    artWrap.style.setProperty("--gdx", `${off}px`);
-    artWrap.style.setProperty("--gdy", `${-off}px`);
-    artWrap.style.setProperty("--ghue", `${[90, 35, 0][stage]}deg`);
-
-    artImgA.style.opacity = "1";
-    artImgB.style.opacity = "1";
-    artImgB.style.transform = `translate(${-off}px, ${off}px)`;
-  }
-
-  if (id === "pixel") {
     artWrap.classList.add("use-canvas");
     try {
-      const samples = [4, 8, 18][stage]; // plus dur
-      renderPixelated(artWrap._loadedImage, samples);
-    } catch (e) {
-      // fallback si CORS bloque: blurzoom
-      currentEffect = EFFECTS.find(x => x.id === "blurzoom") || currentEffect;
-      applyStage();
-      return;
-    }
-  }
+      const opts = [
+        { slices: 14, maxShift: 34, blur: 1.1, sat: 0.55, contrast: 1.35, brightness: 0.90, hueJitter: 55, masks: 5, scanlineEvery: 3, scanAlpha: 0.12 },
+        { slices: 10, maxShift: 20, blur: 0.6, sat: 0.80, contrast: 1.18, brightness: 0.98, hueJitter: 30, masks: 3, scanlineEvery: 4, scanAlpha: 0.09 },
+        { slices: 6,  maxShift: 10, blur: 0.2, sat: 1.00, contrast: 1.06, brightness: 1.03, hueJitter: 14, masks: 1, scanlineEvery: 6, scanAlpha: 0.06 },
+      ][stage];
 
-  if (id === "poster") {
-    artWrap.classList.add("use-canvas");
-    try {
-      // poster + petite pixelation (très dur)
-      const levels = [2, 3, 6][stage];
-      const px = [10, 18, 34][stage];
-      renderPosterPixel(artWrap._loadedImage, levels, px);
+      renderGlitchCanvas(artWrap._loadedImage, opts);
     } catch (e) {
       currentEffect = EFFECTS.find(x => x.id === "blurzoom") || currentEffect;
       applyStage();
@@ -716,7 +691,7 @@ function applyStage() {
     }
   }
 
-  // afficher une fois que tout est prêt
+  // prêt
   artWrap.classList.add("ready");
 }
 
@@ -865,12 +840,25 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// ====== Canvas effects ======
+// ====== Canvas utils ======
 function fitCanvasToWrap() {
   const rect = artWrap.getBoundingClientRect();
   const dpr = Math.max(1, window.devicePixelRatio || 1);
   artCanvas.width = Math.floor(rect.width * dpr);
   artCanvas.height = Math.floor(rect.height * dpr);
+}
+
+function drawImageCover(ctx, img, dx, dy, dw, dh) {
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+
+  const scale = Math.max(dw / iw, dh / ih);
+  const sw = dw / scale;
+  const sh = dh / scale;
+  const sx = (iw - sw) / 2;
+  const sy = (ih - sh) / 2;
+
+  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
 }
 
 function renderPixelated(img, samples) {
@@ -883,52 +871,182 @@ function renderPixelated(img, samples) {
   const offCtx = off.getContext("2d");
 
   const ratio = h / w;
-  off.width = Math.max(3, samples);
-  off.height = Math.max(3, Math.floor(samples * ratio));
+  off.width = Math.max(8, samples);
+  off.height = Math.max(8, Math.floor(samples * ratio));
 
   offCtx.imageSmoothingEnabled = true;
   offCtx.clearRect(0, 0, off.width, off.height);
-  offCtx.drawImage(img, 0, 0, off.width, off.height);
+  drawImageCover(offCtx, img, 0, 0, off.width, off.height);
 
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, w, h);
   ctx.drawImage(off, 0, 0, w, h);
 }
 
-function renderPosterPixel(img, levels, px) {
-  // 1) d’abord on pixelise (petit offscreen)
+function renderPosterMystery(img, opts) {
   fitCanvasToWrap();
+  const ctx = artCanvas.getContext("2d", { willReadFrequently: true });
   const w = artCanvas.width;
   const h = artCanvas.height;
 
-  const ratio = h / w;
-  const smallW = Math.max(6, px);
-  const smallH = Math.max(6, Math.floor(px * ratio));
-
+  // 1) pixelation douce (mais dure en hard)
   const off = document.createElement("canvas");
-  off.width = smallW;
-  off.height = smallH;
-  const offCtx = off.getContext("2d");
-  offCtx.imageSmoothingEnabled = true;
-  offCtx.drawImage(img, 0, 0, smallW, smallH);
+  const offCtx = off.getContext("2d", { willReadFrequently: true });
 
-  // 2) on upscale sans smoothing
-  const ctx = artCanvas.getContext("2d", { willReadFrequently: true });
+  const ratio = h / w;
+  off.width = Math.max(16, opts.px);
+  off.height = Math.max(16, Math.floor(opts.px * ratio));
+
+  offCtx.imageSmoothingEnabled = true;
+  offCtx.clearRect(0, 0, off.width, off.height);
+  drawImageCover(offCtx, img, 0, 0, off.width, off.height);
+
+  // upscale sans smoothing
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, w, h);
   ctx.drawImage(off, 0, 0, w, h);
 
-  // 3) posterize dur
+  // 2) poster + contrast + gamma + sat + dithering + noise (anti "couleur unie")
   const imageData = ctx.getImageData(0, 0, w, h);
   const data = imageData.data;
-  const step = 255 / Math.max(1, (levels - 1));
 
-  for (let i = 0; i < data.length; i += 4) {
-    data[i]     = Math.round(data[i] / step) * step;
-    data[i + 1] = Math.round(data[i + 1] / step) * step;
-    data[i + 2] = Math.round(data[i + 2] / step) * step;
+  const levels = Math.max(5, opts.levels);
+  const step = 255 / (levels - 1);
+
+  // Bayer 4x4
+  const bayer4 = [
+    0,  8,  2, 10,
+    12, 4, 14, 6,
+    3, 11, 1,  9,
+    15, 7, 13, 5
+  ];
+  const ditherStrength = opts.dither ?? 0.3;
+
+  function clamp255(v){ return v < 0 ? 0 : (v > 255 ? 255 : v); }
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+
+      let r = data[i], g = data[i+1], b = data[i+2];
+
+      // luminance
+      const gray = 0.2126*r + 0.7152*g + 0.0722*b;
+
+      // saturation
+      r = gray + (r - gray) * opts.sat;
+      g = gray + (g - gray) * opts.sat;
+      b = gray + (b - gray) * opts.sat;
+
+      // contrast + brightness (mul)
+      r = (r - 128) * opts.contrast + 128;
+      g = (g - 128) * opts.contrast + 128;
+      b = (b - 128) * opts.contrast + 128;
+
+      r *= opts.brightness;
+      g *= opts.brightness;
+      b *= opts.brightness;
+
+      // gamma
+      r = 255 * Math.pow(clamp255(r)/255, opts.gamma);
+      g = 255 * Math.pow(clamp255(g)/255, opts.gamma);
+      b = 255 * Math.pow(clamp255(b)/255, opts.gamma);
+
+      // dithering
+      const m = bayer4[(x & 3) + ((y & 3) << 2)] / 15; // 0..1
+      const d = (m - 0.5) * ditherStrength * step;
+
+      r = r + d;
+      g = g + d;
+      b = b + d;
+
+      // quantization (posterize)
+      r = Math.round(r / step) * step;
+      g = Math.round(g / step) * step;
+      b = Math.round(b / step) * step;
+
+      // noise
+      const n = (Math.random() * 2 - 1) * (opts.noise || 0);
+      r += n; g += n; b += n;
+
+      data[i]   = clamp255(r);
+      data[i+1] = clamp255(g);
+      data[i+2] = clamp255(b);
+    }
   }
+
   ctx.putImageData(imageData, 0, 0);
+
+  // 3) vignette légère (rend moins “simple” et masque bords)
+  const vg = ctx.createRadialGradient(w*0.5, h*0.45, Math.min(w,h)*0.10, w*0.5, h*0.5, Math.max(w,h)*0.75);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, `rgba(0,0,0,${opts.vignette ?? 0.25})`);
+  ctx.save();
+  ctx.globalCompositeOperation = "multiply";
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}
+
+function renderGlitchCanvas(img, opts) {
+  fitCanvasToWrap();
+  const ctx = artCanvas.getContext("2d");
+  const w = artCanvas.width;
+  const h = artCanvas.height;
+
+  const off = document.createElement("canvas");
+  off.width = w;
+  off.height = h;
+  const octx = off.getContext("2d");
+
+  octx.clearRect(0, 0, w, h);
+  octx.imageSmoothingEnabled = true;
+  drawImageCover(octx, img, 0, 0, w, h);
+
+  ctx.clearRect(0, 0, w, h);
+
+  // base image un peu “sale”
+  ctx.save();
+  ctx.filter = `blur(${opts.blur}px) saturate(${opts.sat}) contrast(${opts.contrast}) brightness(${opts.brightness})`;
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+
+  // scanlines
+  ctx.save();
+  ctx.fillStyle = `rgba(0,0,0,${opts.scanAlpha})`;
+  for (let y = 0; y < h; y += opts.scanlineEvery) {
+    ctx.fillRect(0, y, w, 1);
+  }
+  ctx.restore();
+
+  // slices décalés + hue jitter
+  for (let i = 0; i < opts.slices; i++) {
+    const sliceH = Math.max(6, Math.floor(Math.random() * (h * 0.08)));
+    const y = Math.floor(Math.random() * (h - sliceH));
+    const dx = Math.floor((Math.random() * 2 - 1) * opts.maxShift);
+    const hue = (Math.random() * 2 - 1) * opts.hueJitter;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, y, w, sliceH);
+    ctx.clip();
+
+    ctx.globalCompositeOperation = "screen";
+    ctx.filter = `hue-rotate(${hue}deg) saturate(1.35) contrast(1.25)`;
+    ctx.drawImage(off, dx, 0);
+
+    ctx.restore();
+  }
+
+  // masks noirs (bandes cachées)
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  for (let k = 0; k < opts.masks; k++) {
+    const mh = Math.max(10, Math.floor(Math.random() * (h * 0.08)));
+    const my = Math.floor(Math.random() * (h - mh));
+    ctx.fillRect(0, my, w, mh);
+  }
+  ctx.restore();
 }
 
 window.addEventListener("resize", () => {
