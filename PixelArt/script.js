@@ -1,19 +1,18 @@
 /**********************
- * Pixel Art
- * - Dataset: ../data/licenses_only.json
- * - Personnalisation: popularité/score/années/types + rounds
- * - Devine l’anime via sa cover (image) modifiée
- * - 3 manches: Difficile -> Moyen -> Facile
- * - Pas de timer: progression si guess raté OU bouton "Suivant"
- * - Effet random au début de chaque round (reste le même sur les 3 manches)
+ * Pixel Art (Fix)
+ * - 3 manches : difficile -> moyen -> facile
+ * - Pas de timer : avance sur guess raté OU bouton "Suivant"
+ * - Effet random par round (reste le même sur les 3 manches)
+ * - Fix : jamais d’image “en clair” pendant le jeu (classe .ready)
+ * - Fix : overlays mosaic/blinds (pas de display:none inline)
+ * - Effets beaucoup plus forts en manche 1
  **********************/
 
 const MAX_SCORE = 3000;
-const STAGE_SCORES = [3000, 2000, 1000]; // manche 1/2/3
+const STAGE_SCORES = [3000, 2000, 1000];
 const STAGE_NAMES = ["Difficile", "Moyen", "Facile"];
 const MIN_TITLES_TO_START = 64;
 
-// 7 effets
 const EFFECTS = [
   { id: "pixel",  label: "Pixel" },
   { id: "blur",   label: "Flou" },
@@ -90,8 +89,8 @@ function normalizeTitle(s) {
     .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")  // accents
-    .replace(/[^a-z0-9\s]/g, " ")     // ponctuation
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -121,11 +120,11 @@ const roundCountEl = document.getElementById("roundCount");
 // game refs
 const container = document.getElementById("character-container");
 const feedback = document.getElementById("feedback");
-const timerDisplay = document.getElementById("timer");
+const infoLine = document.getElementById("timer");
 
 const input = document.getElementById("characterInput");
 const submitBtn = document.getElementById("submit-btn");
-const nextBtn = document.getElementById("restart-btn"); // sert de "Suivant" pendant le round
+const nextBtn = document.getElementById("restart-btn");
 const suggestions = document.getElementById("suggestions");
 const roundLabel = document.getElementById("roundLabel");
 
@@ -137,28 +136,29 @@ const scoreBarLabel = document.getElementById("score-bar-label");
 let allAnimes = [];
 let filteredAnimes = [];
 
-// ====== Session (Rounds) ======
+// ====== Session ======
 let totalRounds = 1;
 let currentRound = 1;
 let totalScore = 0;
 
 // ====== Round state ======
 let currentAnime = null;
+let currentEffect = null;
+let stage = 0; // 0..2
 let gameEnded = false;
 
-let stage = 0; // 0..2
-let currentEffect = null;
-
+// art nodes
 let artWrap = null;
 let artImg = null;
-let artImgA = null; // glitch layer
-let artImgB = null; // glitch layer
+let artImgA = null;
+let artImgB = null;
 let artCanvas = null;
 let overlayMosaic = null;
 let overlayBlinds = null;
 
 let mosaicOrder = [];
 let blindsOrder = [];
+
 let zoomDx = 0;
 let zoomDy = 0;
 
@@ -172,7 +172,7 @@ function showGame() {
   gamePanel.style.display = "block";
 }
 
-// ====== Slider fill helper ======
+// ====== Slider fill ======
 function setRangePct(el) {
   const min = parseFloat(el.min || "0");
   const max = parseFloat(el.max || "100");
@@ -207,33 +207,25 @@ function applyFilters() {
   const yearMin = parseInt(yearMinEl.value, 10);
   const yearMax = parseInt(yearMaxEl.value, 10);
 
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map(
-    (b) => b.dataset.type
-  );
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")]
+    .map(b => b.dataset.type);
+
   if (allowedTypes.length === 0) return [];
 
-  let pool = allAnimes.filter((a) => {
-    return (
-      a._year >= yearMin &&
-      a._year <= yearMax &&
-      allowedTypes.includes(a._type) &&
-      typeof a.image === "string" &&
-      a.image.trim().length > 0
-    );
-  });
+  let pool = allAnimes.filter(a =>
+    a._year >= yearMin &&
+    a._year <= yearMax &&
+    allowedTypes.includes(a._type) &&
+    typeof a.image === "string" && a.image.trim().length > 0
+  );
 
   if (pool.length === 0) return [];
 
-  // Popularité (members)
   pool.sort((a, b) => b._members - a._members);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
-  // Score
   pool.sort((a, b) => b._score - a._score);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
-
-  // sécurité image
-  pool = pool.filter(a => typeof a.image === "string" && a.image);
 
   return pool;
 }
@@ -270,12 +262,9 @@ function initCustomUI() {
     updatePreview();
   }
 
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) =>
-    el.addEventListener("input", syncLabels)
-  );
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncLabels));
 
-  // type pills
-  document.querySelectorAll("#typePills .pill").forEach((btn) => {
+  document.querySelectorAll("#typePills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
@@ -306,13 +295,13 @@ function ensureArtDOM() {
   container.innerHTML = "";
 
   artWrap = document.createElement("div");
-  artWrap.className = "art-wrap";
+  artWrap.className = "art-wrap"; // pas de .ready => rien n’apparait
 
   artImg = document.createElement("img");
   artImg.className = "art-img base";
   artImg.alt = "Cover anime";
 
-  // glitch layers (toujours présents, mais invisibles sauf si glitch)
+  // glitch layers (cachées par CSS sauf .effect-glitch)
   artImgA = document.createElement("img");
   artImgA.className = "art-img glitch-layer";
   artImgA.alt = "";
@@ -340,31 +329,26 @@ function ensureArtDOM() {
   container.appendChild(artWrap);
 }
 
-function clearEffectClasses() {
+function resetVisualState() {
   if (!artWrap) return;
+
+  // reset classes (on garde juste art-wrap, la visibilité se fait via .ready)
   artWrap.className = "art-wrap";
-  artWrap.style.removeProperty("--blur");
-  artWrap.style.removeProperty("--scale");
-  artWrap.style.removeProperty("--dx");
-  artWrap.style.removeProperty("--dy");
 
-  artWrap.style.removeProperty("--gs");
-  artWrap.style.removeProperty("--ct");
-  artWrap.style.removeProperty("--br");
-  artWrap.style.removeProperty("--sat");
-  artWrap.style.removeProperty("--gAlpha");
-  artWrap.style.removeProperty("--ghue");
-  artWrap.style.removeProperty("--gdx");
-  artWrap.style.removeProperty("--gdy");
+  // reset vars
+  [
+    "--blur","--scale","--dx","--dy","--zblur",
+    "--gs","--ct","--br","--sat","--gAlpha","--ghue","--gdx","--gdy","--gblur"
+  ].forEach(v => artWrap.style.removeProperty(v));
 
-  overlayMosaic.style.display = "none";
-  overlayBlinds.style.display = "none";
-  overlayMosaic.innerHTML = "";
-  overlayBlinds.innerHTML = "";
-
-  // glitch layers off
+  // hide glitch layers
   artImgA.style.opacity = "0";
   artImgB.style.opacity = "0";
+  artImgB.style.transform = "";
+
+  // remove show classes (sans casser le DOM)
+  overlayMosaic.querySelectorAll(".tile.show").forEach(x => x.classList.remove("show"));
+  overlayBlinds.querySelectorAll(".strip.show").forEach(x => x.classList.remove("show"));
 }
 
 // ====== Round UI ======
@@ -372,27 +356,38 @@ function resetRoundUI() {
   roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
   feedback.textContent = "";
   feedback.className = "";
-  timerDisplay.textContent = "";
+  infoLine.textContent = "";
   suggestions.innerHTML = "";
 
   stage = 0;
   gameEnded = false;
 
   input.value = "";
-  input.disabled = true;  // débloqué après chargement image
+  input.disabled = true;
   submitBtn.disabled = true;
 
   nextBtn.disabled = true;
-  nextBtn.style.display = "inline-block";
   nextBtn.textContent = "Suivant";
+  nextBtn.onclick = null;
 
   setScoreBar(STAGE_SCORES[0]);
+}
+
+// ====== Load images ======
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous"; // utile pour canvas si le serveur autorise
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Image load failed"));
+    img.src = src;
+  });
 }
 
 async function startNewRound() {
   resetRoundUI();
   ensureArtDOM();
-  clearEffectClasses();
+  resetVisualState();
 
   currentAnime = pickRandom(filteredAnimes);
   currentEffect = pickRandom(EFFECTS);
@@ -400,14 +395,24 @@ async function startNewRound() {
   feedback.textContent = "⏳ Chargement de l'image...";
   feedback.className = "";
 
-  // random zoom offsets (mêmes sur les 3 manches)
-  zoomDx = (Math.random() * 2 - 1) * 70; // px (approx)
-  zoomDy = (Math.random() * 2 - 1) * 70;
+  zoomDx = (Math.random() * 2 - 1) * 120;
+  zoomDy = (Math.random() * 2 - 1) * 120;
 
   try {
-    await loadRoundImage(currentAnime.image);
-    prepareEffectLayers();
+    const loaded = await loadImage(currentAnime.image);
+
+    // set all sources
+    artImg.src = loaded.src;
+    artImgA.src = loaded.src;
+    artImgB.src = loaded.src;
+    artWrap._loadedImage = loaded;
+
+    // build overlays only if needed
+    buildOverlaysOnce();
+
+    // APPLY effect + show (ready)
     applyStage();
+
     feedback.textContent = "";
     input.disabled = false;
     nextBtn.disabled = false;
@@ -416,8 +421,10 @@ async function startNewRound() {
     feedback.textContent = "❌ Erreur: impossible de charger l'image.";
     feedback.className = "error";
     gameEnded = true;
+
     input.disabled = true;
     submitBtn.disabled = true;
+
     nextBtn.disabled = false;
     nextBtn.textContent = "Round suivant";
     nextBtn.onclick = () => {
@@ -427,38 +434,14 @@ async function startNewRound() {
   }
 }
 
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Image load failed"));
-    img.src = src;
-  });
-}
-
-async function loadRoundImage(src) {
-  // on charge avec crossOrigin (utile pour canvas quand possible)
-  const loaded = await loadImage(src);
-
-  // on alimente toutes les couches <img> (CSS effects / glitch)
-  artImg.src = loaded.src;
-  artImgA.src = loaded.src;
-  artImgB.src = loaded.src;
-
-  // petit cache : stocker la "source image" pour canvas
-  artWrap._loadedImage = loaded;
-}
-
-function prepareEffectLayers() {
-  // préparer ordre mosaic/blinds (progression stable)
+function buildOverlaysOnce() {
+  overlayMosaic.innerHTML = "";
+  overlayBlinds.innerHTML = "";
   mosaicOrder = [];
   blindsOrder = [];
 
-  // Mosaic: grid 5x7 (35)
   if (currentEffect.id === "mosaic") {
-    const cols = 5, rows = 7;
-    overlayMosaic.style.display = "grid";
+    const cols = 6, rows = 8; // 48 cases => plus dur
     overlayMosaic.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
     overlayMosaic.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
 
@@ -476,10 +459,8 @@ function prepareEffectLayers() {
     shuffleInPlace(mosaicOrder);
   }
 
-  // Blinds: 12 strips (vertical)
   if (currentEffect.id === "blinds") {
-    const strips = 12;
-    overlayBlinds.style.display = "grid";
+    const strips = 16; // plus dur
     overlayBlinds.style.gridTemplateColumns = `repeat(${strips}, 1fr)`;
     overlayBlinds.style.gridTemplateRows = `1fr`;
 
@@ -496,21 +477,20 @@ function prepareEffectLayers() {
   }
 }
 
-// ====== Apply stage (manche) ======
+// ====== Apply stage ======
 function applyStage() {
   if (!currentAnime || !currentEffect || !artWrap) return;
 
-  // score potentiel
+  resetVisualState();
+
+  // score + info
   setScoreBar(currentPotentialScore());
+  infoLine.textContent = `Manche ${stage + 1}/3 — ${STAGE_NAMES[stage]} — Effet : ${currentEffect.label}`;
 
-  // label info
-  timerDisplay.textContent = `Manche ${stage + 1}/3 — ${STAGE_NAMES[stage]} — Effet : ${currentEffect.label}`;
-
-  // reset classes
-  clearEffectClasses();
+  // set effect class
   artWrap.classList.add(`effect-${currentEffect.id}`);
 
-  // bouton next
+  // bouton suivant
   if (!gameEnded) {
     nextBtn.textContent = "Suivant";
     nextBtn.onclick = () => advanceStage("skip");
@@ -518,119 +498,108 @@ function applyStage() {
 
   const id = currentEffect.id;
 
-  // intensités 3 niveaux
+  // ===== intensités plus violentes =====
   if (id === "blur") {
-    const blur = [20, 10, 3][stage];
+    const blur = [46, 22, 8][stage];
     artWrap.style.setProperty("--blur", `${blur}px`);
-    return;
   }
 
   if (id === "zoom") {
-    const scale = [4.0, 2.3, 1.2][stage];
-    const mult = [1.0, 0.6, 0.25][stage];
+    const scale = [7.2, 3.6, 1.6][stage];
+    const mult  = [1.0, 0.55, 0.20][stage];
+    const zblur = [3.5, 1.5, 0][stage];
     artWrap.style.setProperty("--scale", `${scale}`);
     artWrap.style.setProperty("--dx", `${zoomDx * mult}px`);
     artWrap.style.setProperty("--dy", `${zoomDy * mult}px`);
-    return;
+    artWrap.style.setProperty("--zblur", `${zblur}px`);
   }
 
   if (id === "mosaic") {
-    // reveal N tiles
-    const revealN = [4, 12, 26][stage]; // sur 35
+    const revealN = [1, 8, 22][stage]; // sur 48
     const tiles = overlayMosaic.querySelectorAll(".tile");
-    tiles.forEach(t => t.classList.remove("show"));
     for (let i = 0; i < Math.min(revealN, mosaicOrder.length); i++) {
       const idx = mosaicOrder[i];
       if (tiles[idx]) tiles[idx].classList.add("show");
     }
-    return;
   }
 
   if (id === "blinds") {
-    // reveal N strips
-    const revealN = [2, 5, 9][stage]; // sur 12
+    const revealN = [1, 4, 10][stage]; // sur 16
     const strips = overlayBlinds.querySelectorAll(".strip");
-    strips.forEach(s => s.classList.remove("show"));
     for (let i = 0; i < Math.min(revealN, blindsOrder.length); i++) {
       const idx = blindsOrder[i];
       if (strips[idx]) strips[idx].classList.add("show");
     }
-    return;
   }
 
   if (id === "glitch") {
-    // base filter
-    const gs  = [1.0, 0.55, 0.15][stage];
-    const ct  = [1.75, 1.35, 1.10][stage];
-    const br  = [0.85, 0.95, 1.00][stage];
-    const sat = [0.70, 0.90, 1.00][stage];
+    const gs    = [1.0, 0.75, 0.20][stage];
+    const ct    = [2.35, 1.70, 1.12][stage];
+    const br    = [0.72, 0.90, 1.00][stage];
+    const sat   = [0.35, 0.75, 1.00][stage];
+    const gblur = [2.2, 1.0, 0][stage];
 
     artWrap.style.setProperty("--gs", `${gs}`);
     artWrap.style.setProperty("--ct", `${ct}`);
     artWrap.style.setProperty("--br", `${br}`);
     artWrap.style.setProperty("--sat", `${sat}`);
+    artWrap.style.setProperty("--gblur", `${gblur}px`);
 
-    // layers on
-    artImgA.style.opacity = "1";
-    artImgB.style.opacity = "1";
-
-    const gAlpha = [0.35, 0.22, 0.10][stage];
+    const gAlpha = [0.60, 0.34, 0.12][stage];
     artWrap.style.setProperty("--gAlpha", `${gAlpha}`);
 
-    // slight offset + hue variation
-    const off = [8, 4, 1][stage];
+    const off = [16, 8, 2][stage];
     artWrap.style.setProperty("--gdx", `${off}px`);
     artWrap.style.setProperty("--gdy", `${-off}px`);
-    artWrap.style.setProperty("--ghue", `${[55, 25, 0][stage]}deg`);
+    artWrap.style.setProperty("--ghue", `${[75, 35, 0][stage]}deg`);
 
-    // give layer B opposite shift
+    artImgA.style.opacity = "1";
+    artImgB.style.opacity = "1";
     artImgB.style.transform = `translate(${-off}px, ${off}px)`;
-    artImgB.style.filter = `hue-rotate(${-([55,25,0][stage])}deg) contrast(1.15) saturate(1.25)`;
-    artImgB.style.mixBlendMode = "screen";
-    artImgA.style.mixBlendMode = "screen";
-    return;
   }
 
-  // Canvas effects (pixel/poster) -> si CORS bloque, on fallback automatique vers blur
   if (id === "pixel" || id === "poster") {
     artWrap.classList.add("use-canvas");
     const img = artWrap._loadedImage;
 
     try {
       if (id === "pixel") {
-        const samples = [18, 42, 95][stage];
+        // plus pixelisé (plus petit = plus dur)
+        const samples = [6, 14, 34][stage];
         renderPixelated(img, samples);
       } else {
-        const levels = [3, 7, 16][stage];
+        // poster très rude
+        const levels = [2, 4, 8][stage];
         renderPosterize(img, levels);
       }
     } catch (e) {
-      // fallback
+      // fallback dur: blur si posterize bloqué par CORS
       currentEffect = EFFECTS.find(x => x.id === "blur") || currentEffect;
       applyStage();
+      return;
     }
-    return;
   }
+
+  // FIN : on rend visible tout le bloc (évite le flash clair)
+  artWrap.classList.add("ready");
 }
 
-// ====== Stage progression ======
 function advanceStage(reason) {
   if (gameEnded) return;
 
-  // stage 0->1->2->lose
   if (stage < 2) {
     stage += 1;
     feedback.textContent = (reason === "wrong")
       ? "❌ Mauvaise réponse — manche suivante."
       : "⏭️ Manche suivante.";
     feedback.className = "error";
+
     input.value = "";
     submitBtn.disabled = true;
     suggestions.innerHTML = "";
     applyStage();
     input.focus();
   } else {
-    // déjà en manche 3 -> perdre
     loseRound(reason === "wrong" ? "❌ Mauvaise réponse." : "⏭️ Passé.");
   }
 }
@@ -639,24 +608,21 @@ function advanceStage(reason) {
 function endRound(roundScore, won, messageHtml) {
   gameEnded = true;
 
-  // afficher l’image normale (sans effet)
-  clearEffectClasses();
-  artWrap.className = "art-wrap";
-  artImg.style.opacity = "1";
+  // afficher en clair à la fin
+  resetVisualState();
+  artWrap.className = "art-wrap ready";
 
   input.disabled = true;
   submitBtn.disabled = true;
   suggestions.innerHTML = "";
 
   setScoreBar(roundScore);
-
   feedback.innerHTML = messageHtml;
   feedback.className = won ? "success" : "error";
 
   totalScore += roundScore;
 
   nextBtn.disabled = false;
-  nextBtn.style.display = "inline-block";
   nextBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
   nextBtn.onclick = () => {
     if (currentRound >= totalRounds) showFinalRecap();
@@ -669,8 +635,8 @@ function winRound() {
   if (score > 0) launchFireworks();
 
   const msg = `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>
-  Score : <b>${score}</b> / ${MAX_SCORE}<br>
-  Manche : <b>${stage + 1}/3</b> — Effet : <b>${currentEffect.label}</b>`;
+    Score : <b>${score}</b> / ${MAX_SCORE}<br>
+    Manche : <b>${stage + 1}/3</b> — Effet : <b>${currentEffect.label}</b>`;
 
   endRound(score, true, msg);
 }
@@ -708,12 +674,8 @@ function checkGuess() {
   }
 
   const ok = normalizeTitle(guess) === normalizeTitle(currentAnime._title);
-  if (ok) {
-    winRound();
-    return;
-  }
+  if (ok) return winRound();
 
-  // mauvais -> manche suivante (ou perdu si déjà manche 3)
   advanceStage("wrong");
 }
 
@@ -725,12 +687,11 @@ input.addEventListener("input", function () {
   suggestions.innerHTML = "";
   feedback.textContent = "";
   submitBtn.disabled = true;
+
   if (!val) return;
 
   const titles = [...new Set(filteredAnimes.map(a => a._title))];
-  const matches = titles
-    .filter(t => t.toLowerCase().includes(val))
-    .slice(0, 7);
+  const matches = titles.filter(t => t.toLowerCase().includes(val)).slice(0, 7);
 
   matches.forEach((title) => {
     const div = document.createElement("div");
@@ -745,159 +706,13 @@ input.addEventListener("input", function () {
     suggestions.appendChild(div);
   });
 
-  // activer submit si titre exact (insensible à la casse)
   submitBtn.disabled = !titles.map(t => t.toLowerCase()).includes(val);
 });
 
 input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) {
-    checkGuess();
-  }
+  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) checkGuess();
 });
 
 submitBtn.addEventListener("click", checkGuess);
 
-// nextBtn sert de "Suivant" pendant le round (branché dans applyStage / endRound)
-
-// ====== Tooltip ======
-document.addEventListener("click", (e) => {
-  const icon = e.target.closest(".info-icon");
-  if (!icon) return;
-  e.preventDefault();
-  e.stopPropagation();
-  const wrap = icon.closest(".info-wrap");
-  if (wrap) wrap.classList.toggle("open");
-});
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
-  }
-});
-
-// ====== Canvas effects ======
-function fitCanvasToWrap() {
-  const rect = artWrap.getBoundingClientRect();
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  artCanvas.width = Math.floor(rect.width * dpr);
-  artCanvas.height = Math.floor(rect.height * dpr);
-}
-
-function renderPixelated(img, samples) {
-  fitCanvasToWrap();
-  const ctx = artCanvas.getContext("2d");
-  const w = artCanvas.width;
-  const h = artCanvas.height;
-
-  const off = document.createElement("canvas");
-  const offCtx = off.getContext("2d");
-
-  // garder ratio
-  const ratio = h / w;
-  off.width = Math.max(8, samples);
-  off.height = Math.max(8, Math.floor(samples * ratio));
-
-  offCtx.imageSmoothingEnabled = true;
-  offCtx.clearRect(0, 0, off.width, off.height);
-  offCtx.drawImage(img, 0, 0, off.width, off.height);
-
-  ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0, 0, w, h);
-  ctx.drawImage(off, 0, 0, w, h);
-}
-
-function renderPosterize(img, levels) {
-  fitCanvasToWrap();
-  const ctx = artCanvas.getContext("2d", { willReadFrequently: true });
-  const w = artCanvas.width;
-  const h = artCanvas.height;
-
-  ctx.imageSmoothingEnabled = true;
-  ctx.clearRect(0, 0, w, h);
-  ctx.drawImage(img, 0, 0, w, h);
-
-  // peut throw si canvas "tainted"
-  const imageData = ctx.getImageData(0, 0, w, h);
-  const data = imageData.data;
-
-  const step = 255 / Math.max(1, (levels - 1));
-  for (let i = 0; i < data.length; i += 4) {
-    data[i]     = Math.round(data[i] / step) * step;     // R
-    data[i + 1] = Math.round(data[i + 1] / step) * step; // G
-    data[i + 2] = Math.round(data[i + 2] / step) * step; // B
-    // alpha untouched
-  }
-  ctx.putImageData(imageData, 0, 0);
-}
-
-window.addEventListener("resize", () => {
-  // re-render canvas / overlays à la bonne taille
-  if (!gameEnded && currentAnime && currentEffect && artWrap) {
-    applyStage();
-  }
-});
-
-// ====== Fireworks ======
-function launchFireworks() {
-  const canvas = document.getElementById("fireworks");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-
-  const particles = [];
-  function createParticle(x, y) {
-    const angle = Math.random() * 2 * Math.PI;
-    const speed = Math.random() * 5 + 2;
-    return { x, y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 60 };
-  }
-
-  for (let i = 0; i < 80; i++) particles.push(createParticle(canvas.width / 2, canvas.height / 2));
-
-  function animate() {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    particles.forEach((p) => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-      ctx.fillStyle = `hsl(${Math.random() * 360}, 100%, 50%)`;
-      ctx.fill();
-      p.x += p.dx;
-      p.y += p.dy;
-      p.dy += 0.05;
-      p.life--;
-    });
-
-    for (let i = particles.length - 1; i >= 0; i--) {
-      if (particles[i].life <= 0) particles.splice(i, 1);
-    }
-
-    if (particles.length > 0) requestAnimationFrame(animate);
-    else ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
-  animate();
-}
-
-// ====== Load dataset ======
-fetch("../data/licenses_only.json")
-  .then((r) => r.json())
-  .then((data) => {
-    allAnimes = (Array.isArray(data) ? data : []).map((a) => {
-      const title = getDisplayTitle(a);
-      return {
-        ...a,
-        _title: title,
-        _titleLower: title.toLowerCase(),
-        _year: getYear(a),
-        _members: Number.isFinite(+a.members) ? +a.members : 0,
-        _score: Number.isFinite(+a.score) ? +a.score : 0,
-        _type: a.type || "Unknown",
-      };
-    });
-
-    initCustomUI();
-    updatePreview();
-    showCustomization();
-  })
-  .catch((e) => alert("Erreur chargement dataset: " + e.message));
+/
