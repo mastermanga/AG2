@@ -715,4 +715,140 @@ input.addEventListener("keydown", (e) => {
 
 submitBtn.addEventListener("click", checkGuess);
 
-/
+// ====== Tooltip ======
+document.addEventListener("click", (e) => {
+  const icon = e.target.closest(".info-icon");
+  if (!icon) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const wrap = icon.closest(".info-wrap");
+  if (wrap) wrap.classList.toggle("open");
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".info-wrap")) {
+    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
+  }
+});
+
+// ====== Canvas effects ======
+function fitCanvasToWrap() {
+  const rect = artWrap.getBoundingClientRect();
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  artCanvas.width = Math.floor(rect.width * dpr);
+  artCanvas.height = Math.floor(rect.height * dpr);
+}
+
+function renderPixelated(img, samples) {
+  fitCanvasToWrap();
+  const ctx = artCanvas.getContext("2d");
+  const w = artCanvas.width;
+  const h = artCanvas.height;
+
+  const off = document.createElement("canvas");
+  const offCtx = off.getContext("2d");
+
+  const ratio = h / w;
+  off.width = Math.max(4, samples);
+  off.height = Math.max(4, Math.floor(samples * ratio));
+
+  offCtx.imageSmoothingEnabled = true;
+  offCtx.clearRect(0, 0, off.width, off.height);
+  offCtx.drawImage(img, 0, 0, off.width, off.height);
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(off, 0, 0, w, h);
+}
+
+function renderPosterize(img, levels) {
+  fitCanvasToWrap();
+  const ctx = artCanvas.getContext("2d", { willReadFrequently: true });
+  const w = artCanvas.width;
+  const h = artCanvas.height;
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+
+  const step = 255 / Math.max(1, (levels - 1));
+  for (let i = 0; i < data.length; i += 4) {
+    data[i]     = Math.round(data[i] / step) * step;
+    data[i + 1] = Math.round(data[i + 1] / step) * step;
+    data[i + 2] = Math.round(data[i + 2] / step) * step;
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+window.addEventListener("resize", () => {
+  if (!gameEnded && currentAnime && currentEffect && artWrap?.classList.contains("use-canvas")) {
+    applyStage();
+  }
+});
+
+// ====== Fireworks ======
+function launchFireworks() {
+  const canvas = document.getElementById("fireworks");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  const particles = [];
+  function createParticle(x, y) {
+    const angle = Math.random() * 2 * Math.PI;
+    const speed = Math.random() * 5 + 2;
+    return { x, y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 60 };
+  }
+  for (let i = 0; i < 80; i++) particles.push(createParticle(canvas.width / 2, canvas.height / 2));
+
+  function animate() {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    particles.forEach((p) => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = `hsl(${Math.random() * 360}, 100%, 50%)`;
+      ctx.fill();
+      p.x += p.dx;
+      p.y += p.dy;
+      p.dy += 0.05;
+      p.life--;
+    });
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      if (particles[i].life <= 0) particles.splice(i, 1);
+    }
+
+    if (particles.length > 0) requestAnimationFrame(animate);
+    else ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  animate();
+}
+
+// ====== Load dataset ======
+fetch("../data/licenses_only.json")
+  .then((r) => r.json())
+  .then((data) => {
+    allAnimes = (Array.isArray(data) ? data : []).map((a) => {
+      const title = getDisplayTitle(a);
+      return {
+        ...a,
+        _title: title,
+        _titleLower: title.toLowerCase(),
+        _year: getYear(a),
+        _members: Number.isFinite(+a.members) ? +a.members : 0,
+        _score: Number.isFinite(+a.score) ? +a.score : 0,
+        _type: a.type || "Unknown",
+      };
+    });
+
+    initCustomUI();
+    updatePreview();
+    showCustomization();
+  })
+  .catch((e) => alert("Erreur chargement dataset: " + e.message));
