@@ -360,7 +360,7 @@ body::before{
   transform: translateZ(0);
 }
 
-/* important: pas de flash “image nette” */
+/* anti-flash image nette */
 .art-wrap:not(.ready) .art-img,
 .art-wrap:not(.ready) #artCanvas,
 .art-wrap:not(.ready) .overlay{
@@ -375,13 +375,6 @@ body::before{
   object-fit: cover;
   z-index:2;
   transition: filter .18s ease, transform .18s ease, opacity .18s ease;
-}
-.art-img.glitch-layer{
-  z-index:3;
-  opacity:0;
-  display:none;
-  pointer-events:none;
-  mix-blend-mode: screen;
 }
 
 #artCanvas{
@@ -407,15 +400,13 @@ body::before{
   opacity:0;
   transition: opacity .18s ease, transform .22s ease;
 }
-.tile.show, .strip.show, .piece.show{ opacity:1; }
+.tile.show, .strip.show{ opacity:1; }
 
-/* ===== EFFECTS ===== */
-
-/* Pixel / Poster => canvas */
+/* Pixel / Poster / Glitch => canvas */
 .use-canvas #artCanvas{ display:block; }
 .use-canvas .art-img{ opacity:0; }
 
-/* BlurZoom (combo blur + zoom) */
+/* BlurZoom */
 .effect-blurzoom .art-img.base{
   left:50%;
   top:50%;
@@ -425,11 +416,11 @@ body::before{
   filter: blur(var(--blur, 0px)) contrast(1.07) saturate(1.02);
 }
 
-/* Mosaic (tuiles) */
+/* Mosaic */
 .effect-mosaic .art-img.base{ opacity:0; }
 .effect-mosaic #overlayMosaic{ display:grid; }
 
-/* Quadrillage (vertical + horizontal) */
+/* Grid (vertical + horizontal) */
 .effect-grid .art-img.base{ opacity:0; }
 .effect-grid #overlayGridV{ display:grid; }
 .effect-grid #overlayGridH{ display:grid; }
@@ -438,22 +429,11 @@ body::before{
 .effect-puzzle .art-img.base{ opacity:0; }
 .effect-puzzle #overlayPuzzle{ display:grid; }
 .effect-puzzle .piece{
-  opacity:1; /* toujours visibles en puzzle */
+  opacity:1;
   border: 1px solid rgba(255,255,255,0.08);
   box-shadow: 0 8px 18px rgba(0,0,0,0.20);
   border-radius: 10px;
-}
-
-/* Glitch (durci) */
-.effect-glitch .art-img.base{
-  filter: grayscale(var(--gs, 0)) contrast(var(--ct, 1)) brightness(var(--br, 1))
-          saturate(var(--sat, 1)) blur(var(--gblur, 0px));
-}
-.effect-glitch .art-img.glitch-layer{
-  display:block;
-  opacity: var(--gAlpha, 0.28);
-  transform: translate(var(--gdx, 0px), var(--gdy, 0px));
-  filter: hue-rotate(var(--ghue, 0deg)) contrast(1.25) saturate(1.35);
+  transition: opacity .18s ease, transform .22s ease;
 }
 
 /* ===== Controls ===== */
@@ -508,7 +488,7 @@ body::before{
   gap: 12px;
 }
 
-/* boutons du jeu */
+/* boutons jeu */
 #submit-btn, #restart-btn{
   border-radius: 12px;
   padding: 10px 22px;
@@ -536,7 +516,7 @@ body::before{
   box-shadow:none;
 }
 
-/* infos manche + feedback */
+/* infos + feedback */
 #timer{
   margin: 4px 0 0;
   font-weight: 1000;
