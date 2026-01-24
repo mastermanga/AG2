@@ -360,33 +360,23 @@ body::before{
   transform: translateZ(0);
 }
 
-/* IMPORTANT: tant que .ready n'est pas posé, on ne montre rien (évite le flash en clair) */
+/* important: pas de flash “image nette” */
 .art-wrap:not(.ready) .art-img,
 .art-wrap:not(.ready) #artCanvas,
-.art-wrap:not(.ready) #overlayMosaic,
-.art-wrap:not(.ready) #overlayBlinds{
+.art-wrap:not(.ready) .overlay{
   opacity:0 !important;
 }
 
-/* couches visuelles */
 .art-img{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
   object-fit: cover;
-  transition: filter .18s ease, transform .18s ease, opacity .18s ease;
   z-index:2;
+  transition: filter .18s ease, transform .18s ease, opacity .18s ease;
 }
-.art-img.base{ z-index:2; }
-
-/* glitch layers: cachés sauf en mode glitch (évite “images dessous”) */
 .art-img.glitch-layer{
-  position:absolute;
-  inset:0;
-  width:100%;
-  height:100%;
-  object-fit:cover;
   z-index:3;
   opacity:0;
   display:none;
@@ -404,49 +394,60 @@ body::before{
 }
 
 /* overlays */
-#overlayMosaic, #overlayBlinds{
+.overlay{
   position:absolute;
   inset:0;
   z-index:5;
   display:none;
 }
-.tile, .strip{
+.tile, .strip, .piece{
   width:100%;
   height:100%;
   background-repeat:no-repeat;
   opacity:0;
-  transition: opacity .18s ease;
+  transition: opacity .18s ease, transform .22s ease;
 }
-.tile.show, .strip.show{ opacity:1; }
+.tile.show, .strip.show, .piece.show{ opacity:1; }
 
 /* ===== EFFECTS ===== */
 
-/* Blur (plus violent) */
-.effect-blur .art-img.base{
-  filter: blur(var(--blur, 0px)) saturate(1.02) contrast(1.05);
-}
+/* Pixel / Poster => canvas */
+.use-canvas #artCanvas{ display:block; }
+.use-canvas .art-img{ opacity:0; }
 
-/* Zoom (plus violent + blur optionnel) */
-.effect-zoom .art-img.base{
+/* BlurZoom (combo blur + zoom) */
+.effect-blurzoom .art-img.base{
   left:50%;
   top:50%;
   width:120%;
   height:120%;
   transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% + var(--dy, 0px))) scale(var(--scale, 1));
-  filter: blur(var(--zblur, 0px));
+  filter: blur(var(--blur, 0px)) contrast(1.07) saturate(1.02);
 }
 
-/* Mosaic */
+/* Mosaic (tuiles) */
 .effect-mosaic .art-img.base{ opacity:0; }
 .effect-mosaic #overlayMosaic{ display:grid; }
 
-/* Blinds */
-.effect-blinds .art-img.base{ opacity:0; }
-.effect-blinds #overlayBlinds{ display:grid; }
+/* Quadrillage (vertical + horizontal) */
+.effect-grid .art-img.base{ opacity:0; }
+.effect-grid #overlayGridV{ display:grid; }
+.effect-grid #overlayGridH{ display:grid; }
 
-/* Glitch (plus violent) */
+/* Puzzle déplacé */
+.effect-puzzle .art-img.base{ opacity:0; }
+.effect-puzzle #overlayPuzzle{ display:grid; }
+.effect-puzzle .piece{
+  opacity:1; /* toujours visibles en puzzle */
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.20);
+  border-radius: 10px;
+}
+
+/* Glitch (durci) */
 .effect-glitch .art-img.base{
-  filter: grayscale(var(--gs, 0)) contrast(var(--ct, 1)) brightness(var(--br, 1)) saturate(var(--sat, 1)) blur(var(--gblur, 0px));
+  filter: grayscale(var(--gs, 0)) contrast(var(--ct, 1)) brightness(var(--br, 1))
+          saturate(var(--sat, 1)) blur(var(--gblur, 0px));
 }
 .effect-glitch .art-img.glitch-layer{
   display:block;
@@ -454,10 +455,6 @@ body::before{
   transform: translate(var(--gdx, 0px), var(--gdy, 0px));
   filter: hue-rotate(var(--ghue, 0deg)) contrast(1.25) saturate(1.35);
 }
-
-/* Canvas-based */
-.use-canvas #artCanvas{ display:block; }
-.use-canvas .art-img{ opacity:0; }
 
 /* ===== Controls ===== */
 #controls{
