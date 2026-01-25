@@ -2,11 +2,9 @@
  * Pixel Art
  * - 3 manches : difficile -> moyen -> facile
  * - Avance sur guess raté OU bouton "Suivant"
- * - 7 effets random par round
- * - Recalibrage difficulté :
- *   - ancien moyen => hard
- *   - ancien facile => medium
- *   - + nouveau easy
+ * - Effet aléatoire au début de chaque round
+ * - Poster: moyen + dur (moins simple)
+ * - Glitch: layout random par round + bandes plus fines
  **********************/
 
 const MAX_SCORE = 3000;
@@ -20,8 +18,8 @@ const EFFECTS = [
   { id: "mosaic",   label: "Mosaïque" },
   { id: "grid",     label: "Quadrillage" },   // V + H
   { id: "poster",   label: "Poster / Contraste" },
-  { id: "puzzle",   label: "Puzzle" },        // morceaux déplacés + masques
-  { id: "glitch",   label: "Glitch" },        // canvas glitch slices + masks
+  { id: "puzzle",   label: "Puzzle" },
+  { id: "glitch",   label: "Glitch" },
 ];
 
 // ====== UI: menu + theme ======
@@ -124,6 +122,20 @@ function makeFarPermutation(n, cols, minDist, tries = 2500) {
   return arr; // fallback
 }
 
+// ====== PRNG (pour glitch random mais stable par round) ======
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function rRange(rng, min, max) { return min + (max - min) * rng(); }
+function rInt(rng, min, max) { return Math.floor(rRange(rng, min, max + 1)); }
+
 // ====== DOM refs ======
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
@@ -190,8 +202,15 @@ let gridHOrder = [];
 let puzzleKeepOrder = [];
 let puzzleHideOrder = [];
 
+// per round randomness
 let zoomDx = 0;
 let zoomDy = 0;
+
+let gridCounts = null;
+
+// glitch layout (stable par round)
+let glitchSeed = 0;
+let glitchLayout = null;
 
 // ====== UI show/hide ======
 function showCustomization() {
@@ -331,9 +350,11 @@ function ensureArtDOM() {
   artImg = document.createElement("img");
   artImg.className = "art-img base";
   artImg.alt = "Cover anime";
+  artImg.style.opacity = "0";
 
   artCanvas = document.createElement("canvas");
   artCanvas.id = "artCanvas";
+  artCanvas.style.display = "none";
 
   overlayMosaic = document.createElement("div");
   overlayMosaic.id = "overlayMosaic";
@@ -367,6 +388,9 @@ function resetVisualState() {
   artWrap.className = "art-wrap";
   artWrap.classList.remove("ready");
 
+  artImg.style.opacity = "0";
+  artCanvas.style.display = "none";
+
   [overlayMosaic, overlayGridV, overlayGridH, overlayPuzzle].forEach(ov => {
     ov.style.display = "none";
     ov.innerHTML = "";
@@ -378,6 +402,8 @@ function resetVisualState() {
 
   puzzleKeepOrder = [];
   puzzleHideOrder = [];
+
+  glitchLayout = null;
 }
 
 // ====== Round UI ======
@@ -395,6 +421,8 @@ function resetRoundUI() {
   input.disabled = true;
   submitBtn.disabled = true;
 
+  // Important: bouton "Suivant" visible (si ton HTML l'avait en display:none)
+  nextBtn.style.display = "inline-block";
   nextBtn.disabled = true;
   nextBtn.textContent = "Suivant";
   nextBtn.onclick = null;
@@ -421,10 +449,22 @@ async function startNewRound() {
   currentAnime = pickRandom(filteredAnimes);
   currentEffect = pickRandom(EFFECTS);
 
-  feedback.textContent = "⏳ Chargement de l'image...";
+  // seeds / per-round randomness
+  const seedBase = (Math.random() * 2**32) >>> 0;
+  glitchSeed = seedBase ^ ((currentRound * 2654435761) >>> 0);
+  glitchLayout = null;
 
   zoomDx = (Math.random() * 2 - 1) * 140;
   zoomDy = (Math.random() * 2 - 1) * 140;
+
+  // grid counts random par round => pattern moins répétitif
+  const rng = mulberry32(seedBase);
+  gridCounts = {
+    v: [rInt(rng, 2, 4), rInt(rng, 6, 9), rInt(rng, 10, 13)],
+    h: [rInt(rng, 2, 3), rInt(rng, 5, 8), rInt(rng, 9, 11)],
+  };
+
+  feedback.textContent = "⏳ Chargement de l'image...";
 
   try {
     const loaded = await loadImage(currentAnime.image);
@@ -562,6 +602,14 @@ function applyStage() {
   }
 
   const id = currentEffect.id;
+
+  // show/hide canvas
+  const usesCanvas = (id === "pixel" || id === "poster" || id === "glitch");
+  artCanvas.style.display = usesCanvas ? "block" : "none";
+
+  // base image opacity: seulement blurzoom utilise l'img directement
+  artImg.style.opacity = (id === "blurzoom") ? "1" : "0";
+
   artWrap.classList.add(`effect-${id}`);
 
   // Pixel
@@ -571,7 +619,7 @@ function applyStage() {
     renderPixelated(artWrap._loadedImage, samples);
   }
 
-  // BlurZoom (corrigé : hard moins flou, medium moins dézoom)
+  // BlurZoom
   if (id === "blurzoom") {
     const blur  = [12, 5.2, 2.2][stage];
     const scale = [2.65, 1.38, 1.10][stage];
@@ -585,7 +633,7 @@ function applyStage() {
 
   // Mosaic
   if (id === "mosaic") {
-    const revealN = [14, 42, 68][stage]; // sur 80
+    const revealN = [12, 36, 66][stage]; // un peu + dur en medium
     const tiles = overlayMosaic.querySelectorAll(".tile");
     tiles.forEach(t => t.classList.remove("show"));
     for (let i = 0; i < Math.min(revealN, mosaicOrder.length); i++) {
@@ -594,10 +642,10 @@ function applyStage() {
     }
   }
 
-  // Grid V/H
+  // Grid V/H (counts random par round => pattern change)
   if (id === "grid") {
-    const vShow = [3, 8, 12][stage];
-    const hShow = [2, 7, 10][stage];
+    const vShow = gridCounts?.v?.[stage] ?? [3, 8, 12][stage];
+    const hShow = gridCounts?.h?.[stage] ?? [2, 7, 10][stage];
 
     const vStrips = overlayGridV.querySelectorAll(".strip");
     const hStrips = overlayGridH.querySelectorAll(".strip");
@@ -614,18 +662,24 @@ function applyStage() {
     }
   }
 
-  // Poster / Contraste (canvas)
+  // Poster / Contraste (MEDIUM plus dur)
   if (id === "poster") {
     artWrap.classList.add("use-canvas");
     const opts = [
+      // HARD: inchangé (tu disais qu’il est parfait)
       { px: 14, levels: 6,  contrast: 1.55, brightness: 0.92, gamma: 0.88, sat: 0.35, noise: 14, dither: 0.55, vignette: 0.38 },
-      { px: 24, levels: 9,  contrast: 1.25, brightness: 0.98, gamma: 0.95, sat: 0.65, noise: 10, dither: 0.35, vignette: 0.28 },
+
+      // MEDIUM: plus dur (moins simple)
+      { px: 18, levels: 7,  contrast: 1.42, brightness: 0.95, gamma: 0.90, sat: 0.48, noise: 12, dither: 0.46, vignette: 0.33 },
+
+      // EASY: ok
       { px: 40, levels: 14, contrast: 1.08, brightness: 1.02, gamma: 1.00, sat: 0.88, noise: 6,  dither: 0.18, vignette: 0.16 },
     ][stage];
+
     renderPosterMystery(artWrap._loadedImage, opts);
   }
 
-  // Puzzle (hard+medium plus éloigné)
+  // Puzzle
   if (id === "puzzle") {
     const cols = 4, rows = 6;
     const n = cols * rows;
@@ -677,14 +731,17 @@ function applyStage() {
     }
   }
 
-  // Glitch (hard plus masqué)
+  // Glitch (layout random par round + bandes plus fines)
   if (id === "glitch") {
     artWrap.classList.add("use-canvas");
 
     const opts = [
-      { slices: 20, maxShift: 70, blur: 0.9,  sat: 0.60, contrast: 1.40, brightness: 0.92, hueJitter: 70, masks: 8, vMasks: 2, pixel: 24, scanlineEvery: 3, scanAlpha: 0.14 },
-      { slices: 12, maxShift: 34, blur: 0.55, sat: 0.82, contrast: 1.20, brightness: 0.98, hueJitter: 36, masks: 4, vMasks: 1, pixel: 0,  scanlineEvery: 4, scanAlpha: 0.10 },
-      { slices: 7,  maxShift: 16, blur: 0.25, sat: 1.00, contrast: 1.06, brightness: 1.03, hueJitter: 16, masks: 1, vMasks: 0, pixel: 0,  scanlineEvery: 6, scanAlpha: 0.06 },
+      // HARD
+      { slices: 20, maxShift: 72, blur: 0.9,  sat: 0.60, contrast: 1.40, brightness: 0.92, hueJitter: 70, masks: 12, vMasks: 3, pixel: 24, scanlineEvery: 3, scanAlpha: 0.14 },
+      // MEDIUM
+      { slices: 12, maxShift: 34, blur: 0.55, sat: 0.82, contrast: 1.20, brightness: 0.98, hueJitter: 36, masks: 6,  vMasks: 1, pixel: 0,  scanlineEvery: 4, scanAlpha: 0.10 },
+      // EASY
+      { slices: 7,  maxShift: 16, blur: 0.25, sat: 1.00, contrast: 1.06, brightness: 1.03, hueJitter: 16, masks: 2,  vMasks: 0, pixel: 0,  scanlineEvery: 6, scanAlpha: 0.06 },
     ][stage];
 
     renderGlitchCanvas(artWrap._loadedImage, opts);
@@ -698,6 +755,7 @@ function advanceStage(reason) {
 
   if (stage < 2) {
     stage += 1;
+
     feedback.textContent = (reason === "wrong")
       ? "❌ Mauvaise réponse — manche suivante."
       : "⏭️ Manche suivante.";
@@ -721,6 +779,7 @@ function endRound(roundScore, won, messageHtml) {
   // affiche en clair à la fin
   artWrap.className = "art-wrap ready";
   artImg.style.opacity = "1";
+  artCanvas.style.display = "none";
 
   input.disabled = true;
   submitBtn.disabled = true;
@@ -860,6 +919,7 @@ function drawImageCover(ctx, img, dx, dy, dw, dh) {
   ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
 }
 
+// ====== Pixel ======
 function renderPixelated(img, samples) {
   fitCanvasToWrap();
   const ctx = artCanvas.getContext("2d");
@@ -882,6 +942,7 @@ function renderPixelated(img, samples) {
   ctx.drawImage(off, 0, 0, w, h);
 }
 
+// ====== Poster / Contraste ======
 function renderPosterMystery(img, opts) {
   fitCanvasToWrap();
   const ctx = artCanvas.getContext("2d", { willReadFrequently: true });
@@ -973,11 +1034,53 @@ function renderPosterMystery(img, opts) {
   ctx.restore();
 }
 
+// ====== Glitch layout (random par round) ======
+function createGlitchLayout(w, h, seed) {
+  const rng = mulberry32(seed);
+
+  // On génère "plus que nécessaire", ensuite on prend les N premiers selon la manche.
+  const slices = [];
+  for (let i = 0; i < 28; i++) {
+    const sliceH = rInt(rng, 10, Math.max(18, Math.floor(h * 0.085)));
+    const y = rInt(rng, 0, Math.max(0, h - sliceH));
+    slices.push({
+      y,
+      h: sliceH,
+      dx: (rRange(rng, -1, 1)),
+      dy: (rRange(rng, -1, 1)) * 0.22,
+      hue: rRange(rng, -1, 1),
+      alpha: rRange(rng, 0.55, 0.9)
+    });
+  }
+
+  const masksH = [];
+  for (let i = 0; i < 22; i++) {
+    // bandes fines (fix du "trop grosse")
+    const mh = rInt(rng, 6, Math.max(10, Math.floor(h * 0.035)));
+    const my = rInt(rng, 0, Math.max(0, h - mh));
+    masksH.push({ y: my, h: mh, a: rRange(rng, 0.42, 0.68) });
+  }
+
+  const masksV = [];
+  for (let i = 0; i < 8; i++) {
+    const mw = rInt(rng, 10, Math.max(18, Math.floor(w * 0.07)));
+    const mx = rInt(rng, 0, Math.max(0, w - mw));
+    masksV.push({ x: mx, w: mw, a: rRange(rng, 0.32, 0.58) });
+  }
+
+  return { seed, w, h, slices, masksH, masksV };
+}
+
 function renderGlitchCanvas(img, opts) {
   fitCanvasToWrap();
   const ctx = artCanvas.getContext("2d");
   const w = artCanvas.width;
   const h = artCanvas.height;
+
+  // Layout stable pour le round (mais random entre rounds)
+  if (!glitchLayout || glitchLayout.w !== w || glitchLayout.h !== h || glitchLayout.seed !== glitchSeed) {
+    glitchLayout = createGlitchLayout(w, h, glitchSeed);
+  }
 
   // Offscreen base
   const off = document.createElement("canvas");
@@ -1022,46 +1125,43 @@ function renderGlitchCanvas(img, opts) {
   for (let y = 0; y < h; y += opts.scanlineEvery) ctx.fillRect(0, y, w, 1);
   ctx.restore();
 
-  // slices décalés + hue jitter
-  for (let i = 0; i < opts.slices; i++) {
-    const sliceH = Math.max(10, Math.floor(Math.random() * (h * 0.10)));
-    const y = Math.floor(Math.random() * (h - sliceH));
-    const dx = Math.floor((Math.random() * 2 - 1) * opts.maxShift);
-    const dy = Math.floor((Math.random() * 2 - 1) * (opts.maxShift * 0.18));
-    const hue = (Math.random() * 2 - 1) * opts.hueJitter;
+  // slices: même layout, intensité via opts.maxShift / hueJitter
+  const sl = glitchLayout.slices.slice(0, opts.slices);
+  for (const s of sl) {
+    const dx = Math.floor(s.dx * opts.maxShift);
+    const dy = Math.floor(s.dy * opts.maxShift);
+    const hue = s.hue * opts.hueJitter;
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, y, w, sliceH);
+    ctx.rect(0, s.y, w, s.h);
     ctx.clip();
 
     ctx.globalCompositeOperation = "screen";
-    ctx.globalAlpha = 0.75;
+    ctx.globalAlpha = s.alpha;
     ctx.filter = `hue-rotate(${hue}deg) saturate(1.55) contrast(1.25)`;
     ctx.drawImage(base, dx, dy);
 
     ctx.restore();
   }
 
-  // masks noirs horizontaux
-  ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.62)";
-  for (let k = 0; k < (opts.masks || 0); k++) {
-    const mh = Math.max(14, Math.floor(Math.random() * (h * 0.09)));
-    const my = Math.floor(Math.random() * (h - mh));
-    ctx.fillRect(0, my, w, mh);
+  // masks noirs horizontaux (plus fins)
+  const mhArr = glitchLayout.masksH.slice(0, opts.masks || 0);
+  for (const m of mhArr) {
+    ctx.save();
+    ctx.fillStyle = `rgba(0,0,0,${m.a})`;
+    ctx.fillRect(0, m.y, w, m.h);
+    ctx.restore();
   }
-  ctx.restore();
 
-  // masks verticaux
-  ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.52)";
-  for (let k = 0; k < (opts.vMasks || 0); k++) {
-    const mw = Math.max(18, Math.floor(Math.random() * (w * 0.12)));
-    const mx = Math.floor(Math.random() * (w - mw));
-    ctx.fillRect(mx, 0, mw, h);
+  // masks verticaux (hard)
+  const mvArr = glitchLayout.masksV.slice(0, opts.vMasks || 0);
+  for (const m of mvArr) {
+    ctx.save();
+    ctx.fillStyle = `rgba(0,0,0,${m.a})`;
+    ctx.fillRect(m.x, 0, m.w, h);
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 window.addEventListener("resize", () => {
@@ -1133,3 +1233,4 @@ fetch("../data/licenses_only.json")
     showCustomization();
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
+
