@@ -653,8 +653,8 @@ function updatePreview() {
   const label = (currentMode === "songs") ? "Songs" : "Titres";
 
   previewCountEl.textContent = ok
-    ? `🎵 ${label} disponibles : ${pool.length} (OK)`
-    : `🎵 ${label} disponibles : ${pool.length} (Min ${MIN_REQUIRED})`;
+    ? `📚 ${label} disponibles : ${pool.length} (OK)`
+    : `📚 ${label} disponibles : ${pool.length} (Min ${MIN_REQUIRED})`;
 
   previewCountEl.classList.toggle("good", ok);
   previewCountEl.classList.toggle("bad", !ok);
