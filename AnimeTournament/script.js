@@ -378,15 +378,19 @@ function readOptions() {
 // FILTER TITLES
 // =======================
 function filterTitles(data, o) {
-  let arr = [...data];
+  // 1) D'abord types + années
+  let arr = data.filter(a =>
+    o.types.has(a._type) &&
+    a._year >= o.yMin &&
+    a._year <= o.yMax
+  );
 
+  // 2) Ensuite les top %
   arr.sort((a, b) => b._members - a._members);
   arr = arr.slice(0, Math.ceil(arr.length * o.pop));
 
   arr.sort((a, b) => b._score - a._score);
   arr = arr.slice(0, Math.ceil(arr.length * o.score));
-
-  arr = arr.filter((a) => o.types.has(a._type) && a._year >= o.yMin && a._year <= o.yMax);
 
   return arr;
 }
