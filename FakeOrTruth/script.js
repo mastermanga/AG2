@@ -13,8 +13,8 @@
 const MAX_SCORE = 3000;
 const MIN_REQUIRED_SONGS = 64;
 
-const LISTEN_START = 45;
-const LISTEN_DURATION = 30;
+const LISTEN_START = 3;
+const LISTEN_DURATION = 15;
 
 // ✅ 6 tentatives
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
