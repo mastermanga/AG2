@@ -220,8 +220,8 @@ function updatePreview() {
   const ok = pool.length >= minNeeded;
 
   previewCountEl.textContent = ok
-    ? `🎮 Animes disponibles : ${pool.length} (OK)`
-    : `🎮 Animes disponibles : ${pool.length} (Min ${MIN_REQUIRED})`;
+    ? `📚 Animes disponibles : ${pool.length} (OK)`
+    : `📚 Animes disponibles : ${pool.length} (Min ${MIN_REQUIRED})`;
 
   previewCountEl.classList.toggle("good", ok);
   previewCountEl.classList.toggle("bad", !ok);
