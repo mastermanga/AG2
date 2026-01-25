@@ -1,5 +1,9 @@
 /**********************
  * Fake Or Truth — Anti-bug media (A pinned) + Sync improvements
+ * PATCH perf:
+ * ✅ Buffer gating A+B en parallèle
+ * ✅ Cache-buster seulement à partir de l’essai 2
+ * ✅ Timeouts un peu réduits (desktop)
  **********************/
 
 const MAX_SCORE = 3000;
@@ -8,20 +12,25 @@ const MIN_REQUIRED_SONGS = 64;
 const LISTEN_START = 3;
 const LISTEN_DURATION = 15;
 
+// ✅ 6 tentatives
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 
-// ✅ (A) plus réactif desktop
+// ✅ plus réactif desktop
 const LOAD_TIMEOUT_MS = 11000;
 const SEEK_TIMEOUT_MS = 6000;
 
+// ✅ buffer gating
 const BUFFER_AHEAD_SEC = 0.75;
 const BUFFER_WAIT_MS = 3000;
 
+// ✅ uniformiser l'expérience (A=B ne "part" pas instant)
 const MIN_SYNC_DELAY_MS = 550;
 
+// ✅ start gating (progress)
 const START_ADVANCE_DELTA = 0.10;
 const START_ADVANCE_TIMEOUT_MS = 3000;
 
+// ✅ stall "réel"
 const STALL_TIMEOUT_MS = 14000;
 const STALL_POLL_MS = 500;
 
@@ -94,7 +103,7 @@ function withCacheBuster(url) {
   return url + sep + "t=" + Date.now();
 }
 
-// ✅ cache-buster à partir de l'essai 2
+// ✅ cache-buster à partir de l’essai 2
 function pickSrc(url, attempt) {
   if (attempt <= 1) return url;
   return withCacheBuster(url);
@@ -194,10 +203,6 @@ const containerEl = document.getElementById("container");
 
 const videoPlayer = document.getElementById("videoPlayer");
 const audioPlayer = document.getElementById("audioPlayer");
-
-// ✅ PATCH ORB (double sécurité)
-videoPlayer.crossOrigin = "anonymous";
-audioPlayer.crossOrigin = "anonymous";
 
 const btnTruth = document.getElementById("btnTruth");
 const btnFake = document.getElementById("btnFake");
@@ -300,7 +305,6 @@ function lockForRound() {
 }
 function revealVideoAWithAudio() {
   stopPlayback();
-
   try { audioPlayer.removeAttribute("src"); audioPlayer.load(); } catch {}
 
   videoPlayer.muted = false;
@@ -384,10 +388,6 @@ async function loadMeta(el, url, attempt, label, localToken) {
   if (localToken !== roundToken) return false;
 
   hardReset(el);
-
-  // ✅ PATCH ORB: forcer avant src (important)
-  el.crossOrigin = "anonymous";
-
   const src = pickSrc(url, attempt);
 
   el.preload = "auto";
@@ -665,7 +665,7 @@ function microRateCorrector(localToken) {
 async function autoStartPinned(localToken) {
   if (localToken !== roundToken) return;
 
-  // (A) Tentative 0: A+B en parallèle
+  // tentative 0: A+B en parallèle
   if (!pinnedA.ok && !pinnedB.ok && pinnedA.attempt === 0 && pinnedB.attempt === 0) {
     setMediaStatus("⏳ Préchargement A+B…");
 
@@ -686,7 +686,7 @@ async function autoStartPinned(localToken) {
     if (!okB) pinnedB.attempt = 1;
   }
 
-  // (B) retry A
+  // retry A
   while (!pinnedA.ok && pinnedA.attempt < RETRY_DELAYS.length) {
     if (localToken !== roundToken) return;
 
@@ -703,7 +703,7 @@ async function autoStartPinned(localToken) {
     return finishRoundFailure("Vidéo A : échec après 6 tentatives.");
   }
 
-  // (C) retry B
+  // retry B
   while (!pinnedB.ok && pinnedB.attempt < RETRY_DELAYS.length) {
     if (localToken !== roundToken) return;
 
@@ -720,7 +720,7 @@ async function autoStartPinned(localToken) {
     return finishRoundFailure("Audio B : échec après 6 tentatives.");
   }
 
-  // (D) Buffer gating A+B en parallèle
+  // buffer gating A+B en parallèle
   setMediaStatus("🔄 Synchronisation…");
   const syncT0 = performance.now();
 
@@ -753,14 +753,13 @@ async function autoStartPinned(localToken) {
     pinnedA.attempt = Math.min(pinnedA.attempt + 1, RETRY_DELAYS.length);
     return autoStartPinned(localToken);
   }
-
   if (!okBufB) {
     pinnedB.ok = false;
     pinnedB.attempt = Math.min(pinnedB.attempt + 1, RETRY_DELAYS.length);
     return autoStartPinned(localToken);
   }
 
-  // (E) Start muted + advance + snap + unmute audio
+  // start muted + advance + snap + unmute audio
   stopPlayback();
   clearSegment();
   lockForRound();
@@ -845,7 +844,6 @@ async function autoStartPinned(localToken) {
   if (!adv.ok) {
     stopPlayback();
     clearSegment();
-
     if (adv.vOk === false) {
       pinnedA.ok = false;
       pinnedA.attempt = Math.min(pinnedA.attempt + 1, RETRY_DELAYS.length);
@@ -868,7 +866,6 @@ async function autoStartPinned(localToken) {
   videoPlayer.muted = true;
   audioPlayer.muted = false;
   applyVolume();
-
   setMediaStatus("▶️ Lecture…");
 }
 
