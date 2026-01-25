@@ -438,7 +438,7 @@ function refreshPreview() {
   if (mode === "anime") {
     const ok = titles.length >= minTitlesNeeded;
     if (box) {
-      box.textContent = `${titles.length} titres disponibles${ok ? " (OK)" : ` (Min ${minTitlesNeeded})`}`;
+      box.textContent = `📚 ${titles.length} titres disponibles${ok ? " (OK)" : ` (Min ${minTitlesNeeded})`}`;
       box.classList.toggle("good", ok);
       box.classList.toggle("bad", !ok);
     }
@@ -448,7 +448,7 @@ function refreshPreview() {
     const ok = songs.length >= minSongsNeeded;
 
     if (box) {
-      box.textContent = `${songs.length} songs disponibles${ok ? " (OK)" : ` (Min ${minSongsNeeded})`}`;
+      box.textContent = `🎵 ${songs.length} songs disponibles${ok ? " (OK)" : ` (Min ${minSongsNeeded})`}`;
       box.classList.toggle("good", ok);
       box.classList.toggle("bad", !ok);
     }
