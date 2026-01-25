@@ -135,10 +135,12 @@
       <div id="mediaStatus"></div>
 
       <div id="videoWrapper">
-        <video id="videoPlayer" playsinline preload="auto"></video>
+        <!-- ✅ PATCH ORB: crossorigin="anonymous" -->
+        <video id="videoPlayer" playsinline preload="auto" crossorigin="anonymous"></video>
       </div>
 
-      <video id="audioPlayer" playsinline preload="auto" style="display:none;"></video>
+      <!-- ✅ PATCH ORB: crossorigin="anonymous" -->
+      <video id="audioPlayer" playsinline preload="auto" crossorigin="anonymous" style="display:none;"></video>
 
       <div id="volumeRow" class="volume-row">
         <div class="vol-label">🔊 Volume</div>
