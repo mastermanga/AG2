@@ -398,30 +398,56 @@ function filterTitles(data, o) {
 // =======================
 // BUILD SONGS
 // =======================
-function buildSongs(titles, o) {
+function buildSongsWithMeta(titles, o) {
   const tracks = [];
 
-  const addList = (baseTitle, list, kind) => {
+  const addList = (t, list, kind) => {
     (list || []).forEach((s) => {
       if (!s?.video) return;
       tracks.push({
         video: s.video,
-        label: `${baseTitle} ${kind} ${s.number ?? ""} : ${s.name ?? ""}${
+        label: `${t._title} ${kind} ${s.number ?? ""} : ${s.name ?? ""}${
           s.artists?.length ? " by " + s.artists.join(", ") : ""
         }`.replace(/\s+/g, " ").trim(),
+
+        // ✅ meta anime pour trier comme Blind Ranking
+        _members: t._members,
+        _score: t._score,
+        _year: t._year,
+        _type: t._type,
       });
     });
   };
 
   titles.forEach((t) => {
-    const baseTitle = t._title || getDisplayTitle(t);
-
-    if (o.incOP) addList(baseTitle, t.song?.openings, "Opening");
-    if (o.incED) addList(baseTitle, t.song?.endings, "Ending");
-    if (o.incIN) addList(baseTitle, t.song?.inserts, "Insert");
+    if (o.incOP) addList(t, t.song?.openings, "Opening");
+    if (o.incED) addList(t, t.song?.endings, "Ending");
+    if (o.incIN) addList(t, t.song?.inserts, "Insert");
   });
 
   return tracks;
+}
+
+function filterSongs(data, o) {
+  // 1) filtres “durs” au niveau anime (comme Blind Ranking)
+  const titles = data.filter(a =>
+    o.types.has(a._type) &&
+    a._year >= o.yMin &&
+    a._year <= o.yMax
+  );
+
+  // 2) on construit la liste de songs
+  let songs = buildSongsWithMeta(titles, o);
+
+  // 3) Top% popularité AU NIVEAU SONGS
+  songs.sort((a, b) => b._members - a._members);
+  songs = songs.slice(0, Math.ceil(songs.length * o.pop));
+
+  // 4) Top% score AU NIVEAU SONGS
+  songs.sort((a, b) => b._score - a._score);
+  songs = songs.slice(0, Math.ceil(songs.length * o.score));
+
+  return songs;
 }
 
 // =======================
@@ -448,7 +474,7 @@ function refreshPreview() {
     }
     if (btn) btn.disabled = !ok;
   } else {
-    const songs = buildSongs(titles, o);
+    const songs = filterSongs(ALL_TITLES, o);
     const ok = songs.length >= minSongsNeeded;
 
     if (box) {
@@ -567,7 +593,7 @@ function startGame() {
       title: t._title,
     }));
   } else {
-    const songs = buildSongs(titles, o);
+    const songs = filterSongs(ALL_TITLES, o);
     const minSongsNeeded = Math.max(MIN_REQUIRED_SONGS, TOTAL_MATCH_ITEMS);
 
     if (songs.length < minSongsNeeded) {
