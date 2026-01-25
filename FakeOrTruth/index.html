@@ -131,14 +131,14 @@
       </div>
 
       <div id="roundLabel" style="margin:0 0 8px 0; font-weight:900; opacity:0.9; text-align:center;"></div>
-
       <div id="mediaStatus"></div>
 
       <div id="videoWrapper">
-        <video id="videoPlayer" playsinline preload="auto"></video>
+        <video id="videoPlayer" playsinline preload="metadata"></video>
       </div>
 
-      <video id="audioPlayer" playsinline preload="auto" style="display:none;"></video>
+      <!-- ✅ Audio B : plus léger qu’un <video> caché -->
+      <audio id="audioPlayer" preload="metadata" style="display:none;"></audio>
 
       <div id="volumeRow" class="volume-row">
         <div class="vol-label">🔊 Volume</div>
@@ -159,6 +159,8 @@
   </div>
 
   <footer>© 2025 mastermanga</footer>
-  <script src="script.js"></script>
+
+  <!-- ✅ change le suffixe quand tu updates, pour éviter le cache -->
+  <script src="script.js?v=FOT_2MEDIA_FIX"></script>
 </body>
 </html>
