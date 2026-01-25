@@ -455,8 +455,8 @@ function updatePreview() {
 
   const label = (currentMode === "songs") ? "Songs" : "Animes";
   previewCountEl.textContent = ok
-    ? `🎮 ${label} disponibles : ${pool.length} (OK) — Duels possibles: ${Math.floor(pool.length / 2)}`
-    : `🎮 ${label} disponibles : ${pool.length} (Min ${need})`;
+    ? `📚 ${label} disponibles : ${pool.length} (OK) — Duels possibles: ${Math.floor(pool.length / 2)}`
+    : `📚 ${label} disponibles : ${pool.length} (Min ${need})`;
 
   previewCountEl.classList.toggle("good", ok);
   previewCountEl.classList.toggle("bad", !ok);
