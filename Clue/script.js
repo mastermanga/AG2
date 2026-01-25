@@ -725,7 +725,7 @@ function updatePreview() {
   const count = pool.length;
   const ok = count >= MIN_TITLES_TO_START;
 
-  previewCountEl.textContent = `🧩 Titres disponibles : ${count} (${ok ? "OK" : "Min 64"})`;
+  previewCountEl.textContent = `📚 Titres disponibles : ${count} (${ok ? "OK" : "Min 64"})`;
   previewCountEl.classList.toggle("good", ok);
   previewCountEl.classList.toggle("bad", !ok);
 
