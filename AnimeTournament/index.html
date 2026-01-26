@@ -21,7 +21,7 @@
         <span class="info-icon" tabindex="0" aria-label="Aide">
           <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor"
-              d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+              d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
           </svg>
         </span>
 
@@ -29,6 +29,8 @@
           Enchaîner des duels 1v1 entre 32 animes ou songs (openings/endings/inserts) pour établir un classement.
           <br><br>
           ✅ Vote en cliquant sur le titre (pas sur la vidéo).
+          <br>
+          🎯 Un thème “contenu” est tiré au lancement (Libre / Année / Studio / Tag / Score proche / Popularité proche + (Songs) Artiste / Saison).
         </span>
       </span>
     </div>
@@ -110,7 +112,7 @@
     <!-- Preview -->
     <div id="previewCount" class="preview-count bad">⏳ Chargement de la base…</div>
 
-    <!-- Rounds -->
+    <!-- Rounds (laissé tel quel) -->
     <div class="opt-row rounds-row">
       <div class="opt-label">Rounds</div>
       <div class="opt-col rounds-col">
@@ -131,7 +133,7 @@
   <div id="game-panel">
     <div id="round-indicator" class="main-block"></div>
 
-    <!-- ✅ NOUVEAU: indicateur du thème contenu -->
+    <!-- ✅ Thème contenu (nouveau) -->
     <div id="theme-indicator" class="theme-indicator"></div>
 
     <!-- ✅ Volume (uniquement Songs, affiché par JS) -->
