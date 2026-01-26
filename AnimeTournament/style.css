@@ -1,7 +1,7 @@
 /* =========================
    Anime Tournament — style.css (COMPLET)
-   - Volume bar (Songs only, shown by JS)
-   - Titles smaller + no overlap (overflow hidden + clamp lines)
+   - Theme indicator (contenu)
+   - Songs snippet: géré JS
    ========================= */
 
 /* ====== BACKGROUND ====== */
@@ -213,13 +213,6 @@ body.light .main-block {
   text-align: right;
 }
 
-.opt-sub{
-  margin-top: 8px;
-  opacity: 0.85;
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-
 #custom-panel input[type="range"]{
   width: 100%;
   appearance: none;
@@ -373,6 +366,7 @@ body.game-started #custom-panel { display: none !important; }
 body.game-started #game-panel  { display: block !important; }
 
 body:not(.game-started) #round-indicator,
+body:not(.game-started) #theme-indicator,
 body:not(.game-started) #volumeBar,
 body:not(.game-started) #duel-container,
 body:not(.game-started) #next-match-btn,
@@ -387,7 +381,7 @@ body:not(.game-started) #classement {
   max-width: 520px;
   width: min(92vw, 520px);
   padding: 0.9rem 1.2rem;
-  margin: 0 auto 0.8rem auto;
+  margin: 0 auto 0.6rem auto;
 
   display: flex;
   align-items: center;
@@ -413,8 +407,38 @@ body.light #round-indicator {
   box-shadow: 0 2px 14px #42a5f54b;
 }
 
+/* ✅ THEME INDICATOR */
+#theme-indicator{
+  max-width: 920px;
+  width: min(92vw, 920px);
+  margin: 0 auto 0.8rem auto;
+  padding: 10px 14px;
+  border-radius: 14px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+
+  font-weight: 900;
+  opacity: 0.95;
+
+  background: rgba(22, 30, 39, 0.88);
+  border: 1.5px solid rgba(0,188,212,0.28);
+  box-shadow: 0 0 22px 3px rgba(0,188,212,0.16);
+  position: relative;
+  z-index: 2;
+}
+
+body.light #theme-indicator{
+  background: #ffffff;
+  border: 1.5px solid rgba(66,165,245,0.45);
+  box-shadow: 0 0 18px #42a5f555;
+  color: #0b1a2a;
+}
+
 /* =========================================
-   VOLUME BAR (style image)
+   VOLUME BAR
    ========================================= */
 .volume-bar{
   max-width: 920px;
@@ -501,7 +525,7 @@ body.light .volume-right { color: #0b1a2a; }
 
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2.8rem; /* ✅ plus d'espace */
+  gap: 2.8rem;
   align-items: start;
 }
 
@@ -520,8 +544,6 @@ body.light .volume-right { color: #0b1a2a; }
   background: rgba(0,0,0,0.10);
   border: 1px solid rgba(0,188,212,0.18);
   box-shadow: 0 0 18px rgba(0, 188, 212, 0.10);
-
-  /* ✅ empêche les shadows/hover de déborder et de "toucher" l'autre carte */
   overflow: hidden;
 }
 
@@ -553,7 +575,7 @@ body.light .volume-right { color: #0b1a2a; }
   padding: 2px 2px 0 2px;
 }
 
-/* ✅ TITRES plus petits + clamp 2 lignes + pas de débordement */
+/* TITRES */
 #duel-container .vote-title {
   cursor: pointer;
   background: #00bcd4;
@@ -562,7 +584,6 @@ body.light .volume-right { color: #0b1a2a; }
   margin: 0;
   padding: 0.62em 0.85em;
 
-  /* plus petit */
   font-size: clamp(0.86rem, 1.05vw, 0.98rem);
   font-weight: 900;
   letter-spacing: 0.01em;
@@ -575,14 +596,12 @@ body.light .volume-right { color: #0b1a2a; }
   text-align: center;
   line-height: 1.22;
 
-  /* clamp */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
 
-  /* shadow légère (ne déborde pas grâce overflow hidden sur la carte) */
   box-shadow: 0 2px 10px rgba(0,188,212,0.18);
 }
 
