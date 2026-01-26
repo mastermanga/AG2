@@ -218,7 +218,7 @@ body.light #custom-panel { background:#fff; box-shadow:0 0 18px #42a5f555; }
   user-select:none;
 }
 
-/* ==== VIDEO ==== */
+/* ==== MEDIA WRAPPER (Image A / Video B reveal) ==== */
 #videoWrapper{
   width:100%; max-width:520px;
   margin:4px auto 10px auto;
@@ -227,6 +227,18 @@ body.light #custom-panel { background:#fff; box-shadow:0 0 18px #42a5f555; }
   background: rgba(0,0,0,0.12);
   border:1px solid rgba(0,188,212,0.22);
 }
+
+/* ✅ Image A */
+#videoWrapper img{
+  width:100% !important;
+  display:block;
+  border-radius:12px;
+  background:#000;
+  object-fit: cover;
+  aspect-ratio: 16 / 9;
+}
+
+/* ✅ Video B (reveal) */
 #videoWrapper video{
   width:100% !important;
   display:block;
