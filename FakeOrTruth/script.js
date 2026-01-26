@@ -1,34 +1,27 @@
 /**********************
- * Fake Or Truth — Anti-bug media (A pinned) + Sync improvements (v2)
- * ✅ Audio B en <audio> (moins lourd)
- * ✅ Préchargement SÉQUENTIEL (A puis B) mais lecture SIMULTANÉE (même gameplay)
- * ✅ Anti “attendre 1 minute”: si échec -> reroll duel dans le même round
- * ✅ Gating buffer simplifié + sync snap + micro playbackRate (vidéo mute)
- * ✅ Watchdog stall "le temps n'avance plus"
+ * Fake Or Truth — Image A + Audio B (45s -> 20s)
+ * ✅ 25% Truth / 75% Fake
+ * ✅ Reveal = Vidéo B + Audio B
+ * ✅ Robust audio load/seek/buffer + autoplay fallback click
  **********************/
 
 const MAX_SCORE = 3000;
 const MIN_REQUIRED_SONGS = 64;
 
-// Extrait: 45s -> 75s
+// Extrait: 45s -> 20s
 const LISTEN_START = 45;
-const LISTEN_DURATION = 30;
+const LISTEN_DURATION = 20;
 
-// Retries plus courts (sinon tu te retrouves à 1min)
+// Probabilité de match (Truth)
+const TRUTH_PROB = 0.25;
+
+// Retries + timeouts
 const RETRY_DELAYS = [0, 1200, 2500, 4500]; // 4 tentatives max
 const LOAD_TIMEOUT_MS = 11000;
 const SEEK_TIMEOUT_MS = 9000;
 
-// Buffer gating plus doux
 const BUFFER_AHEAD_SEC = 0.75;
 const BUFFER_WAIT_MS = 2500;
-
-// Uniformiser l'expérience (A=B ne démarre pas "trop vite")
-const MIN_SYNC_DELAY_MS = 420;
-
-// start gating (progress)
-const START_ADVANCE_DELTA = 0.10;
-const START_ADVANCE_TIMEOUT_MS = 4200;
 
 // Stall
 const STALL_TIMEOUT_MS = 12000;
@@ -38,6 +31,23 @@ const STALL_POLL_MS = 500;
 const MAX_REROLLS_PER_ROUND = 5;
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const FALLBACK_IMAGE = (() => {
+  const svg = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720">
+    <defs>
+      <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#0b1220"/>
+        <stop offset="1" stop-color="#123a5a"/>
+      </linearGradient>
+    </defs>
+    <rect width="1280" height="720" fill="url(#g)"/>
+    <text x="50%" y="50%" fill="#eaffff" font-size="54" font-family="Segoe UI, Arial" text-anchor="middle" dominant-baseline="middle">
+      Image indisponible
+    </text>
+  </svg>`;
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg.trim());
+})();
 
 // ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
@@ -59,6 +69,7 @@ function normalizeAnimeList(json) {
   if (json && Array.isArray(json.animes)) return json.animes;
   return [];
 }
+
 function getDisplayTitle(a) {
   return (
     a.title_english ||
@@ -69,26 +80,37 @@ function getDisplayTitle(a) {
     "Titre inconnu"
   );
 }
+
 function getYear(a) {
   const s = (a.season || "").trim();
   const m = s.match(/(19|20)\d{2}/);
   return m ? parseInt(m[0], 10) : 0;
 }
-function shuffleInPlace(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
+
+function getAnimeImage(a) {
+  const candidates = [
+    a?.images?.webp?.large_image_url,
+    a?.images?.webp?.image_url,
+    a?.images?.jpg?.large_image_url,
+    a?.images?.jpg?.image_url,
+    a?.image_url,
+    a?.image,
+    a?.cover,
+    a?.cover_image,
+  ].filter(Boolean);
+  return candidates[0] || "";
 }
+
 function safeNum(x) {
   const n = +x;
   return Number.isFinite(n) ? n : 0;
 }
+
 function clampInt(n, a, b) {
   n = Number.isFinite(n) ? n : a;
   return Math.max(a, Math.min(b, n));
 }
+
 function clampYearSliders() {
   let a = parseInt(yearMinEl.value, 10);
   let b = parseInt(yearMaxEl.value, 10);
@@ -98,9 +120,11 @@ function clampYearSliders() {
     yearMaxEl.value = b;
   }
 }
+
 function pickRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
+
 function withCacheBuster(url) {
   const sep = url.includes("?") ? "&" : "?";
   return url + sep + "t=" + Date.now();
@@ -124,6 +148,13 @@ async function waitBufferAhead(el, baseT, aheadSec, maxWaitMs, localToken) {
     await delay(120);
   }
   return el.readyState >= 3 && isTimeBuffered(el, baseT, Math.min(0.20, aheadSec));
+}
+
+function isNotAllowedError(reason) {
+  if (!reason) return false;
+  const name = reason.name || "";
+  const msg = String(reason.message || "");
+  return name === "NotAllowedError" || /notallowed/i.test(msg);
 }
 
 // ====== Songs extraction ======
@@ -153,6 +184,7 @@ function extractSongsFromAnime(anime) {
         animeYear: anime._year,
         animeMembers: anime._members,
         animeScore: anime._score,
+        animeImage: anime._image,
 
         songType: b.type,
         songNumber: safeNum(it.number) || 1,
@@ -171,6 +203,12 @@ function formatRevealLine(s) {
   const partName = s.songName ? ` : ${s.songName}` : "";
   const by = s.songArtist ? ` - ${s.songArtist}` : "";
   return `${s.animeTitle} ${typeLabel}${num}${partName}${by}`;
+}
+
+function formatAnimeLineFromSong(s) {
+  const y = s.animeYear ? ` (${s.animeYear})` : "";
+  const t = s.animeType ? ` • ${s.animeType}` : "";
+  return `${s.animeTitle}${y}${t}`;
 }
 
 // ====== DOM refs ======
@@ -198,8 +236,9 @@ const nextBtn = document.getElementById("nextBtn");
 const mediaStatusEl = document.getElementById("mediaStatus");
 const containerEl = document.getElementById("container");
 
-const videoPlayer = document.getElementById("videoPlayer");
-const audioPlayer = document.getElementById("audioPlayer"); // ✅ <audio>
+const imageAEl = document.getElementById("imageA");
+const videoPlayer = document.getElementById("videoPlayer");   // reveal B
+const audioPlayer = document.getElementById("audioPlayer");   // audio B
 
 const btnTruth = document.getElementById("btnTruth");
 const btnFake = document.getElementById("btnFake");
@@ -207,8 +246,8 @@ const btnFake = document.getElementById("btnFake");
 const volumeSlider = document.getElementById("volumeSlider");
 const volumeVal = document.getElementById("volumeVal");
 
-// ====== Support WebM ======
-const CAN_PLAY_WEBM = (() => {
+// ====== Support WebM (pour reveal vidéo) ======
+const CAN_PLAY_WEBM_VIDEO = (() => {
   const v = document.createElement("video");
   if (!v.canPlayType) return false;
   const t1 = v.canPlayType('video/webm; codecs="vp9, opus"');
@@ -228,15 +267,12 @@ let currentRound = 1;
 let totalScore = 0;
 
 // ====== Round state ======
-let videoSong = null; // A
-let audioSong = null; // B
-let isMatch = false;
+let imageSong = null; // A (sert à l'image/anime)
+let audioSong = null; // B (sert à l'audio + reveal vidéo)
+let isMatch = false;  // Truth = même anime ?
 
 let roundToken = 0;
 let rerollsLeft = MAX_REROLLS_PER_ROUND;
-
-let pinnedA = { ok: false, attempt: 0, url: "" };
-let pinnedB = { ok: false, attempt: 0, url: "" };
 
 // ====== Status ======
 function setMediaStatus(msg) {
@@ -274,7 +310,9 @@ function updateScoreBar(forceScore = null) {
 // ====== Volume ======
 function applyVolume() {
   const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "50", 10)));
-  audioPlayer.volume = v / 100;
+  const vol = v / 100;
+  audioPlayer.volume = vol;
+  videoPlayer.volume = vol;
   volumeVal.textContent = `${v}%`;
 }
 volumeSlider.addEventListener("input", applyVolume);
@@ -285,32 +323,32 @@ function hardReset(el) {
   el.removeAttribute("src");
   el.load();
 }
+
 function stopPlayback() {
-  try { videoPlayer.pause(); } catch {}
   try { audioPlayer.pause(); } catch {}
+  try { videoPlayer.pause(); } catch {}
 }
-function lockForRound() {
-  videoPlayer.muted = true;
+
+function resetVisualsForRound() {
+  // mode jeu: image visible, vidéo cachée
+  imageAEl.style.display = "block";
+  videoPlayer.style.display = "none";
   videoPlayer.controls = false;
   videoPlayer.removeAttribute("controls");
-
-  audioPlayer.muted = false;
-  audioPlayer.removeAttribute("controls");
-  audioPlayer.style.display = "none";
-
-  applyVolume();
-}
-function revealVideoAWithAudio() {
-  stopPlayback();
-
-  // éviter double audio
-  try { audioPlayer.removeAttribute("src"); audioPlayer.load(); } catch {}
-
   videoPlayer.muted = false;
-  videoPlayer.controls = true;
-  videoPlayer.setAttribute("controls", "controls");
 
-  try { videoPlayer.currentTime = LISTEN_START; } catch {}
+  // audio caché (mais joue)
+  audioPlayer.style.display = "none";
+}
+
+function setImageForA(songA) {
+  const src = songA?.animeImage || "";
+  imageAEl.src = src || FALLBACK_IMAGE;
+  imageAEl.alt = songA?.animeTitle ? `Anime: ${songA.animeTitle}` : "Image A";
+
+  imageAEl.onerror = () => {
+    imageAEl.src = FALLBACK_IMAGE;
+  };
 }
 
 // ====== waitEvent ======
@@ -350,7 +388,7 @@ function waitEvent(el, okEvent, badEvents, timeoutMs, localToken) {
   });
 }
 
-// ====== Seek & pin ======
+// ====== Seek & load audio ======
 async function ensurePinnedAt(el, t, localToken) {
   if (localToken !== roundToken) return false;
 
@@ -386,9 +424,7 @@ async function loadMeta(el, url, attempt, label, localToken) {
 
   hardReset(el);
 
-  // cache-buster uniquement après un échec
   const src = attempt === 0 ? url : withCacheBuster(url);
-
   el.preload = "metadata";
   el.src = src;
   el.load();
@@ -402,18 +438,18 @@ async function loadMeta(el, url, attempt, label, localToken) {
   }
 }
 
-async function loadAndPin(el, url, attempt, label, localToken) {
-  const okMeta = await loadMeta(el, url, attempt, label, localToken);
+async function loadAndPinAudio(url, attempt, localToken) {
+  const okMeta = await loadMeta(audioPlayer, url, attempt, "Audio B", localToken);
   if (!okMeta || localToken !== roundToken) return false;
 
-  const okPin = await ensurePinnedAt(el, LISTEN_START, localToken);
+  const okPin = await ensurePinnedAt(audioPlayer, LISTEN_START, localToken);
   if (!okPin || localToken !== roundToken) return false;
 
-  try { el.pause(); } catch {}
+  try { audioPlayer.pause(); } catch {}
   return true;
 }
 
-// ====== Segment + Stall watchdog ======
+// ====== Segment + Stall watchdog (audio only) ======
 let segmentActive = false;
 let segmentEnd = 0;
 let stallWatchId = null;
@@ -433,8 +469,24 @@ function clearSegment() {
   endCheckId = null;
 }
 
+function finishRoundFailure(reasonText) {
+  btnTruth.disabled = true;
+  btnFake.disabled = true;
+
+  resultDiv.innerHTML = `
+    ❌ Duel annulé (problème média).<br>
+    <em>${reasonText || "Impossible de charger après plusieurs tentatives."}</em>
+    <div style="margin-top:8px;">Score : <b>0</b> / 3000</div>
+  `;
+  resultDiv.className = "incorrect";
+  updateScoreBar(0);
+
+  endRoundAndMaybeNext(0);
+}
+
 function rerollDuel(localToken, msg) {
   if (localToken !== roundToken) return;
+
   if (rerollsLeft <= 0) {
     finishRoundFailure("Trop d’échecs média d’affilée (serveur/charge).");
     return;
@@ -443,7 +495,7 @@ function rerollDuel(localToken, msg) {
 
   stopPlayback();
   clearSegment();
-  lockForRound();
+  resetVisualsForRound();
 
   setMediaStatus(msg || "🔁 Nouveau duel…");
 
@@ -453,23 +505,13 @@ function rerollDuel(localToken, msg) {
     return;
   }
 
-  videoSong = pair.A;
+  imageSong = pair.A;
   audioSong = pair.B;
   isMatch = pair.isMatch;
 
-  pinnedA = { ok: false, attempt: 0, url: videoSong.url };
-  pinnedB = { ok: false, attempt: 0, url: audioSong.url };
-
-  // ⚠️ on bump le token pour annuler tout ce qui traîne
+  // annule tout ce qui traîne
   roundToken++;
-  autoStartPinned(roundToken);
-}
-
-function handleStall(localToken) {
-  if (localToken !== roundToken) return;
-  if (!segmentActive) return;
-
-  rerollDuel(localToken, "⏳ Lecture bloquée… nouveau duel.");
+  autoStartRound(roundToken);
 }
 
 function armSegment(localToken) {
@@ -477,14 +519,14 @@ function armSegment(localToken) {
   segmentActive = true;
   segmentEnd = LISTEN_START + LISTEN_DURATION;
 
-  lastProgressT = Math.max(videoPlayer.currentTime || 0, audioPlayer.currentTime || 0);
+  lastProgressT = audioPlayer.currentTime || 0;
   lastProgressWall = performance.now();
 
   stallWatchId = setInterval(() => {
     if (!segmentActive) return;
     if (localToken !== roundToken) return;
 
-    const t = Math.max(videoPlayer.currentTime || 0, audioPlayer.currentTime || 0);
+    const t = audioPlayer.currentTime || 0;
     const now = performance.now();
 
     if (t > lastProgressT + 0.08) {
@@ -494,7 +536,7 @@ function armSegment(localToken) {
     }
 
     if (now - lastProgressWall > STALL_TIMEOUT_MS) {
-      handleStall(localToken);
+      rerollDuel(localToken, "⏳ Lecture audio bloquée… nouveau duel.");
     }
   }, STALL_POLL_MS);
 
@@ -502,53 +544,52 @@ function armSegment(localToken) {
     if (!segmentActive) return;
     if (localToken !== roundToken) return;
 
-    const t = Math.max(videoPlayer.currentTime || 0, audioPlayer.currentTime || 0);
+    const t = audioPlayer.currentTime || 0;
     if (t >= segmentEnd - 0.05) {
-      try { videoPlayer.pause(); } catch {}
       try { audioPlayer.pause(); } catch {}
       clearSegment();
-      setMediaStatus("✅ À toi : Truth (match) ou Fake (pas match) ?");
+      setMediaStatus("✅ À toi : Truth (même anime) ou Fake (anime différent) ?");
       btnTruth.disabled = false;
       btnFake.disabled = false;
     }
   }, 120);
 }
 
-// ====== Pair selection (1/3 rules) ======
-function pickDifferentAnimeSong(base) {
-  for (let i = 0; i < 140; i++) {
-    const cand = pickRandom(filteredSongs);
-    if (!cand?.url) continue;
-    if (cand.url === base.url) continue;
-    if (cand.animeMalId && base.animeMalId && cand.animeMalId === base.animeMalId) continue;
-    if (cand.animeTitleLower === base.animeTitleLower) continue;
-    return cand;
-  }
-  return pickRandom(filteredSongs);
+// ====== Pair selection (25/75) ======
+function sameAnime(a, b) {
+  if (!a || !b) return false;
+  if (a.animeMalId && b.animeMalId) return a.animeMalId === b.animeMalId;
+  return a.animeTitleLower && b.animeTitleLower && a.animeTitleLower === b.animeTitleLower;
 }
 
-function pickSameAnimeDifferentSong(base) {
-  const same = filteredSongs.filter(s =>
-    (s.animeMalId && base.animeMalId && s.animeMalId === base.animeMalId) &&
-    s.url !== base.url
-  );
-  return same.length ? pickRandom(same) : null;
+function pickSongSameAnime(base) {
+  const same = filteredSongs.filter(s => sameAnime(s, base));
+  return same.length ? pickRandom(same) : base;
+}
+
+function pickSongDifferentAnime(base) {
+  for (let i = 0; i < 180; i++) {
+    const cand = pickRandom(filteredSongs);
+    if (!cand?.url) continue;
+    if (!sameAnime(cand, base)) return cand;
+  }
+  // fallback si pool trop "mono"
+  return pickRandom(filteredSongs);
 }
 
 function choosePair() {
   const A = pickRandom(filteredSongs);
   if (!A?.url) return null;
 
-  const r = Math.floor(Math.random() * 3);
-  if (r === 0) return { A, B: A, isMatch: true };
+  const truth = Math.random() < TRUTH_PROB;
 
-  if (r === 2) {
-    const same = pickSameAnimeDifferentSong(A);
-    if (same) return { A, B: same, isMatch: false };
-    return { A, B: pickDifferentAnimeSong(A), isMatch: false };
+  if (truth) {
+    const B = pickSongSameAnime(A);
+    return { A, B, isMatch: true };
+  } else {
+    const B = pickSongDifferentAnime(A);
+    return { A, B, isMatch: false };
   }
-
-  return { A, B: pickDifferentAnimeSong(A), isMatch: false };
 }
 
 // ====== Round flow ======
@@ -566,25 +607,13 @@ function resetControls() {
   stopPlayback();
   clearSegment();
 
-  lockForRound();
+  hardReset(audioPlayer);
+  hardReset(videoPlayer);
+
+  resetVisualsForRound();
   updateScoreBar(MAX_SCORE);
 
   if (roundLabel) roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
-}
-
-function finishRoundFailure(reasonText) {
-  btnTruth.disabled = true;
-  btnFake.disabled = true;
-
-  resultDiv.innerHTML = `
-    ❌ Duel annulé (problème média).<br>
-    <em>${reasonText || "Impossible de charger après plusieurs tentatives."}</em>
-    <div style="margin-top:8px;">Score : <b>0</b> / 3000</div>
-  `;
-  resultDiv.className = "incorrect";
-  updateScoreBar(0);
-
-  endRoundAndMaybeNext(0);
 }
 
 function startNewRound() {
@@ -594,164 +623,75 @@ function startNewRound() {
   rerollsLeft = MAX_REROLLS_PER_ROUND;
   resetControls();
 
-  if (!CAN_PLAY_WEBM) {
-    setMediaStatus("⚠️ WebM non supporté sur ce navigateur (Safari/iOS).");
-    finishRoundFailure("WebM non supporté.");
+  // reveal vidéo B a besoin de webm vidéo
+  if (!CAN_PLAY_WEBM_VIDEO) {
+    setMediaStatus("⚠️ WebM non supporté (vidéo reveal impossible sur ce navigateur).");
+    // Le jeu audio peut encore marcher, mais tu as demandé reveal vidéo B.
+    // On stop ici pour éviter confusion.
+    finishRoundFailure("WebM vidéo non supporté.");
     return;
   }
 
   const pair = choosePair();
   if (!pair) return startNewRound();
 
-  videoSong = pair.A;
+  imageSong = pair.A;
   audioSong = pair.B;
   isMatch = pair.isMatch;
 
-  pinnedA = { ok: false, attempt: 0, url: videoSong.url };
-  pinnedB = { ok: false, attempt: 0, url: audioSong.url };
-
-  autoStartPinned(localToken);
+  autoStartRound(localToken);
 }
 
-// ====== START SYNC helpers ======
-function isNotAllowedError(reason) {
-  if (!reason) return false;
-  const name = reason.name || "";
-  const msg = String(reason.message || "");
-  return name === "NotAllowedError" || /notallowed/i.test(msg);
-}
-
-async function waitBothAdvance(localToken, baseTime, delta, timeoutMs) {
-  const end = performance.now() + timeoutMs;
-  const target = baseTime + delta;
-
-  while (performance.now() < end) {
-    if (localToken !== roundToken) return { ok: false };
-
-    const tv = videoPlayer.currentTime || 0;
-    const ta = audioPlayer.currentTime || 0;
-
-    if (tv >= target && ta >= target) return { ok: true };
-    await delay(60);
-  }
-
-  const tv = videoPlayer.currentTime || 0;
-  const ta = audioPlayer.currentTime || 0;
-  return {
-    ok: false,
-    vOk: tv >= (baseTime + Math.min(0.03, delta)),
-    aOk: ta >= (baseTime + Math.min(0.03, delta)),
-  };
-}
-
-function snapVideoToAudio() {
-  const tv = videoPlayer.currentTime || 0;
-  const ta = audioPlayer.currentTime || 0;
-  const dv = ta - tv;
-
-  if (Math.abs(dv) > 0.10) {
-    try { videoPlayer.currentTime = ta; } catch {}
-  }
-}
-
-function microRateCorrector(localToken) {
-  const start = performance.now();
-  const timer = setInterval(() => {
-    if (localToken !== roundToken) { clearInterval(timer); return; }
-    const tv = videoPlayer.currentTime || 0;
-    const ta = audioPlayer.currentTime || 0;
-    const dv = ta - tv;
-
-    if (dv > 0.08) videoPlayer.playbackRate = 1.06;
-    else if (dv < -0.08) videoPlayer.playbackRate = 0.94;
-    else videoPlayer.playbackRate = 1.0;
-
-    if (performance.now() - start > 900) {
-      videoPlayer.playbackRate = 1.0;
-      clearInterval(timer);
-    }
-  }, 120);
-}
-
-// ====== cœur : pinned + load gating + start sync ======
-async function autoStartPinned(localToken) {
+// ====== cœur : load audio + play segment (image visible) ======
+async function autoStartRound(localToken) {
   if (localToken !== roundToken) return;
 
-  // ---------- (A) Charger + pin A (séquentiel) ----------
-  while (!pinnedA.ok && pinnedA.attempt < RETRY_DELAYS.length) {
-    if (localToken !== roundToken) return;
+  // 1) Image A
+  setImageForA(imageSong);
 
-    await delay(RETRY_DELAYS[pinnedA.attempt]);
-    const okA = await loadAndPin(videoPlayer, videoSong.url, pinnedA.attempt, "Vidéo A", localToken);
-    if (localToken !== roundToken) return;
+  // 2) Charger + pin audio B
+  let ok = false;
+  let attempt = 0;
 
-    if (okA) { pinnedA.ok = true; break; }
-    pinnedA.attempt++;
+  while (!ok && attempt < RETRY_DELAYS.length) {
+    if (localToken !== roundToken) return;
+    await delay(RETRY_DELAYS[attempt]);
+
+    ok = await loadAndPinAudio(audioSong.url, attempt, localToken);
+    if (localToken !== roundToken) return;
+    if (ok) break;
+    attempt++;
   }
 
-  if (!pinnedA.ok) {
-    rerollDuel(localToken, "⚠️ Vidéo A indisponible → nouveau duel…");
-    return;
-  }
-
-  // ---------- (B) Charger + pin B (séquentiel) ----------
-  while (!pinnedB.ok && pinnedB.attempt < RETRY_DELAYS.length) {
-    if (localToken !== roundToken) return;
-
-    await delay(RETRY_DELAYS[pinnedB.attempt]);
-    const okB = await loadAndPin(audioPlayer, audioSong.url, pinnedB.attempt, "Audio B", localToken);
-    if (localToken !== roundToken) return;
-
-    if (okB) { pinnedB.ok = true; break; }
-    pinnedB.attempt++;
-  }
-
-  if (!pinnedB.ok) {
+  if (!ok) {
     rerollDuel(localToken, "⚠️ Audio B indisponible → nouveau duel…");
     return;
   }
 
-  // ---------- (C) Buffer gating léger ----------
-  setMediaStatus("🔄 Synchronisation…");
-  const syncT0 = performance.now();
-
-  const okBufA = await waitBufferAhead(videoPlayer, LISTEN_START, BUFFER_AHEAD_SEC, BUFFER_WAIT_MS, localToken);
+  // 3) Buffer gating
+  setMediaStatus("🔄 Préparation…");
+  const okBuf = await waitBufferAhead(audioPlayer, LISTEN_START, BUFFER_AHEAD_SEC, BUFFER_WAIT_MS, localToken);
   if (localToken !== roundToken) return;
-  if (!okBufA) {
-    pinnedA.ok = false;
-    pinnedA.attempt = Math.min(pinnedA.attempt + 1, RETRY_DELAYS.length);
-    rerollDuel(localToken, "⏳ Vidéo trop lente → nouveau duel…");
-    return;
-  }
 
-  const okBufB = await waitBufferAhead(audioPlayer, LISTEN_START, BUFFER_AHEAD_SEC, BUFFER_WAIT_MS, localToken);
-  if (localToken !== roundToken) return;
-  if (!okBufB) {
-    pinnedB.ok = false;
-    pinnedB.attempt = Math.min(pinnedB.attempt + 1, RETRY_DELAYS.length);
+  if (!okBuf) {
     rerollDuel(localToken, "⏳ Audio trop lent → nouveau duel…");
     return;
   }
 
-  // ---------- (D) Start muted + attendre progression des 2 + snap sync + unmute audio ----------
+  // 4) Start playback (autoplay fallback)
   stopPlayback();
   clearSegment();
-  lockForRound();
+  resetVisualsForRound();
 
-  const prevVMuted = videoPlayer.muted;
-  const prevAMuted = audioPlayer.muted;
-  videoPlayer.muted = true;
-  audioPlayer.muted = true;
-
-  try { videoPlayer.currentTime = LISTEN_START; } catch {}
   try { audioPlayer.currentTime = LISTEN_START; } catch {}
 
+  applyVolume();
   armSegment(localToken);
 
-  const res = await Promise.allSettled([videoPlayer.play(), audioPlayer.play()]);
+  const playRes = await Promise.allSettled([audioPlayer.play()]);
   if (localToken !== roundToken) return;
 
-  const reasons = res.filter(r => r.status === "rejected").map(r => r.reason);
+  const reasons = playRes.filter(r => r.status === "rejected").map(r => r.reason);
   if (reasons.some(isNotAllowedError)) {
     setMediaStatus("▶️ Clique dans la carte pour lancer");
     const onTap = async () => {
@@ -759,29 +699,12 @@ async function autoStartPinned(localToken) {
       if (localToken !== roundToken) return;
 
       try {
-        videoPlayer.muted = true;
-        audioPlayer.muted = true;
-
-        await Promise.all([videoPlayer.play(), audioPlayer.play()]);
-
-        const adv = await waitBothAdvance(localToken, LISTEN_START, START_ADVANCE_DELTA, START_ADVANCE_TIMEOUT_MS);
-        if (!adv.ok) throw new Error("advance-timeout");
-
-        snapVideoToAudio();
-        microRateCorrector(localToken);
-
-        const left = MIN_SYNC_DELAY_MS - (performance.now() - syncT0);
-        if (left > 0) await delay(left);
-
-        videoPlayer.muted = true;
-        audioPlayer.muted = false;
         applyVolume();
+        await audioPlayer.play();
         setMediaStatus("▶️ Lecture…");
       } catch {
         stopPlayback();
         clearSegment();
-        videoPlayer.muted = prevVMuted;
-        audioPlayer.muted = prevAMuted;
         rerollDuel(localToken, "⚠️ Impossible de lancer → nouveau duel…");
       }
     };
@@ -789,44 +712,72 @@ async function autoStartPinned(localToken) {
     return;
   }
 
-  const vFail = res[0].status === "rejected";
-  const aFail = res[1].status === "rejected";
-
-  if (vFail || aFail) {
+  if (playRes[0].status === "rejected") {
     stopPlayback();
     clearSegment();
-  }
-
-  if (vFail || aFail) {
-    videoPlayer.muted = prevVMuted;
-    audioPlayer.muted = prevAMuted;
-    rerollDuel(localToken, "⚠️ Erreur play → nouveau duel…");
+    rerollDuel(localToken, "⚠️ Erreur play audio → nouveau duel…");
     return;
   }
-
-  const adv = await waitBothAdvance(localToken, LISTEN_START, START_ADVANCE_DELTA, START_ADVANCE_TIMEOUT_MS);
-  if (localToken !== roundToken) return;
-
-  if (!adv.ok) {
-    stopPlayback();
-    clearSegment();
-    videoPlayer.muted = prevVMuted;
-    audioPlayer.muted = prevAMuted;
-    rerollDuel(localToken, "⏳ Démarrage instable → nouveau duel…");
-    return;
-  }
-
-  snapVideoToAudio();
-  microRateCorrector(localToken);
-
-  const left = MIN_SYNC_DELAY_MS - (performance.now() - syncT0);
-  if (left > 0) await delay(left);
-
-  videoPlayer.muted = true;
-  audioPlayer.muted = false;
-  applyVolume();
 
   setMediaStatus("▶️ Lecture…");
+}
+
+// ====== Reveal : Vidéo B + Audio B ======
+async function revealVideoBWithAudio(localToken) {
+  if (localToken !== roundToken) return;
+
+  stopPlayback();
+  clearSegment();
+
+  // cache-buster pour éviter vieux cache si tu spam
+  hardReset(videoPlayer);
+  videoPlayer.src = withCacheBuster(audioSong.url);
+  videoPlayer.preload = "metadata";
+  videoPlayer.load();
+
+  // switch visuel
+  imageAEl.style.display = "none";
+  videoPlayer.style.display = "block";
+  videoPlayer.controls = true;
+  videoPlayer.setAttribute("controls", "controls");
+  videoPlayer.muted = false;
+  applyVolume();
+
+  setMediaStatus("🎬 Reveal : Vidéo B");
+
+  try {
+    await waitEvent(videoPlayer, "loadedmetadata", ["error"], LOAD_TIMEOUT_MS, localToken);
+  } catch {
+    setMediaStatus("⚠️ Reveal vidéo impossible (chargement).");
+    return;
+  }
+  if (localToken !== roundToken) return;
+
+  try { videoPlayer.currentTime = LISTEN_START; } catch {}
+
+  const res = await Promise.allSettled([videoPlayer.play()]);
+  if (localToken !== roundToken) return;
+
+  const reasons = res.filter(r => r.status === "rejected").map(r => r.reason);
+  if (reasons.some(isNotAllowedError)) {
+    setMediaStatus("▶️ Clique pour lancer le reveal");
+    const onTap = async () => {
+      containerEl.removeEventListener("click", onTap);
+      if (localToken !== roundToken) return;
+      try {
+        await videoPlayer.play();
+        setMediaStatus("🎬 Reveal : Vidéo B");
+      } catch {
+        setMediaStatus("⚠️ Reveal vidéo bloqué.");
+      }
+    };
+    containerEl.addEventListener("click", onTap, { once: true });
+    return;
+  }
+
+  if (res[0].status === "rejected") {
+    setMediaStatus("⚠️ Reveal vidéo bloqué.");
+  }
 }
 
 // ====== Answer ======
@@ -861,25 +812,25 @@ function endRoundAndMaybeNext(roundScore) {
 }
 
 function checkAnswer(userSaysMatch) {
-  if (!videoSong || !audioSong) return;
+  if (!imageSong || !audioSong) return;
 
+  const localToken = roundToken;
   const good = (userSaysMatch === isMatch);
 
-  stopPlayback();
-  clearSegment();
-  revealVideoAWithAudio();
+  // reveal demandé: vidéo B + audio B
+  revealVideoBWithAudio(localToken);
 
   btnTruth.disabled = true;
   btnFake.disabled = true;
 
-  const verdict = isMatch ? "✅ TRUTH (MATCH)" : "❌ FAKE (NO MATCH)";
+  const verdict = isMatch ? "✅ TRUTH (MÊME ANIME)" : "❌ FAKE (ANIME DIFFÉRENT)";
 
   if (good) {
     const score = MAX_SCORE;
     resultDiv.innerHTML = `
       🎉 Bonne réponse !<br><b>${verdict}</b>
-      <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
-      <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
+      <em>Image (A) : ${formatAnimeLineFromSong(imageSong)}</em>
+      <em>Vidéo/Audio (B) : ${formatRevealLine(audioSong)}</em>
       <div style="margin-top:8px;">Score : <b>${score}</b> / 3000</div>
     `;
     resultDiv.className = "correct";
@@ -890,8 +841,8 @@ function checkAnswer(userSaysMatch) {
     resultDiv.innerHTML = `
       ❌ Mauvaise réponse.<br>
       Réponse correcte : <b>${verdict}</b>
-      <em>Vidéo (A) : ${formatRevealLine(videoSong)}</em>
-      <em>Audio (B) : ${formatRevealLine(audioSong)}</em>
+      <em>Image (A) : ${formatAnimeLineFromSong(imageSong)}</em>
+      <em>Vidéo/Audio (B) : ${formatRevealLine(audioSong)}</em>
       <div style="margin-top:8px;">Score : <b>0</b> / 3000</div>
     `;
     resultDiv.className = "incorrect";
@@ -1077,6 +1028,7 @@ fetch("../data/licenses_only.json")
         _members: Number.isFinite(+a.members) ? +a.members : 0,
         _score: Number.isFinite(+a.score) ? +a.score : 0,
         _type: a.type || "Unknown",
+        _image: getAnimeImage(a),
       };
     });
 
@@ -1087,7 +1039,7 @@ fetch("../data/licenses_only.json")
     updatePreview();
     showCustomization();
 
-    lockForRound();
+    resetVisualsForRound();
     applyVolume();
     updateScoreBar(MAX_SCORE);
   })
