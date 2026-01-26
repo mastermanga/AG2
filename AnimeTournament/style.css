@@ -1,7 +1,6 @@
 /* =========================
    Anime Tournament — style.css (COMPLET)
-   - Theme indicator (contenu)
-   - Songs snippet: géré JS
+   + Theme indicator (contenu)
    ========================= */
 
 /* ====== BACKGROUND ====== */
@@ -381,7 +380,7 @@ body:not(.game-started) #classement {
   max-width: 520px;
   width: min(92vw, 520px);
   padding: 0.9rem 1.2rem;
-  margin: 0 auto 0.6rem auto;
+  margin: 0 auto 0.8rem auto;
 
   display: flex;
   align-items: center;
@@ -407,34 +406,38 @@ body.light #round-indicator {
   box-shadow: 0 2px 14px #42a5f54b;
 }
 
-/* ✅ THEME INDICATOR */
+/* =========================================
+   THEME CONTENU (NOUVEAU)
+   ========================================= */
 #theme-indicator{
   max-width: 920px;
   width: min(92vw, 920px);
   margin: 0 auto 0.8rem auto;
-  padding: 10px 14px;
-  border-radius: 14px;
+  padding: 0.82rem 1.1rem;
+  border-radius: 16px;
 
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
 
   font-weight: 900;
-  opacity: 0.95;
+  font-size: 1.02rem;
+  letter-spacing: 0.3px;
 
   background: rgba(22, 30, 39, 0.88);
   border: 1.5px solid rgba(0,188,212,0.28);
-  box-shadow: 0 0 22px 3px rgba(0,188,212,0.16);
+  box-shadow: 0 0 22px 3px rgba(0,188,212,0.18);
   position: relative;
   z-index: 2;
+  user-select:none;
 }
 
 body.light #theme-indicator{
   background: #ffffff;
   border: 1.5px solid rgba(66,165,245,0.45);
   box-shadow: 0 0 18px #42a5f555;
-  color: #0b1a2a;
+  color:#0b1a2a;
 }
 
 /* =========================================
@@ -529,7 +532,6 @@ body.light .volume-right { color: #0b1a2a; }
   align-items: start;
 }
 
-/* cartes */
 #duel-container .anime,
 #duel-container .opening {
   width: 100%;
@@ -547,7 +549,6 @@ body.light .volume-right { color: #0b1a2a; }
   overflow: hidden;
 }
 
-/* image */
 #duel-container .anime img {
   width: 100%;
   height: clamp(240px, 38vw, 460px);
@@ -558,7 +559,6 @@ body.light .volume-right { color: #0b1a2a; }
   box-shadow: 0 0 18px #1116;
 }
 
-/* vidéo */
 #duel-container .opening video {
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -575,7 +575,6 @@ body.light .volume-right { color: #0b1a2a; }
   padding: 2px 2px 0 2px;
 }
 
-/* TITRES */
 #duel-container .vote-title {
   cursor: pointer;
   background: #00bcd4;
