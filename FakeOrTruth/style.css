@@ -228,15 +228,19 @@ body.light #custom-panel { background:#fff; box-shadow:0 0 18px #42a5f555; }
   border:1px solid rgba(0,188,212,0.22);
 }
 
-/* ✅ Image A */
 #videoWrapper img{
   width:100% !important;
   display:block;
   border-radius:12px;
   background:#000;
-  object-fit: cover;
+
+  /* ✅ affiche l'image en entier */
+  object-fit: contain;
+
+  /* ✅ garde une zone stable comme une vidéo (avec bandes noires si besoin) */
   aspect-ratio: 16 / 9;
 }
+
 
 /* ✅ Video B (reveal) */
 #videoWrapper video{
