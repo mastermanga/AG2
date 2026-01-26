@@ -26,10 +26,10 @@
           </span>
 
           <span class="info-tip" id="help-fot" role="tooltip">
-            Le jeu lance automatiquement un extrait (45s → 75s).<br>
-            Vidéo = Song A (muette) / Audio = Song B.<br>
-            À toi de décider : <b>Truth</b> (match) ou <b>Fake</b> (pas match).<br>
-            Reveal : vidéo A avec son vrai audio.
+            Le jeu lance automatiquement un extrait (45s → 20s).<br>
+            Image = Anime A / Audio = Song B.<br>
+            À toi de décider : <b>Truth</b> (même anime) ou <b>Fake</b> (anime différent).<br>
+            Reveal : <b>vidéo B avec son vrai audio</b>.
           </span>
         </span>
       </div>
@@ -133,11 +133,13 @@
       <div id="roundLabel" style="margin:0 0 8px 0; font-weight:900; opacity:0.9; text-align:center;"></div>
       <div id="mediaStatus"></div>
 
+      <!-- ✅ Media : Image A (jeu) / Vidéo B (reveal) -->
       <div id="videoWrapper">
-        <video id="videoPlayer" playsinline preload="metadata"></video>
+        <img id="imageA" alt="Image A" />
+        <video id="videoPlayer" playsinline preload="metadata" style="display:none;"></video>
       </div>
 
-      <!-- ✅ Audio B : plus léger qu’un <video> caché -->
+      <!-- ✅ Audio B -->
       <audio id="audioPlayer" preload="metadata" style="display:none;"></audio>
 
       <div id="volumeRow" class="volume-row">
@@ -161,6 +163,6 @@
   <footer>© 2025 mastermanga</footer>
 
   <!-- ✅ change le suffixe quand tu updates, pour éviter le cache -->
-  <script src="script.js?v=FOT_2MEDIA_FIX"></script>
+  <script src="script.js?v=FOT_IMAGE_AUDIO_REVEAL_B"></script>
 </body>
 </html>
