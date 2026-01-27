@@ -33,6 +33,9 @@ body.light {
   color: #222;
 }
 
+/* =========================
+   HEADER
+   ========================= */
 header {
   width: 100vw;
   max-width: 100vw;
@@ -42,13 +45,13 @@ header {
   margin-bottom: 0.5rem;
   margin-left: auto;
   margin-right: auto;
-  padding: 0.5rem 0 0 0; /* ou 0 si tu veux */
+  padding: 0.5rem 0 0 0;
   z-index: 2;
   position: relative;
 }
 .header-group {
   width: 100vw;
-  max-width: 1200px; /* limite sur grand écran */
+  max-width: 1200px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -69,13 +72,14 @@ header h1 {
     0 2px 8px #00bcd477,
     0 0 10px #fff1;
 }
-
 body.light header h1 {
   color: #1565c0;
   text-shadow: 0 1px 4px #42a5f588;
 }
 
-/* === BOUTONS === */
+/* =========================
+   BOUTONS (header/builder)
+   ========================= */
 .toggle-btn {
   background-color: #00bcd4;
   color: #121212;
@@ -121,7 +125,9 @@ button:hover:enabled {
   filter: brightness(1.08);
 }
 
-/* === CONTAINER effet CARD === */
+/* =========================
+   CONTAINER BUILDER (CARD)
+   ========================= */
 #container {
   background-color: #161e27ef;
   border-radius: 20px;
@@ -144,7 +150,9 @@ body.light #container {
   box-shadow: 0 0 22px #42a5f5;
 }
 
-/* === SECTIONS effet CARD === */
+/* =========================
+   SECTIONS (CARD)
+   ========================= */
 .daily-recap-block {
   background: linear-gradient(120deg, #233554f3 80%, #00bcd411 100%);
   border-radius: 15px;
@@ -152,7 +160,6 @@ body.light #container {
   padding: 1.25rem 1.1rem 1.15rem 1.1rem;
   margin-bottom: 0rem;
   width: 100%;
-  text-align: left;
   transition: background 0.25s;
   z-index: 2;
   position: relative;
@@ -190,7 +197,9 @@ body.light h2 {
   text-shadow: 0 1px 4px #42a5f588;
 }
 
-/* === INPUTS === */
+/* =========================
+   INPUTS BUILDER
+   ========================= */
 label {
   font-weight: 500;
   margin-right: 12px;
@@ -203,7 +212,8 @@ label {
   margin-bottom: 17px;
   justify-content: center;
 }
-select, input[type="number"] {
+select,
+input[type="number"] {
   padding: 7px 14px;
   border-radius: 7px;
   border: 1px solid #00bcd4;
@@ -214,10 +224,12 @@ select, input[type="number"] {
   transition: border 0.2s;
   margin-right: 6px;
 }
-select:focus, input[type="number"]:focus {
+select:focus,
+input[type="number"]:focus {
   border-color: #42a5f5;
 }
-body.light select, body.light input[type="number"] {
+body.light select,
+body.light input[type="number"] {
   background: #f5faff;
   color: #234;
   border-color: #b6cdfc;
@@ -255,7 +267,7 @@ body.light .step-line {
   padding: 4px 10px;
   margin: 0 1px;
   border-radius: 5px;
-  justify-content: center
+  justify-content: center;
 }
 .step-controls button:disabled {
   opacity: 0.6;
@@ -290,12 +302,15 @@ body.light .step-line {
   counter-increment: steps;
   content: counter(steps) ".";
   position: absolute;
-  left: 0; top: 0;
+  left: 0;
+  top: 0;
   color: #00bcd4;
   font-weight: bold;
 }
 
-/* === Container d'iframe pour Parcours === */
+/* =========================
+   PARCOURS IFRAME
+   ========================= */
 #parcours-container {
   width: 100vw;
   max-width: none;
@@ -310,13 +325,10 @@ body.light .step-line {
   justify-content: center;
   align-items: flex-start;
 }
-
 #parcours-container.active {
   opacity: 1;
   display: flex;
 }
-
-/* Style de l'iframe pour qu'il prenne bien la place et reste lisible */
 #parcours-iframe {
   width: 98vw;
   max-width: 98vw;
@@ -358,60 +370,22 @@ body.light #parcours-score {
   margin-top: 14px;
 }
 
-/* Responsive */
-@media (max-width: 1000px) {
-  #parcours-iframe {
-    width: 99vw;
-    max-width: 99vw;
-    min-height: 320px;
-    height: 60vh;
-    border-radius: 8px;
-  }
-}
-@media (max-width: 900px) {
-  #parcours-iframe {
-    height: 420px;
-    max-width: 99vw;
-  }
-  #parcours-score {
-    max-width: 94vw;
-    padding: 10px 4vw;
-  }
-}
-@media (max-width: 600px) {
-  #container {
-    width: 98vw;
-    padding: 1.1rem 0.4rem 1.4rem 0.4rem;
-    box-shadow: 0 0 13px 2px #00bcd4;
-  }
-  .daily-recap-block {
-    max-width: 98vw;
-    padding: 1rem 5vw 1rem 5vw;
-  }
-}
-  header, footer { max-width: 99vw; }
-  .step-line {
-    gap: 8px;
-    padding: 10px 7px;
-  }
-  #parcours-iframe {
-    height: 260px;
-    min-width: 98vw;
-    max-width: 99vw;
-  }
-  #parcours-score {
-    padding: 13px 3vw;
-    font-size: 1.5rem;
-  }
-}
-
-/* Garde le fond noir sur tout l'écran même si body n'est pas assez haut */
+/* =========================
+   FULLSCREEN (quand l’iframe tourne)
+   ========================= */
 html {
   min-height: 100vh;
   background: #181818 !important;
 }
 
 body.parcours-fullscreen header {
+  display: none !important;
+}
+
+body.parcours-fullscreen header,
+body.parcours-fullscreen footer,
+body.parcours-fullscreen #container,
+body.parcours-fullscreen #parcours-custom-panel {
   display: none !important;
 }
 
@@ -441,10 +415,13 @@ body.parcours-fullscreen #parcours-iframe {
   box-shadow: none !important;
   background: #181818 !important;
   display: block !important;
-  height: 95vh !important; /* change 95vh par 100vh si tu veux VRAIMENT tout */
+  height: 95vh !important;
   opacity: 1 !important;
 }
 
+/* =========================
+   FOOTER
+   ========================= */
 footer {
   margin-top: auto;
   padding: 1.2rem 0 0.4rem 0;
@@ -461,45 +438,13 @@ footer {
   position: relative;
   letter-spacing: 0.5px;
 }
-
-body.parcours-fullscreen header,
-body.parcours-fullscreen footer,
-body.parcours-fullscreen #container {
-  display: none !important;
-}
-body.parcours-fullscreen #parcours-container {
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
-  width: 100vw !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  padding: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  display: flex !important;
-  flex-direction: column;
-  align-items: stretch !important;
-  justify-content: flex-start !important;
-}
-body.parcours-fullscreen #parcours-iframe {
-  width: 100vw !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  margin: 0 !important;
-  border: none !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  background: #181818 !important;
-  display: block !important;
-  height: 95vh !important; /* ou 100vh selon effet souhaité */
-  opacity: 1 !important;
-}
-
 body.light footer {
   color: #888;
 }
 
+/* =========================
+   STEP BADGE
+   ========================= */
 .step-badge {
   display: inline-block;
   background: linear-gradient(120deg, #00bcd4 70%, #1976d2 100%);
@@ -508,14 +453,13 @@ body.light footer {
   font-size: 1.08rem;
   border-radius: 16px;
   padding: 0.37em 1.18em 0.37em 1.18em;
-  margin-bottom: 0.5em;
   box-shadow: 0 2px 12px #00eaff44, 0 1.5px 6px #1976d277;
   border: 2px solid #00eaff44;
   letter-spacing: 0.3px;
   transition: background 0.2s, box-shadow 0.2s;
   text-shadow: 0 0 6px #1de9b655, 0 1px 5px #00bcd488;
-  margin: 0 18px 0 0;  /* un peu d’espace à droite */
-  min-width: 180px;    /* largeur fixe pour bien aligner, ajuste si besoin */
+  margin: 0 18px 0 0;
+  min-width: 180px;
   text-align: center;
 }
 
@@ -535,6 +479,9 @@ body.light .step-line:hover .step-badge {
   background: linear-gradient(120deg, #42a5f5 70%, #1de9b6 100%);
 }
 
+/* =========================
+   HEADER RIGHT (theme + help)
+   ========================= */
 .header-right{
   display:inline-flex;
   align-items:center;
@@ -542,45 +489,36 @@ body.light .step-line:hover .step-badge {
   flex-shrink:0;
 }
 
-/* ========== BOUTON AIDE (SVG) + TOOLTIP ========== */
-
+/* ========== TOOLTIP HELP ========== */
 .info-wrap{
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
-
 .info-icon{
   width: 26px;
   height: 26px;
   border-radius: 999px;
-
   display: inline-flex;
   align-items: center;
   justify-content: center;
-
   background: rgba(18, 30, 39, 0.55);
   border: 1.5px solid rgba(255, 255, 255, 0.35);
-
   box-shadow:
     0 0 10px rgba(0, 234, 255, 0.55),
     0 0 24px rgba(0, 188, 212, 0.35),
     inset 0 0 0 1px rgba(0, 234, 255, 0.18);
-
   color: #eaffff;
   cursor: help;
   user-select: none;
-
   transition: transform 0.16s, box-shadow 0.16s, background 0.16s, border-color 0.16s;
 }
-
 .info-svg{
   width: 18px;
   height: 18px;
   display: block;
 }
-
 .info-wrap:hover .info-icon,
 .info-icon:focus{
   transform: scale(1.08) rotate(-6deg);
@@ -592,51 +530,38 @@ body.light .step-line:hover .step-badge {
     inset 0 0 0 1px rgba(0, 234, 255, 0.25);
   outline: none;
 }
-
-/* Tooltip : par défaut vers le bas (évite de sortir de l’écran en haut du header) */
 .info-tip{
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-
   transform: translateY(-6px) scale(0.98);
-
   width: 320px;
   padding: 10px 12px;
   border-radius: 14px;
-
   background: linear-gradient(120deg, #233554f3 80%, #00bcd422 100%);
   border: 1.5px solid #00bcd455;
   box-shadow: 0 10px 34px rgba(0, 234, 255, 0.32), 0 2.5px 14px rgba(25, 118, 210, 0.25);
-
   color: #fff;
   font-size: 0.95rem;
   font-weight: 500;
   line-height: 1.25;
   letter-spacing: 0.1px;
-
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-
   transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
   z-index: 999;
 }
-
-/* Flèche vers le haut (pointe vers l’icône) */
 .info-tip::after{
   content: "";
   position: absolute;
   top: -7px;
   right: 18px;
-
   border-width: 0 7px 7px 7px;
   border-style: solid;
   border-color: transparent transparent #233554f3 transparent;
-
   filter: drop-shadow(0 2px 2px rgba(0, 234, 255, 0.18));
 }
-
 .info-wrap:hover .info-tip,
 .info-wrap:focus-within .info-tip,
 .info-wrap.open .info-tip{
@@ -644,8 +569,6 @@ body.light .step-line:hover .step-badge {
   visibility: visible;
   transform: translateY(0) scale(1);
 }
-
-/* Light mode */
 body.light .info-tip{
   background: linear-gradient(120deg, #e0f7fa 90%, #1565c01a 100%);
   border: 1.5px solid rgba(66, 165, 245, 0.45);
@@ -665,7 +588,7 @@ body.light .info-icon{
     inset 0 0 0 1px rgba(66, 165, 245, 0.18);
 }
 
-/* Mobile */
+/* Mobile tooltip */
 @media (max-width: 600px){
   .info-tip{
     width: min(320px, 86vw);
@@ -691,7 +614,6 @@ body.light .main-container{
   background:#fff;
   box-shadow: 0 0 18px #42a5f555;
 }
-
 #parcours-custom-panel h2{
   margin:0 0 1rem 0;
   text-align:center;
@@ -724,6 +646,11 @@ body.light .main-container{
   opacity:0.45 !important;
   cursor:not-allowed !important;
   box-shadow:none !important;
+}
+
+/* ✅ petit tweak pour le bouton “Retour au parcours” (juste au cas où) */
+#backToBuilderBtn{
+  margin-left: 0 !important;
 }
 
 .opt-row{
@@ -871,4 +798,55 @@ body.light .round-input{
   display:flex;
   justify-content:center;
   margin-top:12px;
+}
+
+/* =========================
+   RESPONSIVE (fix du bloc cassé)
+   ========================= */
+@media (max-width: 1000px) {
+  #parcours-iframe {
+    width: 99vw;
+    max-width: 99vw;
+    min-height: 320px;
+    height: 60vh;
+    border-radius: 8px;
+  }
+}
+
+@media (max-width: 900px) {
+  #parcours-iframe {
+    height: 420px;
+    max-width: 99vw;
+  }
+  #parcours-score {
+    max-width: 94vw;
+    padding: 10px 4vw;
+  }
+}
+
+@media (max-width: 600px) {
+  #container {
+    width: 98vw;
+    padding: 1.1rem 0.4rem 1.4rem 0.4rem;
+    box-shadow: 0 0 13px 2px #00bcd4;
+  }
+  .daily-recap-block {
+    max-width: 98vw;
+    padding: 1rem 5vw 1rem 5vw;
+  }
+
+  header, footer { max-width: 99vw; }
+  .step-line {
+    gap: 8px;
+    padding: 10px 7px;
+  }
+  #parcours-iframe {
+    height: 260px;
+    min-width: 98vw;
+    max-width: 99vw;
+  }
+  #parcours-score {
+    padding: 13px 3vw;
+    font-size: 1.5rem;
+  }
 }
