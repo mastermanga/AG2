@@ -8,6 +8,11 @@
  *          autoplay best-effort non-mute de la gauche
  *          volume global
  *          anti-bug media + retries: 1 essai + 5 retries (2/4/6/8/10s)
+ *
+ * ✅ UPDATE demandé :
+ * - Songs : start at 45s, play 20s (temps vidéo), stop + reset
+ * - Enlever l'image avant la vidéo (pas de poster)
+ * - Autoplay si absent (best-effort sur la gauche)
  **********************/
 
 // ====== MENU & THEME ======
@@ -35,16 +40,24 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach(w => w.classList.remove("open"));
+    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
   }
 });
 
 // ====== HELPERS ======
 const MIN_REQUIRED = 64;
 
+// ✅ Clip settings (Songs)
+const CLIP_START_S = 45;
+const CLIP_DURATION_S = 20;
+const CLIP_EPS = 0.05;
+
 // retries: 1 essai + 5 retries => 0, 2s, 4s, 6s, 8s, 10s
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const STALL_TIMEOUT_MS = 6000;
+
+// sécurité anti-blocage total (si ça ne joue jamais)
+const MAX_WALL_SNIPPET_MS = 60000;
 
 function normalizeAnimeList(json) {
   if (Array.isArray(json)) return json;
@@ -216,7 +229,7 @@ function showGame() {
 function applyVolume() {
   const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "30", 10)));
   const vol = v / 100;
-  [leftVid, rightVid].forEach(p => {
+  [leftVid, rightVid].forEach((p) => {
     if (!p) return;
     p.muted = false;
     p.volume = vol;
@@ -232,10 +245,96 @@ function hardResetMedia(player) {
   player.load();
 }
 function withCacheBuster(url) {
-  const sep = url.includes("?") ? "&" : "?";
-  return url + sep + "t=" + Date.now();
+  const [base, frag] = url.split("#");
+  const sep = base.includes("?") ? "&" : "?";
+  const busted = base + sep + "t=" + Date.now();
+  return frag ? busted + "#" + frag : busted;
 }
-function loadMediaWithRetries(player, url, localDuel, localMedia, { autoplay = true } = {}) {
+
+// ✅ Stop + clear handlers
+function stopVideo(player) {
+  try { player.pause(); } catch {}
+  player.ontimeupdate = null;
+  player.onended = null;
+  player.onplay = null;
+  player.removeAttribute("src");
+  player.load();
+}
+
+// ✅ Clip controller : seek 45s, play 20s (temps vidéo), stop + reset
+function setupClipPlayback(player, localDuel, localMedia, { autoplay = false } = {}) {
+  const isStillValid = () => (localDuel === duelToken && localMedia === mediaToken);
+
+  // anti-blocage (si ça ne joue jamais)
+  let wallTimer = setTimeout(() => {
+    if (!isStillValid()) return;
+    try { player.pause(); } catch {}
+  }, MAX_WALL_SNIPPET_MS);
+
+  const clearWall = () => {
+    if (wallTimer) clearTimeout(wallTimer);
+    wallTimer = null;
+  };
+
+  // calc start/end avec clamp si durée connue
+  const dur = player.duration;
+  let start = CLIP_START_S;
+  let endTime = start + CLIP_DURATION_S;
+
+  if (Number.isFinite(dur) && dur > 1) {
+    start = Math.min(CLIP_START_S, Math.max(0, dur - 0.25));
+    endTime = Math.min(start + CLIP_DURATION_S, Math.max(0, dur - 0.05));
+  }
+
+  const stopSnippet = () => {
+    if (!isStillValid()) return;
+    clearWall();
+    try { player.pause(); } catch {}
+    try { player.currentTime = start; } catch {}
+  };
+
+  player.ontimeupdate = () => {
+    if (!isStillValid()) return;
+    if (player.currentTime >= (endTime - CLIP_EPS)) stopSnippet();
+  };
+  player.onended = () => stopSnippet();
+
+  // si l’utilisateur clique Play, on force un seek avant que ça parte à 0
+  player.onplay = () => {
+    if (!isStillValid()) return;
+    const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
+    if (ct < (start - 1)) {
+      try { player.currentTime = start; } catch {}
+    }
+  };
+
+  // seek direct
+  try { player.currentTime = start; } catch {}
+
+  // re-seek rapide si le navigateur retombe à 0
+  let tries = 0;
+  const seeker = setInterval(() => {
+    if (!isStillValid()) { clearInterval(seeker); return; }
+    const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
+
+    if (Math.abs(ct - start) < 0.8) { clearInterval(seeker); return; }
+
+    tries++;
+    try { player.currentTime = start; } catch {}
+
+    if (tries >= 15) clearInterval(seeker);
+  }, 120);
+
+  // autoplay best-effort
+  if (autoplay) {
+    player.muted = false;
+    const p = player.play?.();
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  }
+}
+
+// ✅ Loader + callback onReady (style TopPick)
+function loadMediaWithRetries(player, url, localDuel, localMedia, { onReady } = {}) {
   let attemptIndex = 0;
   let stallTimer = null;
   let done = false;
@@ -244,6 +343,7 @@ function loadMediaWithRetries(player, url, localDuel, localMedia, { autoplay = t
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
     player.onloadedmetadata = null;
     player.oncanplay = null;
+    player.onloadeddata = null;
     player.onplaying = null;
     player.onwaiting = null;
     player.onstalled = null;
@@ -264,10 +364,7 @@ function loadMediaWithRetries(player, url, localDuel, localMedia, { autoplay = t
     if (!isStillValid() || done) return;
     done = true;
     cleanup();
-    if (autoplay) {
-      player.muted = false;
-      player.play?.().catch(() => {});
-    }
+    onReady?.();
   };
 
   const triggerRetry = () => {
@@ -288,6 +385,7 @@ function loadMediaWithRetries(player, url, localDuel, localMedia, { autoplay = t
   const doAttempt = () => {
     if (!isStillValid() || done) return;
     const src = attemptIndex === 0 ? url : withCacheBuster(url);
+
     try { hardResetMedia(player); } catch {}
     player.preload = "metadata";
     player.muted = false;
@@ -296,12 +394,16 @@ function loadMediaWithRetries(player, url, localDuel, localMedia, { autoplay = t
 
     player.onloadedmetadata = () => { if (!isStillValid() || done) return; markReady(); };
     player.oncanplay = () => { if (!isStillValid() || done) return; markReady(); };
+    player.onloadeddata = () => { if (!isStillValid() || done) return; markReady(); };
+
     player.onwaiting = () => { if (!isStillValid() || done) return; startStallTimer(); };
     player.onstalled = () => { if (!isStillValid() || done) return; startStallTimer(); };
+
     player.onplaying = () => {
       if (!isStillValid() || done) return;
       if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
     };
+
     player.onerror = () => { if (!isStillValid() || done) return; triggerRetry(); };
 
     startStallTimer();
@@ -315,9 +417,9 @@ function loadMediaWithRetries(player, url, localDuel, localMedia, { autoplay = t
 // ====== INIT CUSTOM UI ======
 function initCustomUI() {
   // Mode pills
-  document.querySelectorAll("#modePills .pill").forEach(btn => {
+  document.querySelectorAll("#modePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("#modePills .pill").forEach(b => {
+      document.querySelectorAll("#modePills .pill").forEach((b) => {
         b.classList.remove("active");
         b.setAttribute("aria-pressed", "false");
       });
@@ -330,7 +432,7 @@ function initCustomUI() {
   });
 
   // Type pills
-  document.querySelectorAll("#typePills .pill").forEach(btn => {
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
@@ -339,7 +441,7 @@ function initCustomUI() {
   });
 
   // Song pills (songs)
-  document.querySelectorAll("#songPills .pill").forEach(btn => {
+  document.querySelectorAll("#songPills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
@@ -356,7 +458,7 @@ function initCustomUI() {
     yearMaxValEl.textContent = yearMaxEl.value;
     updatePreview();
   }
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncLabels));
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
   roundCountEl.addEventListener("input", () => updatePreview());
 
   // Apply
@@ -392,11 +494,11 @@ function applyFilters() {
   const scorePercent = parseInt(scoreEl.value, 10);
   const yearMin = parseInt(yearMinEl.value, 10);
   const yearMax = parseInt(yearMaxEl.value, 10);
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map(b => b.dataset.type);
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
   if (currentMode === "anime") {
-    let pool = allAnimes.filter(a =>
+    let pool = allAnimes.filter((a) =>
       a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type)
     );
 
@@ -406,7 +508,7 @@ function applyFilters() {
     pool.sort((a, b) => b._score - a._score);
     pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-    return pool.map(a => ({
+    return pool.map((a) => ({
       kind: "anime",
       _key: `anime|${a.mal_id}`,
       title: a._title,
@@ -419,10 +521,10 @@ function applyFilters() {
   }
 
   // songs mode
-  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map(b => b.dataset.song);
+  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
   if (allowedSongs.length === 0) return [];
 
-  let pool = allSongs.filter(s =>
+  let pool = allSongs.filter((s) =>
     s.year >= yearMin && s.year <= yearMax &&
     allowedTypes.includes(s.type) &&
     allowedSongs.includes(s.songType)
@@ -491,11 +593,8 @@ function resetGameUI() {
   duelToken++;
   mediaToken++;
 
-  [leftVid, rightVid].forEach(v => {
-    try { v.pause(); } catch {}
-    v.removeAttribute("src");
-    v.load();
-  });
+  stopVideo(leftVid);
+  stopVideo(rightVid);
 
   resultDiv.textContent = "";
   nextBtn.style.display = "none";
@@ -551,20 +650,45 @@ function renderDuel() {
   const localDuel = ++duelToken;
   const localMedia = ++mediaToken;
 
-  [leftVid, rightVid].forEach(v => {
+  // reset players
+  [leftVid, rightVid].forEach((v) => {
     try { v.pause(); } catch {}
+    v.ontimeupdate = null;
+    v.onended = null;
+    v.onplay = null;
     v.removeAttribute("src");
     v.load();
     v.muted = false;
+
+    // ✅ enlever l'image avant la vidéo
+    v.poster = "";
+    v.removeAttribute("poster");
   });
 
   applyVolume();
 
-  leftVid.poster = leftItem?.image || "";
-  rightVid.poster = rightItem?.image || "";
+  // ✅ load + onReady => seek 45, play 20, stop + reset
+  if (leftItem?.url) {
+    loadMediaWithRetries(leftVid, leftItem.url, localDuel, localMedia, {
+      onReady: () => {
+        if (localDuel !== duelToken || localMedia !== mediaToken) return;
+        applyVolume();
+        leftVid.muted = false;
+        setupClipPlayback(leftVid, localDuel, localMedia, { autoplay: true }); // ✅ autoplay gauche
+      }
+    });
+  }
 
-  if (leftItem?.url) loadMediaWithRetries(leftVid, leftItem.url, localDuel, localMedia, { autoplay: true });
-  if (rightItem?.url) loadMediaWithRetries(rightVid, rightItem.url, localDuel, localMedia, { autoplay: false });
+  if (rightItem?.url) {
+    loadMediaWithRetries(rightVid, rightItem.url, localDuel, localMedia, {
+      onReady: () => {
+        if (localDuel !== duelToken || localMedia !== mediaToken) return;
+        applyVolume();
+        rightVid.muted = false;
+        setupClipPlayback(rightVid, localDuel, localMedia, { autoplay: false }); // pas d'autoplay droite
+      }
+    });
+  }
 
   resultDiv.textContent = "";
   nextBtn.style.display = "none";
@@ -573,12 +697,8 @@ function renderDuel() {
 }
 
 function finishGame(message) {
-  // stop media
-  [leftVid, rightVid].forEach(v => {
-    try { v.pause(); } catch {}
-    v.removeAttribute("src");
-    v.load();
-  });
+  stopVideo(leftVid);
+  stopVideo(rightVid);
 
   resultDiv.textContent = message;
   nextBtn.style.display = "block";
@@ -637,7 +757,6 @@ function handlePick(side) {
   nextBtn.onclick = () => {
     duelIndex++;
 
-    // nouveau duel : 2 nouveaux items (aucune répétition)
     const ok = pickNewPair();
     if (!ok) {
       finishGame("✅ Terminé (plus assez d’items uniques pour continuer).");
@@ -652,14 +771,14 @@ function handlePick(side) {
 
 // ====== LOAD DATA ======
 fetch("../data/licenses_only.json")
-  .then(r => {
+  .then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status} - ${r.statusText}`);
     return r.json();
   })
-  .then(json => {
+  .then((json) => {
     const raw = normalizeAnimeList(json);
 
-    allAnimes = (Array.isArray(raw) ? raw : []).map(a => {
+    allAnimes = (Array.isArray(raw) ? raw : []).map((a) => {
       const title = getDisplayTitle(a);
       return {
         ...a,
@@ -679,7 +798,7 @@ fetch("../data/licenses_only.json")
     showCustomization();
     applyVolume();
   })
-  .catch(e => {
+  .catch((e) => {
     previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
     previewCountEl.classList.add("bad");
     applyBtn.disabled = true;
