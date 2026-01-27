@@ -1,8 +1,12 @@
 /**********************
- * Guess The Opening — version “anti-bug média”
+ * Guess The Opening — version “anti-bug média” + Parcours support
  * - Préchargement + retries + anti-stall
- * - Timer 15s basé sur currentTime (pas sur setTimeout)
- * - Player en VIDEO visible uniquement au reveal (fin round)
+ * - Timer basé sur currentTime (pas setTimeout)
+ * - Player VIDEO visible uniquement au reveal (fin round)
+ * - MODE PARCOURS:
+ *    - lit AG_parcours_filters (personnalisation globale)
+ *    - lit ?count= pour le nombre de rounds
+ *    - en fin de série => bouton "Continuer le parcours" => postMessage score
  **********************/
 
 const MAX_SCORE = 3000;
@@ -16,7 +20,7 @@ const SCORE_TRY3_WITH_3 = 500;
 
 const MIN_REQUIRED_SONGS = 64;
 
-// ✅ retry / anti-bug (tu as mis 6000)
+// retry / anti-bug
 const RETRY_DELAYS = [0, 2000, 6000]; // 3 tentatives
 const STALL_TIMEOUT_MS = 6000;        // relance si ça buffer trop longtemps
 
@@ -24,12 +28,67 @@ const STALL_TIMEOUT_MS = 6000;        // relance si ça buffer trop longtemps
 const TRY_DURATIONS = [20, 20, null]; // 3e écoute complète
 const REFRAIN_START = 45;             // refrain ~50s
 
+// =====================
+// PARCOURS MODE
+// =====================
+const PARCOURS_CFG_KEY = "AG_parcours_filters";
+const QS = new URLSearchParams(window.location.search);
+const IS_PARCOURS = QS.get("parcours") === "1";
+const PARCOURS_COUNT = clampInt(parseInt(QS.get("count") || "1", 10), 1, 100);
+let parcoursSent = false;
+
+function loadParcoursConfig() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_CFG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizedParcoursCfg(cfg) {
+  const out = cfg && typeof cfg === "object" ? cfg : {};
+  const popPercent = clampInt(parseInt(out.popPercent ?? "30", 10), 5, 100);
+  const scorePercent = clampInt(parseInt(out.scorePercent ?? "100", 10), 5, 100);
+
+  let yearMin = clampInt(parseInt(out.yearMin ?? "1950", 10), 1900, 2100);
+  let yearMax = clampInt(parseInt(out.yearMax ?? "2026", 10), 1900, 2100);
+  if (yearMin > yearMax) [yearMin, yearMax] = [yearMax, yearMin];
+
+  const types = Array.isArray(out.types) && out.types.length ? out.types : ["TV", "Movie"];
+  // OpeningQuizz => Songs uniquement, donc on utilise cfg.songs (OP/ED/IN)
+  const songs = Array.isArray(out.songs) && out.songs.length ? out.songs : ["OP"];
+
+  return { popPercent, scorePercent, yearMin, yearMax, types, songs };
+}
+
+function sendParcoursScore() {
+  if (parcoursSent) return;
+  parcoursSent = true;
+
+  try {
+    parent.postMessage(
+      {
+        parcoursScore: {
+          label: "Opening Quizz",
+          score: totalScore,
+          total: totalRounds * MAX_SCORE,
+        },
+      },
+      "*"
+    );
+  } catch (e) {
+    // si jamais parent indispo
+    console.warn("postMessage parcours failed:", e);
+  }
+}
+
 // ====== UI: menu + theme ======
-document.getElementById("back-to-menu").addEventListener("click", () => {
+document.getElementById("back-to-menu")?.addEventListener("click", () => {
   window.location.href = "../index.html";
 });
 
-document.getElementById("themeToggle").addEventListener("click", () => {
+document.getElementById("themeToggle")?.addEventListener("click", () => {
   document.body.classList.toggle("light");
   localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
@@ -81,6 +140,7 @@ function clampInt(n, a, b) {
 }
 
 function clampYearSliders() {
+  if (!yearMinEl || !yearMaxEl) return;
   let a = parseInt(yearMinEl.value, 10);
   let b = parseInt(yearMaxEl.value, 10);
   if (a > b) {
@@ -243,12 +303,12 @@ let mediaToken = 0;
 
 // ====== UI show/hide ======
 function showCustomization() {
-  customPanel.style.display = "block";
-  gamePanel.style.display = "none";
+  if (customPanel) customPanel.style.display = "block";
+  if (gamePanel) gamePanel.style.display = "none";
 }
 function showGame() {
-  customPanel.style.display = "none";
-  gamePanel.style.display = "block";
+  if (customPanel) customPanel.style.display = "none";
+  if (gamePanel) gamePanel.style.display = "block";
 }
 
 // ====== Score bar ======
@@ -263,6 +323,7 @@ function getScoreBarColor(score) {
 function updateScoreBar(forceScore = null) {
   const bar = document.getElementById("score-bar");
   const label = document.getElementById("score-bar-label");
+  if (!bar || !label) return;
 
   let score = 3000;
   if (forceScore !== null) {
@@ -383,7 +444,6 @@ function loadMediaWithRetries(url, localRound, localMedia, onReady, onFail, { pr
     if (stallTimer) clearTimeout(stallTimer);
     stallTimer = setTimeout(() => {
       if (!isStillValid() || done) return;
-      // on force une tentative suivante
       triggerRetry("🔄 Rechargement (stall)...");
     }, STALL_TIMEOUT_MS);
   };
@@ -419,12 +479,9 @@ function loadMediaWithRetries(url, localRound, localMedia, onReady, onFail, { pr
   const doAttempt = () => {
     if (!isStillValid() || done) return;
 
-    // 1er essai: url normale ; suivants: cache-buster
     const src = attemptIndex === 0 ? url : withCacheBuster(url);
 
-    try {
-      hardResetMedia();
-    } catch {}
+    try { hardResetMedia(); } catch {}
 
     setMediaStatus(attemptIndex === 0 ? "⏳ Chargement..." : `🔄 Nouvelle tentative (${attemptIndex + 1}/${RETRY_DELAYS.length})...`);
 
@@ -435,14 +492,12 @@ function loadMediaWithRetries(url, localRound, localMedia, onReady, onFail, { pr
     audioPlayer.onloadedmetadata = () => {
       if (!isStillValid() || done) return;
       if (preloadOnly) return markReady();
-      // on laisse le playSegment gérer le seek + play
       markReady();
     };
 
     audioPlayer.oncanplay = () => {
       if (!isStillValid() || done) return;
       if (preloadOnly) return markReady();
-      // pareil, markReady suffit
       markReady();
     };
 
@@ -472,88 +527,45 @@ function loadMediaWithRetries(url, localRound, localMedia, onReady, onFail, { pr
       triggerRetry();
     };
 
-    // anti-stall dès le départ (si rien ne se passe)
     startStallTimer();
   };
 
-  // attempt 0 immédiat
   attemptIndex = 0;
   doAttempt();
 
   return cleanup;
 }
 
-// ====== Custom UI init ======
-function initCustomUI() {
-  function syncLabels() {
-    clampYearSliders();
-    popValEl.textContent = popEl.value;
-    scoreValEl.textContent = scoreEl.value;
-    yearMinValEl.textContent = yearMinEl.value;
-    yearMaxValEl.textContent = yearMaxEl.value;
-    updatePreview();
-  }
-
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
-
-  // type pills (au moins 1)
-  document.querySelectorAll("#typePills .pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-
-      const any = document.querySelectorAll("#typePills .pill.active").length > 0;
-      if (!any) {
-        btn.classList.add("active");
-        btn.setAttribute("aria-pressed", "true");
-      }
-
-      updatePreview();
-    });
-  });
-
-  // song pills (au moins 1)
-  document.querySelectorAll("#songPills .pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-
-      const any = document.querySelectorAll("#songPills .pill.active").length > 0;
-      if (!any) {
-        btn.classList.add("active");
-        btn.setAttribute("aria-pressed", "true");
-      }
-
-      updatePreview();
-    });
-  });
-
-  applyBtn.addEventListener("click", () => {
-    filteredSongs = applyFilters();
-    if (filteredSongs.length < MIN_REQUIRED_SONGS) return;
-
-    totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
-    currentRound = 1;
-    totalScore = 0;
-
-    showGame();
-    startNewRound();
-  });
-
-  syncLabels();
-}
-
-// ====== Filters ======
-function applyFilters() {
-  const popPercent = parseInt(popEl.value, 10);
-  const scorePercent = parseInt(scoreEl.value, 10);
-  const yearMin = parseInt(yearMinEl.value, 10);
-  const yearMax = parseInt(yearMaxEl.value, 10);
+// ====== Filters (UI ou Parcours) ======
+function getFiltersFromUI() {
+  const popPercent = parseInt(popEl?.value || "30", 10);
+  const scorePercent = parseInt(scoreEl?.value || "100", 10);
+  const yearMin = parseInt(yearMinEl?.value || "1950", 10);
+  const yearMax = parseInt(yearMaxEl?.value || "2026", 10);
 
   const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
 
-  if (allowedTypes.length === 0 || allowedSongs.length === 0) return [];
+  return {
+    popPercent,
+    scorePercent,
+    yearMin,
+    yearMax,
+    types: allowedTypes.length ? allowedTypes : ["TV", "Movie"],
+    songs: allowedSongs.length ? allowedSongs : ["OP"],
+  };
+}
+
+function applyFilters(cfgOverride = null) {
+  const cfg = cfgOverride ? normalizedParcoursCfg(cfgOverride) : getFiltersFromUI();
+  const popPercent = cfg.popPercent;
+  const scorePercent = cfg.scorePercent;
+  const yearMin = cfg.yearMin;
+  const yearMax = cfg.yearMax;
+  const allowedTypes = cfg.types;
+  const allowedSongs = cfg.songs;
+
+  if (!allowedTypes.length || !allowedSongs.length) return [];
 
   // 1) filtre year/type/songType
   let pool = allSongs.filter((s) => {
@@ -576,8 +588,10 @@ function applyFilters() {
   return pool;
 }
 
-// ====== Preview ======
+// ====== Preview (standalone) ======
 function updatePreview() {
+  if (!previewCountEl || !applyBtn) return;
+
   if (!allSongs.length) {
     previewCountEl.textContent = "⏳ Chargement de la base…";
     previewCountEl.classList.add("bad");
@@ -586,7 +600,7 @@ function updatePreview() {
     return;
   }
 
-  const pool = applyFilters();
+  const pool = applyFilters(null);
   const ok = pool.length >= MIN_REQUIRED_SONGS;
 
   previewCountEl.textContent = ok
@@ -607,20 +621,20 @@ function stopPlayback() {
 }
 
 function hidePlayerDuringGame() {
+  if (!playerWrapper) return;
   playerWrapper.style.display = "none";
   audioPlayer.controls = false;
   audioPlayer.removeAttribute("controls");
 }
 
 function revealVideoPlayerAtEnd() {
-  // IMPORTANT: plus de limiter quand c’est révélé
   clearSegmentLimiter();
+  if (!playerWrapper) return;
 
   playerWrapper.style.display = "block";
   audioPlayer.controls = true;
   audioPlayer.setAttribute("controls", "controls");
 
-  // on remet au début pour le reveal (pas sur 50s)
   try {
     audioPlayer.pause();
     audioPlayer.currentTime = 0;
@@ -628,35 +642,33 @@ function revealVideoPlayerAtEnd() {
 }
 
 function updateListenButtons() {
-  // tries = 0 => rien
+  if (!playTry1Btn || !playTry2Btn || !playTry3Btn) return;
+
   if (tries === 0) {
     playTry1Btn.disabled = true;
     playTry2Btn.disabled = true;
     playTry3Btn.disabled = true;
     return;
   }
-  // tries = 1 => début déjà utilisé, refrain dispo
   if (tries === 1) {
-    playTry1Btn.disabled = true;   // ✅ reste grisé
+    playTry1Btn.disabled = true;
     playTry2Btn.disabled = false;
     playTry3Btn.disabled = true;
     return;
   }
-  // tries = 2 => début + refrain gris, complet dispo
   if (tries === 2) {
     playTry1Btn.disabled = true;
-    playTry2Btn.disabled = true;   // ✅ reste grisé
+    playTry2Btn.disabled = true;
     playTry3Btn.disabled = false;
     return;
   }
-  // tries = 3 => tout gris
   playTry1Btn.disabled = true;
   playTry2Btn.disabled = true;
   playTry3Btn.disabled = true;
 }
 
 // ====== Indices (3e écoute) ======
-btnIndice6.addEventListener("click", () => {
+btnIndice6?.addEventListener("click", () => {
   if (indice6Used || indice3Used || !indiceActive) return;
   indice6Used = true;
   indiceActive = false;
@@ -666,7 +678,7 @@ btnIndice6.addEventListener("click", () => {
   updateScoreBar();
 });
 
-btnIndice3.addEventListener("click", () => {
+btnIndice3?.addEventListener("click", () => {
   if (indice6Used || indice3Used || !indiceActive) return;
   indice3Used = true;
   indiceActive = false;
@@ -703,7 +715,7 @@ function showIndiceOptions(nb) {
     list.appendChild(btn);
   });
 
-  document.getElementById("container").appendChild(list);
+  document.getElementById("container")?.appendChild(list);
 }
 
 function resetIndice() {
@@ -711,11 +723,11 @@ function resetIndice() {
   indice3Used = false;
   indiceActive = false;
 
-  indiceButtonsWrap.style.display = "none";
-  btnIndice6.classList.remove("used");
-  btnIndice3.classList.remove("used");
-  btnIndice6.disabled = false;
-  btnIndice3.disabled = false;
+  if (indiceButtonsWrap) indiceButtonsWrap.style.display = "none";
+  btnIndice6?.classList.remove("used");
+  btnIndice3?.classList.remove("used");
+  if (btnIndice6) btnIndice6.disabled = false;
+  if (btnIndice3) btnIndice3.disabled = false;
 
   const old = document.getElementById("indice-options-list");
   if (old) old.remove();
@@ -725,20 +737,24 @@ function resetIndice() {
 function resetControls() {
   tries = 0;
   failedAnswers = [];
-  failedAttemptsDiv.innerText = "";
-  resultDiv.textContent = "";
-  resultDiv.className = "";
+  if (failedAttemptsDiv) failedAttemptsDiv.innerText = "";
+  if (resultDiv) {
+    resultDiv.textContent = "";
+    resultDiv.className = "";
+  }
 
-  openingInput.value = "";
-  openingInput.disabled = true;
+  if (openingInput) {
+    openingInput.value = "";
+    openingInput.disabled = true;
+  }
 
-  suggestionsDiv.innerHTML = "";
+  if (suggestionsDiv) suggestionsDiv.innerHTML = "";
 
-  playTry1Btn.disabled = true;
-  playTry2Btn.disabled = true;
-  playTry3Btn.disabled = true;
+  if (playTry1Btn) playTry1Btn.disabled = true;
+  if (playTry2Btn) playTry2Btn.disabled = true;
+  if (playTry3Btn) playTry3Btn.disabled = true;
 
-  nextBtn.style.display = "none";
+  if (nextBtn) nextBtn.style.display = "none";
 
   resetIndice();
   stopPlayback();
@@ -751,7 +767,7 @@ function resetControls() {
 
 function startNewRound() {
   roundToken++;
-  mediaToken++; // invalide tout ce qui traîne
+  mediaToken++;
 
   resetControls();
 
@@ -766,7 +782,6 @@ function startNewRound() {
     return;
   }
 
-  // Préchargement (sans lecture)
   setMediaStatus("⏳ Préchargement...");
   const localRound = roundToken;
   const localMedia = mediaToken;
@@ -776,17 +791,15 @@ function startNewRound() {
     localRound,
     localMedia,
     () => {
-      // prêt -> on active Début
       if (localRound !== roundToken || localMedia !== mediaToken) return;
       setMediaStatus("");
-      openingInput.disabled = true;
-      playTry1Btn.disabled = false;
-      playTry2Btn.disabled = true;
-      playTry3Btn.disabled = true;
+      if (openingInput) openingInput.disabled = true;
+      if (playTry1Btn) playTry1Btn.disabled = false;
+      if (playTry2Btn) playTry2Btn.disabled = true;
+      if (playTry3Btn) playTry3Btn.disabled = true;
       applyVolume();
     },
     () => {
-      // si vraiment mort -> autre song
       if (localRound !== roundToken || localMedia !== mediaToken) return;
       startNewRound();
     },
@@ -812,29 +825,26 @@ function playSegment(tryNum) {
     return;
   }
 
-  // nouveau token “segment”
   mediaToken++;
 
   tries = tryNum;
   updateScoreBar();
-  openingInput.disabled = false;
+  if (openingInput) openingInput.disabled = false;
 
-  // indices uniquement à la 3e écoute
   if (tries === 3) {
-    indiceButtonsWrap.style.display = "flex";
+    if (indiceButtonsWrap) indiceButtonsWrap.style.display = "flex";
     indiceActive = true;
-    btnIndice6.disabled = indice6Used || indice3Used;
-    btnIndice3.disabled = indice6Used || indice3Used;
-    btnIndice6.classList.toggle("used", indice6Used);
-    btnIndice3.classList.toggle("used", indice3Used);
+    if (btnIndice6) btnIndice6.disabled = indice6Used || indice3Used;
+    if (btnIndice3) btnIndice3.disabled = indice6Used || indice3Used;
+    btnIndice6?.classList.toggle("used", indice6Used);
+    btnIndice3?.classList.toggle("used", indice3Used);
   } else {
-    indiceButtonsWrap.style.display = "none";
+    if (indiceButtonsWrap) indiceButtonsWrap.style.display = "none";
     indiceActive = false;
     const old = document.getElementById("indice-options-list");
     if (old) old.remove();
   }
 
-  // start times
   let startTime = 0;
   if (tries === 2) startTime = REFRAIN_START;
   if (tries === 3) startTime = 0;
@@ -843,7 +853,7 @@ function playSegment(tryNum) {
   stopPlayback();
   setMediaStatus("⏳ Chargement...");
 
-  updateListenButtons(); // ✅ début/refrain grisés correctement
+  updateListenButtons();
 
   const localRound = roundToken;
   const localMedia = mediaToken;
@@ -855,25 +865,24 @@ function playSegment(tryNum) {
     () => {
       if (localRound !== roundToken || localMedia !== mediaToken) return;
 
-      // seek + play
       try { audioPlayer.currentTime = startTime; } catch {}
       applyVolume();
 
       const dur = TRY_DURATIONS[tries - 1];
       armSegmentLimiter(startTime, dur);
 
-      audioPlayer.play().then(() => {
-        if (localRound !== roundToken || localMedia !== mediaToken) return;
-        setMediaStatus("");
-      }).catch(() => {
-        if (localRound !== roundToken || localMedia !== mediaToken) return;
-        setMediaStatus("❌ Impossible de lire ce média.");
-      });
+      audioPlayer
+        .play()
+        .then(() => {
+          if (localRound !== roundToken || localMedia !== mediaToken) return;
+          setMediaStatus("");
+        })
+        .catch(() => {
+          if (localRound !== roundToken || localMedia !== mediaToken) return;
+          setMediaStatus("❌ Impossible de lire ce média.");
+        });
 
-      // activation des boutons selon tries (après lancement)
       updateListenButtons();
-      // quand on a fini l’essai (pause auto), le joueur doit cliquer le prochain
-      // rien à faire ici : l’ordre est déjà géré
     },
     () => {
       if (localRound !== roundToken || localMedia !== mediaToken) return;
@@ -886,22 +895,25 @@ function playSegment(tryNum) {
 
 // ====== Guess logic ======
 function updateFailedAttempts() {
+  if (!failedAttemptsDiv) return;
   failedAttemptsDiv.innerText = failedAnswers.map((e) => `❌ ${e}`).join("\n");
 }
 
 function blockInputsAll() {
-  openingInput.disabled = true;
-  playTry1Btn.disabled = true;
-  playTry2Btn.disabled = true;
-  playTry3Btn.disabled = true;
-  suggestionsDiv.innerHTML = "";
-  indiceButtonsWrap.style.display = "none";
+  if (openingInput) openingInput.disabled = true;
+  if (playTry1Btn) playTry1Btn.disabled = true;
+  if (playTry2Btn) playTry2Btn.disabled = true;
+  if (playTry3Btn) playTry3Btn.disabled = true;
+  if (suggestionsDiv) suggestionsDiv.innerHTML = "";
+  if (indiceButtonsWrap) indiceButtonsWrap.style.display = "none";
   const old = document.getElementById("indice-options-list");
   if (old) old.remove();
 }
 
 function endRoundAndMaybeNext(roundScore) {
   totalScore += roundScore;
+
+  if (!nextBtn || !resultDiv) return;
 
   if (currentRound >= totalRounds) {
     resultDiv.innerHTML += `
@@ -912,17 +924,26 @@ function endRoundAndMaybeNext(roundScore) {
     `;
 
     nextBtn.style.display = "block";
-    nextBtn.textContent = "Retour réglages";
-    nextBtn.onclick = () => {
-      showCustomization();
-      stopPlayback();
-      playerWrapper.style.display = "none";
-      openingInput.value = "";
-      suggestionsDiv.innerHTML = "";
-      resultDiv.textContent = "";
-      failedAttemptsDiv.textContent = "";
-      setMediaStatus("");
-    };
+
+    if (IS_PARCOURS) {
+      nextBtn.textContent = "Continuer le parcours";
+      nextBtn.onclick = () => {
+        nextBtn.disabled = true;
+        sendParcoursScore();
+      };
+    } else {
+      nextBtn.textContent = "Retour réglages";
+      nextBtn.onclick = () => {
+        showCustomization();
+        stopPlayback();
+        if (playerWrapper) playerWrapper.style.display = "none";
+        if (openingInput) openingInput.value = "";
+        if (suggestionsDiv) suggestionsDiv.innerHTML = "";
+        resultDiv.textContent = "";
+        if (failedAttemptsDiv) failedAttemptsDiv.textContent = "";
+        setMediaStatus("");
+      };
+    }
     return;
   }
 
@@ -935,14 +956,16 @@ function endRoundAndMaybeNext(roundScore) {
 }
 
 function checkAnswer(selectedTitle) {
-  if (!currentSong) return;
+  if (!currentSong || !resultDiv) return;
 
   const inputVal = selectedTitle.trim().toLowerCase();
   const good = inputVal === currentSong.animeTitleLower;
 
   if (good) {
     const score = finalScore();
-    resultDiv.innerHTML = `🎉 Bravo !<br><b>${currentSong.animeTitle}</b><br><em>${formatRevealLine(currentSong)}</em><br><span style="font-size:1.05em;">Score : <b>${score}</b> / 3000</span>`;
+    resultDiv.innerHTML = `🎉 Bravo !<br><b>${currentSong.animeTitle}</b><br><em>${formatRevealLine(
+      currentSong
+    )}</em><br><span style="font-size:1.05em;">Score : <b>${score}</b> / 3000</span>`;
     resultDiv.className = "correct";
 
     stopPlayback();
@@ -956,12 +979,10 @@ function checkAnswer(selectedTitle) {
     return;
   }
 
-  // wrong
   failedAnswers.push(selectedTitle);
   updateFailedAttempts();
 
   if (tries >= 3) {
-    // lost
     resultDiv.innerHTML = `🔔 Réponse : <b>${currentSong.animeTitle}</b><br><em>${formatRevealLine(currentSong)}</em>`;
     resultDiv.className = "incorrect";
 
@@ -973,16 +994,15 @@ function checkAnswer(selectedTitle) {
 
     endRoundAndMaybeNext(0);
   } else {
-    // doit écouter le segment suivant avant de retenter
-    openingInput.disabled = true;
+    if (openingInput) openingInput.disabled = true;
   }
 }
 
 // ====== Autocomplete ======
-openingInput.addEventListener("input", function () {
+openingInput?.addEventListener("input", function () {
   if (openingInput.disabled) return;
   const val = this.value.toLowerCase().trim();
-  suggestionsDiv.innerHTML = "";
+  if (suggestionsDiv) suggestionsDiv.innerHTML = "";
   if (!val) return;
 
   const uniqueTitles = [...new Set(filteredSongs.map((s) => s.animeTitle))];
@@ -994,32 +1014,32 @@ openingInput.addEventListener("input", function () {
     div.textContent = title;
     div.onclick = () => {
       openingInput.value = title;
-      suggestionsDiv.innerHTML = "";
+      if (suggestionsDiv) suggestionsDiv.innerHTML = "";
       checkAnswer(title);
       openingInput.value = "";
     };
-    suggestionsDiv.appendChild(div);
+    suggestionsDiv?.appendChild(div);
   });
 });
 
-openingInput.addEventListener("keydown", function (e) {
+openingInput?.addEventListener("keydown", function (e) {
   if (e.key === "Enter" && !openingInput.disabled) {
     const val = openingInput.value.trim();
     if (!val) return;
     checkAnswer(val);
-    suggestionsDiv.innerHTML = "";
+    if (suggestionsDiv) suggestionsDiv.innerHTML = "";
     openingInput.value = "";
   }
 });
 
 document.addEventListener("click", (e) => {
-  if (e.target !== openingInput) suggestionsDiv.innerHTML = "";
+  if (e.target !== openingInput && suggestionsDiv) suggestionsDiv.innerHTML = "";
 });
 
 // ====== Buttons ======
-playTry1Btn.addEventListener("click", () => playSegment(1));
-playTry2Btn.addEventListener("click", () => playSegment(2));
-playTry3Btn.addEventListener("click", () => playSegment(3));
+playTry1Btn?.addEventListener("click", () => playSegment(1));
+playTry2Btn?.addEventListener("click", () => playSegment(2));
+playTry3Btn?.addEventListener("click", () => playSegment(3));
 
 // ====== Tooltip help ======
 document.addEventListener("click", (e) => {
@@ -1078,6 +1098,105 @@ function launchFireworks() {
   animate();
 }
 
+// ====== Custom UI init (standalone) ======
+function initCustomUI() {
+  if (!popEl || !scoreEl || !yearMinEl || !yearMaxEl || !applyBtn) return;
+
+  function syncLabels() {
+    clampYearSliders();
+    if (popValEl) popValEl.textContent = popEl.value;
+    if (scoreValEl) scoreValEl.textContent = scoreEl.value;
+    if (yearMinValEl) yearMinValEl.textContent = yearMinEl.value;
+    if (yearMaxValEl) yearMaxValEl.textContent = yearMaxEl.value;
+    updatePreview();
+  }
+
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
+
+  // type pills (au moins 1)
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+
+      const any = document.querySelectorAll("#typePills .pill.active").length > 0;
+      if (!any) {
+        btn.classList.add("active");
+        btn.setAttribute("aria-pressed", "true");
+      }
+
+      updatePreview();
+    });
+  });
+
+  // song pills (au moins 1)
+  document.querySelectorAll("#songPills .pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+
+      const any = document.querySelectorAll("#songPills .pill.active").length > 0;
+      if (!any) {
+        btn.classList.add("active");
+        btn.setAttribute("aria-pressed", "true");
+      }
+
+      updatePreview();
+    });
+  });
+
+  applyBtn.addEventListener("click", () => {
+    filteredSongs = applyFilters(null);
+    if (filteredSongs.length < MIN_REQUIRED_SONGS) return;
+
+    totalRounds = clampInt(parseInt(roundCountEl?.value || "1", 10), 1, 100);
+    currentRound = 1;
+    totalScore = 0;
+
+    showGame();
+    startNewRound();
+  });
+
+  syncLabels();
+}
+
+// ====== Boot Parcours ======
+function bootParcoursMode() {
+  // cache bouton menu dans l’iframe (évite de sortir du parcours)
+  const backBtn = document.getElementById("back-to-menu");
+  if (backBtn) backBtn.style.display = "none";
+
+  // on force affichage jeu
+  showGame();
+
+  // config globale
+  const cfg = normalizedParcoursCfg(loadParcoursConfig());
+
+  filteredSongs = applyFilters(cfg);
+  totalRounds = PARCOURS_COUNT;
+  currentRound = 1;
+  totalScore = 0;
+
+  if (filteredSongs.length < MIN_REQUIRED_SONGS) {
+    setMediaStatus(`❌ Pas assez de songs pour jouer (${filteredSongs.length}/${MIN_REQUIRED_SONGS}).`);
+    if (resultDiv && nextBtn) {
+      resultDiv.className = "incorrect";
+      resultDiv.innerHTML = `❌ Pool insuffisant.<br><b>${filteredSongs.length}</b> songs dispo (min ${MIN_REQUIRED_SONGS}).`;
+      nextBtn.style.display = "block";
+      nextBtn.textContent = "Continuer le parcours";
+      nextBtn.onclick = () => {
+        nextBtn.disabled = true;
+        // score 0/total
+        totalScore = 0;
+        sendParcoursScore();
+      };
+    }
+    return;
+  }
+
+  startNewRound();
+}
+
 // ====== Load dataset ======
 fetch("../data/licenses_only.json")
   .then((r) => {
@@ -1107,9 +1226,30 @@ fetch("../data/licenses_only.json")
     updatePreview();
     showCustomization();
     applyVolume();
+
+    if (IS_PARCOURS) {
+      bootParcoursMode();
+    }
   })
   .catch((e) => {
-    previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
-    previewCountEl.classList.add("bad");
-    applyBtn.disabled = true;
+    if (previewCountEl) {
+      previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
+      previewCountEl.classList.add("bad");
+    }
+    if (applyBtn) applyBtn.disabled = true;
+
+    // en parcours, on évite de bloquer silencieusement
+    if (IS_PARCOURS && resultDiv && nextBtn) {
+      setMediaStatus("❌ Erreur dataset.");
+      resultDiv.className = "incorrect";
+      resultDiv.innerHTML = `❌ Impossible de charger la base.<br>${e.message}`;
+      nextBtn.style.display = "block";
+      nextBtn.textContent = "Continuer le parcours";
+      nextBtn.onclick = () => {
+        nextBtn.disabled = true;
+        totalRounds = PARCOURS_COUNT;
+        totalScore = 0;
+        sendParcoursScore();
+      };
+    }
   });
