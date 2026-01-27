@@ -1,16 +1,11 @@
 // =======================
-// Anime Tournament — script.js (COMPLET + FIX PARCOURS)
+// Anime Tournament — script.js (COMPLET + Parcours + Thème contenu + Songs snippet 45s/20s)
 // - Thème contenu (pool EXACT 64) pour choisir les 32 items
 // - "Libre" a la même chance que chaque autre critère (anime: 1/6 ; songs: 1/7)
 // - Si un critère ne peut pas produire 64 => fallback "Libre"
 // - STUDIO: pool “agrandi” en cumulant plusieurs studios jusqu'à atteindre 64 (sinon Libre)
 // - Songs: start à 45s, durée 20s (extrait), autoplay gauche
-//
-// ✅ FIX PARCOURS
-// - Autostart UNIQUEMENT après chargement dataset
-// - Apply config parcours au DOM (sliders + pills + mode + rounds)
-// - Si parcours => pas d'écran personnalisation du tournoi (autostart direct)
-// - Back-to-menu => return URL si fourni
+// - Parcours: si ?parcours=1 -> cache la personnalisation du tournoi + auto-start via config parcours
 // =======================
 
 // =======================
@@ -33,145 +28,66 @@ const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const LOAD_TIMEOUT_MS = 6000;
 
 // =======================
-// PARCOURS SUPPORT (FIX)
+// PARCOURS (URL / localStorage / postMessage)
 // =======================
-const URL_PARAMS = new URLSearchParams(window.location.search);
+const urlParams = new URLSearchParams(window.location.search);
+const IS_PARCOURS = urlParams.get("parcours") === "1";
 
-function truthyParam(v) {
-  if (v == null) return false;
-  const s = String(v).trim().toLowerCase();
-  return s === "1" || s === "true" || s === "yes" || s === "y" || s === "on";
+function parseCsv(param) {
+  if (!param) return [];
+  return String(param)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function safeJsonParse(s) {
   try { return JSON.parse(s); } catch { return null; }
 }
 
-function detectParcours() {
-  const from = (URL_PARAMS.get("from") || "").trim().toLowerCase();
-  if (from === "parcours") return true;
-  if (truthyParam(URL_PARAMS.get("parcours"))) return true;
-
-  const keys = ["AG2_PARCOURS_ACTIVE", "ag2_parcours_active", "parcours_active", "AG2_PARCOURS"];
-  for (const k of keys) {
-    const v = localStorage.getItem(k);
-    if (truthyParam(v)) return true;
-  }
-  return false;
-}
-
-const IS_PARCOURS = detectParcours();
-
-function getReturnUrl() {
-  const u = URL_PARAMS.get("return");
-  if (u) {
-    try { return decodeURIComponent(u); } catch { return u; }
-  }
-  const keys = ["AG2_PARCOURS_RETURN", "ag2_parcours_return", "parcours_return"];
-  for (const k of keys) {
-    const v = localStorage.getItem(k);
-    if (v && String(v).trim()) return v;
-  }
-  return "../index.html";
-}
-const RETURN_URL = getReturnUrl();
-
-function normalizeCfg(raw) {
-  if (!raw || typeof raw !== "object") return null;
-
-  const modeParam = String(raw.mode || raw.gameMode || "").trim().toLowerCase();
-  const mode =
-    modeParam === "songs" || modeParam === "song" || modeParam === "musique" ? "songs" :
-    modeParam === "anime" || modeParam === "animes" ? "anime" : null;
-
-  const popPercent = Number.isFinite(+raw.popPercent) ? +raw.popPercent : (Number.isFinite(+raw.pop) ? +raw.pop : null);
-  const scorePercent = Number.isFinite(+raw.scorePercent) ? +raw.scorePercent : (Number.isFinite(+raw.score) ? +raw.score : null);
-  const yearMin = Number.isFinite(+raw.yearMin) ? +raw.yearMin : (Number.isFinite(+raw.yMin) ? +raw.yMin : null);
-  const yearMax = Number.isFinite(+raw.yearMax) ? +raw.yearMax : (Number.isFinite(+raw.yMax) ? +raw.yMax : null);
-  const rounds = Number.isFinite(+raw.rounds) ? +raw.rounds : (Number.isFinite(+raw.count) ? +raw.count : null);
-
-  const types = Array.isArray(raw.types) ? raw.types : (Array.isArray(raw.allowedTypes) ? raw.allowedTypes : []);
-  const songKinds = Array.isArray(raw.songKinds) ? raw.songKinds : (Array.isArray(raw.allowedSongs) ? raw.allowedSongs : []);
-
-  return {
-    autostart: !!raw.autostart || !!raw.parcours,
-    mode,
-    popPercent,
-    scorePercent,
-    yearMin,
-    yearMax,
-    rounds,
-    types: types.map(String),
-    songKinds: songKinds.map(String),
+/**
+ * Sources supportées :
+ * 1) URL:
+ *    - mode=anime|songs
+ *    - popPercent=30
+ *    - scorePercent=100
+ *    - yearMin=1950
+ *    - yearMax=2026
+ *    - types=TV,Movie
+ *    - songs=opening,ending,insert
+ * 2) localStorage:
+ *    - AG2_PARCOURS_CFG / ag2_parcours_cfg / parcours_config (JSON)
+ * 3) postMessage:
+ *    - { parcoursConfig: {...} }
+ */
+function getParcoursConfigNow() {
+  // URL first
+  const cfgUrl = {
+    mode: urlParams.get("mode") || undefined,
+    popPercent: urlParams.get("popPercent") || undefined,
+    scorePercent: urlParams.get("scorePercent") || undefined,
+    yearMin: urlParams.get("yearMin") || undefined,
+    yearMax: urlParams.get("yearMax") || undefined,
+    types: parseCsv(urlParams.get("types")),
+    songs: parseCsv(urlParams.get("songs")),
   };
-}
+  const hasAnyUrl =
+    cfgUrl.mode || cfgUrl.popPercent || cfgUrl.scorePercent || cfgUrl.yearMin || cfgUrl.yearMax ||
+    (cfgUrl.types && cfgUrl.types.length) || (cfgUrl.songs && cfgUrl.songs.length);
 
-function readCfgFromLocalStorage() {
-  const keys = [
-    "AG2_PERSONALISATION",
-    "AG2_PERSONNALISATION",
-    "AG2_GLOBAL_PERSONALISATION",
-    "AG2_PARCOURS_PERSONALISATION",
-    "parcoursPersonalisation",
-    "parcours_personalisation",
-    "AG2_PARCOURS_CONFIG",
-    "parcoursConfig",
-  ];
+  if (hasAnyUrl) return cfgUrl;
+
+  // localStorage fallback
+  const keys = ["AG2_PARCOURS_CFG", "ag2_parcours_cfg", "parcours_config"];
   for (const k of keys) {
-    const v = localStorage.getItem(k);
-    if (!v) continue;
-    const raw = safeJsonParse(v);
-    const cfg = normalizeCfg(raw);
-    if (cfg) return cfg;
+    const raw = localStorage.getItem(k);
+    if (!raw) continue;
+    const obj = safeJsonParse(raw);
+    if (obj && typeof obj === "object") return obj;
   }
+
   return null;
 }
-
-function parseCsvParam(p) {
-  if (!p) return [];
-  return String(p).split(",").map(x => x.trim()).filter(Boolean);
-}
-
-function readCfgFromUrl() {
-  const modeParam = (URL_PARAMS.get("mode") || "").trim().toLowerCase();
-  const mode =
-    modeParam === "songs" || modeParam === "song" ? "songs" :
-    modeParam === "anime" || modeParam === "animes" ? "anime" : null;
-
-  const pop = parseInt(URL_PARAMS.get("pop") || URL_PARAMS.get("popPercent") || "", 10);
-  const score = parseInt(URL_PARAMS.get("score") || URL_PARAMS.get("scorePercent") || "", 10);
-  const yearMin = parseInt(URL_PARAMS.get("yearMin") || URL_PARAMS.get("ymin") || "", 10);
-  const yearMax = parseInt(URL_PARAMS.get("yearMax") || URL_PARAMS.get("ymax") || "", 10);
-  const rounds = parseInt(URL_PARAMS.get("count") || URL_PARAMS.get("rounds") || "", 10);
-
-  const types = parseCsvParam(URL_PARAMS.get("types"));
-  const songs = parseCsvParam(URL_PARAMS.get("songs") || URL_PARAMS.get("songKinds"));
-
-  const has = mode || Number.isFinite(pop) || Number.isFinite(score) || Number.isFinite(yearMin) || Number.isFinite(yearMax)
-    || Number.isFinite(rounds) || types.length || songs.length || truthyParam(URL_PARAMS.get("autostart")) || truthyParam(URL_PARAMS.get("parcours"));
-
-  if (!has) return null;
-
-  return {
-    autostart: truthyParam(URL_PARAMS.get("autostart")) || truthyParam(URL_PARAMS.get("parcours")),
-    mode,
-    popPercent: Number.isFinite(pop) ? pop : null,
-    scorePercent: Number.isFinite(score) ? score : null,
-    yearMin: Number.isFinite(yearMin) ? yearMin : null,
-    yearMax: Number.isFinite(yearMax) ? yearMax : null,
-    rounds: Number.isFinite(rounds) ? rounds : null,
-    types,
-    songKinds: songs,
-  };
-}
-
-function readGlobalCfg() {
-  return readCfgFromUrl() || readCfgFromLocalStorage();
-}
-const GLOBAL_CFG = readGlobalCfg();
-
-// ✅ autostart “pending” tant que dataset pas chargé
-let AUTO_START_PENDING = false;
 
 // =======================
 // GLOBAL STATE
@@ -203,6 +119,12 @@ let CURRENT_BASE_POOL = null;
 // =======================
 // HELPERS DATA
 // =======================
+function normalizeAnimeList(json) {
+  if (Array.isArray(json)) return json;
+  if (json && Array.isArray(json.animes)) return json.animes;
+  return [];
+}
+
 function getDisplayTitle(a) {
   return (
     a.title_english ||
@@ -256,6 +178,13 @@ function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
+// ✅ FIX manquant
+function clampInt(n, a, b) {
+  n = parseInt(n, 10);
+  if (!Number.isFinite(n)) n = a;
+  return Math.max(a, Math.min(b, n));
+}
+
 function round1(x) {
   return Math.round((Number.isFinite(x) ? x : 0) * 10) / 10;
 }
@@ -264,7 +193,7 @@ function round1(x) {
 // BASIC UI
 // =======================
 document.getElementById("back-to-menu")?.addEventListener("click", () => {
-  window.location.href = RETURN_URL || "../index.html";
+  window.location.href = "../index.html";
 });
 
 document.getElementById("themeToggle")?.addEventListener("click", () => {
@@ -346,7 +275,7 @@ function updateVolumeVisibility() {
 }
 
 // =======================
-// THEME STRIP
+// THEME STRIP (auto-create if missing)
 // =======================
 function ensureThemeStrip() {
   let el = document.getElementById("content-theme");
@@ -383,6 +312,13 @@ function updateThemeStrip() {
 // PANEL vs GAME
 // =======================
 function showCustomization() {
+  // ✅ Parcours: ne jamais afficher la personnalisation du tournoi
+  if (IS_PARCOURS) {
+    const custom = document.getElementById("custom-panel");
+    if (custom) custom.style.display = "none";
+    return;
+  }
+
   document.body.classList.remove("game-started");
 
   const custom = document.getElementById("custom-panel");
@@ -526,12 +462,10 @@ function ensureDefaultSongs() {
 }
 
 // =======================
-// APPLY PARCOURS CFG -> DOM (FIX)
+// PARCOURS: appliquer config -> UI
 // =======================
-function norm(s) { return (s || "").toString().trim().toLowerCase(); }
-
-function applyCfgToUI(cfg) {
-  if (!cfg) return;
+function applyParcoursConfigToUI(cfg) {
+  if (!cfg || typeof cfg !== "object") return;
 
   // mode
   if (cfg.mode === "anime" || cfg.mode === "songs") {
@@ -544,50 +478,43 @@ function applyCfgToUI(cfg) {
   const scoreEl = document.getElementById("scorePercent");
   const yMinEl = document.getElementById("yearMin");
   const yMaxEl = document.getElementById("yearMax");
-  const roundsEl = document.getElementById("roundCount");
 
-  if (popEl && Number.isFinite(+cfg.popPercent)) popEl.value = String(clampInt(+cfg.popPercent, 5, 100));
-  if (scoreEl && Number.isFinite(+cfg.scorePercent)) scoreEl.value = String(clampInt(+cfg.scorePercent, 5, 100));
-  if (yMinEl && Number.isFinite(+cfg.yearMin)) yMinEl.value = String(+cfg.yearMin);
-  if (yMaxEl && Number.isFinite(+cfg.yearMax)) yMaxEl.value = String(+cfg.yearMax);
-  if (roundsEl && Number.isFinite(+cfg.rounds)) roundsEl.value = String(clampInt(+cfg.rounds, 1, 100));
+  if (popEl && cfg.popPercent != null) popEl.value = String(clampInt(cfg.popPercent, 5, 100));
+  if (scoreEl && cfg.scorePercent != null) scoreEl.value = String(clampInt(cfg.scorePercent, 5, 100));
+  if (yMinEl && cfg.yearMin != null) yMinEl.value = String(clampInt(cfg.yearMin, 1900, 2100));
+  if (yMaxEl && cfg.yearMax != null) yMaxEl.value = String(clampInt(cfg.yearMax, 1900, 2100));
+  clampYearSliders();
 
-  // types (case-insensitive)
-  const wantedTypes = (Array.isArray(cfg.types) ? cfg.types : []).map(x => norm(x));
+  // types
+  const typesWanted = Array.isArray(cfg.types) ? cfg.types : (typeof cfg.types === "string" ? parseCsv(cfg.types) : []);
   const typePills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
-  if (typePills.length && wantedTypes.length) {
+  if (typePills.length && typesWanted.length) {
     typePills.forEach((b) => {
-      const t = norm(b.dataset.type || "");
-      const on = wantedTypes.includes(t);
+      const t = b.dataset.type;
+      const on = typesWanted.includes(t);
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", on ? "true" : "false");
     });
   }
   ensureDefaultTypes();
 
-  // songs (opening/ending/insert) via codes OP/ED/IN or words
-  const mapSong = (x) => {
-    const s = norm(x);
-    if (s === "op" || s === "opening" || s === "openings") return "opening";
-    if (s === "ed" || s === "ending" || s === "endings") return "ending";
-    if (s === "in" || s === "insert" || s === "inserts") return "insert";
-    return null;
-  };
-  const wantedSongs = (Array.isArray(cfg.songKinds) ? cfg.songKinds : []).map(mapSong).filter(Boolean);
+  // songs (si mode songs)
+  const songsWanted = Array.isArray(cfg.songs) ? cfg.songs : (typeof cfg.songs === "string" ? parseCsv(cfg.songs) : []);
   const songPills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
-  if (songPills.length && wantedSongs.length) {
+  if (songPills.length && songsWanted.length) {
     songPills.forEach((b) => {
-      const s = norm(b.dataset.song || "");
-      const on = wantedSongs.includes(s);
+      const s = b.dataset.song;
+      const on = songsWanted.includes(s);
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", on ? "true" : "false");
     });
   }
   ensureDefaultSongs();
 
-  // clamp years + refresh labels
-  clampYearSliders();
-  readOptions(); // met à jour labels
+  // refresh labels + preview
+  readOptions(); // met à jour labels + sécurise defaults
+  refreshPreview();
+  updateVolumeVisibility();
 }
 
 // =======================
@@ -682,6 +609,7 @@ function buildSongsWithMeta(titles, o) {
           .replace(/\s+/g, " ")
           .trim(),
 
+        // meta anime (pour score/pop/filtrage)
         _members: t._members,
         _score: t._score,
         _year: t._year,
@@ -689,6 +617,7 @@ function buildSongsWithMeta(titles, o) {
         _studio: t._studio || "",
         tags: Array.isArray(t._tags) ? t._tags : [],
 
+        // meta song
         artistsArr,
         songSeason: seasonStr,
         songYear,
@@ -727,6 +656,8 @@ function filterSongs(data, o) {
 // =======================
 // THEME CONTENU (pool 64)
 // =======================
+function norm(s) { return (s || "").toString().trim().toLowerCase(); }
+
 function includesStudio(studio, needle) {
   const s = norm(studio);
   const n = norm(needle);
@@ -817,7 +748,7 @@ function buildStudioPool64(basePool, pickStudioFn, minSize = THEME_POOL_SIZE) {
 
 function pickContentTheme64(basePool, modeLocal) {
   if (!Array.isArray(basePool) || basePool.length < THEME_POOL_SIZE) {
-    return { crit: "FREE", label: "Libre", pool: basePool || [] };
+    return { crit: "FREE", label: "Libre", pool: pickUniqueN(basePool || [], THEME_POOL_SIZE) };
   }
 
   const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR"]; // 6
@@ -1000,90 +931,12 @@ function wireCustomizationUI() {
 }
 
 // =======================
-// START GAME (avec thème contenu 64) — ✅ guard dataset loaded
-// =======================
-function startGame() {
-  if (!ALL_TITLES.length) {
-    // dataset pas prêt -> on retente après chargement
-    AUTO_START_PENDING = true;
-    return;
-  }
-
-  resetTournament();
-
-  const o = readOptions();
-
-  if (mode === "anime") {
-    const titles = filterTitles(ALL_TITLES, o);
-    const minTitlesNeeded = Math.max(MIN_REQUIRED_TITLES, TOTAL_MATCH_ITEMS);
-
-    if (titles.length < minTitlesNeeded) {
-      // en parcours: pas d'alert spam, on reste sur menu
-      if (!IS_PARCOURS) alert(`Pas assez de titres (${titles.length}/${minTitlesNeeded}).`);
-      refreshPreview();
-      showCustomization();
-      return;
-    }
-
-    CURRENT_BASE_POOL = titles;
-
-    const theme = pickContentTheme64(titles, "anime");
-    CURRENT_CONTENT_THEME = { crit: theme.crit, label: theme.label, poolSize: theme.pool.length };
-
-    const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
-    if (picked.length < TOTAL_MATCH_ITEMS) {
-      if (!IS_PARCOURS) alert("Impossible de sélectionner 32 items uniques.");
-      showCustomization();
-      return;
-    }
-
-    items = picked.map((t) => ({
-      _key: t._key,
-      image: t.image,
-      title: t._title,
-    }));
-  } else {
-    const songs = filterSongs(ALL_TITLES, o);
-    const minSongsNeeded = Math.max(MIN_REQUIRED_SONGS, TOTAL_MATCH_ITEMS);
-
-    if (songs.length < minSongsNeeded) {
-      if (!IS_PARCOURS) alert(`Pas assez de songs (${songs.length}/${minSongsNeeded}).`);
-      refreshPreview();
-      showCustomization();
-      return;
-    }
-
-    CURRENT_BASE_POOL = songs;
-
-    const theme = pickContentTheme64(songs, "songs");
-    CURRENT_CONTENT_THEME = { crit: theme.crit, label: theme.label, poolSize: theme.pool.length };
-
-    const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
-    if (picked.length < TOTAL_MATCH_ITEMS) {
-      if (!IS_PARCOURS) alert("Impossible de sélectionner 32 items uniques.");
-      showCustomization();
-      return;
-    }
-
-    items = picked.map((s) => ({
-      _key: s._key,
-      video: s.video,
-      label: s.label,
-    }));
-  }
-
-  showGame();
-  updateThemeStrip();
-  initTournament();
-}
-
-// =======================
-// LOAD DATA (✅ autostart après fetch)
+// LOAD DATA
 // =======================
 fetch(DATA_URL)
   .then((r) => r.json())
   .then((json) => {
-    const arr = Array.isArray(json) ? json : [];
+    const arr = normalizeAnimeList(json);
 
     ALL_TITLES = arr.map((a) => {
       const title = getDisplayTitle(a);
@@ -1107,34 +960,125 @@ fetch(DATA_URL)
     initModePillsIfAny();
     syncModeButtons();
     wireCustomizationUI();
-
-    // ✅ applique config parcours APRÈS defaults (override)
-    applyCfgToUI(GLOBAL_CFG);
-
     refreshPreview();
-
-    const shouldAutoStart =
-      IS_PARCOURS ||
-      truthyParam(URL_PARAMS.get("autostart")) ||
-      truthyParam(URL_PARAMS.get("parcours")) ||
-      !!GLOBAL_CFG?.autostart;
-
-    if (shouldAutoStart) {
-      // ✅ auto-start sans afficher le menu tournoi
-      // (si insuffisant on retombe sur menu via startGame)
-      showCustomization(); // état propre (sans game)
-      startGame();
-      AUTO_START_PENDING = false;
-      return;
-    }
-
-    showCustomization();
     updateVolumeVisibility();
     updateThemeStrip();
+
+    // ✅ Parcours: cache le panel + auto-start
+    if (IS_PARCOURS) {
+      const custom = document.getElementById("custom-panel");
+      if (custom) custom.style.display = "none";
+
+      const cfg = getParcoursConfigNow();
+      if (cfg) applyParcoursConfigToUI(cfg);
+
+      // si la config arrive plus tard via postMessage, on la gèrera et on start
+      maybeAutoStartParcours();
+    } else {
+      showCustomization();
+    }
   })
   .catch((e) => {
     alert("Erreur chargement dataset: " + e.message);
   });
+
+// ✅ Parcours: écoute config via postMessage
+let PARCOURS_STARTED = false;
+window.addEventListener("message", (ev) => {
+  if (!IS_PARCOURS) return;
+  const data = ev?.data;
+  if (!data) return;
+
+  const cfg = data.parcoursConfig || data.config || null;
+  if (cfg && typeof cfg === "object") {
+    applyParcoursConfigToUI(cfg);
+    maybeAutoStartParcours(true);
+  }
+});
+
+function maybeAutoStartParcours(force = false) {
+  if (!IS_PARCOURS) return;
+  if (PARCOURS_STARTED && !force) return;
+
+  // Si on a déjà assez pour démarrer, on lance
+  refreshPreview();
+
+  // start
+  PARCOURS_STARTED = true;
+  startGame({ fromParcours: true });
+}
+
+// =======================
+// START GAME (avec thème contenu 64)
+// =======================
+function startGame(opts = {}) {
+  if (!ALL_TITLES.length) return;
+
+  resetTournament();
+
+  const o = readOptions();
+
+  if (mode === "anime") {
+    const titles = filterTitles(ALL_TITLES, o);
+    const minTitlesNeeded = Math.max(MIN_REQUIRED_TITLES, TOTAL_MATCH_ITEMS);
+
+    if (titles.length < minTitlesNeeded) {
+      // Parcours: éviter boucle de menus, mais laisser un message clair
+      if (opts.fromParcours) {
+        alert(`Pas assez de titres (${titles.length}/${minTitlesNeeded}).`);
+      } else {
+        alert(`Pas assez de titres (${titles.length}/${minTitlesNeeded}).`);
+      }
+      return;
+    }
+
+    CURRENT_BASE_POOL = titles;
+
+    const theme = pickContentTheme64(titles, "anime");
+    CURRENT_CONTENT_THEME = { crit: theme.crit, label: theme.label, poolSize: theme.pool.length };
+
+    const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
+    if (picked.length < TOTAL_MATCH_ITEMS) {
+      alert("Impossible de sélectionner 32 items uniques.");
+      return;
+    }
+
+    items = picked.map((t) => ({
+      _key: t._key,
+      image: t.image,
+      title: t._title,
+    }));
+  } else {
+    const songs = filterSongs(ALL_TITLES, o);
+    const minSongsNeeded = Math.max(MIN_REQUIRED_SONGS, TOTAL_MATCH_ITEMS);
+
+    if (songs.length < minSongsNeeded) {
+      alert(`Pas assez de songs (${songs.length}/${minSongsNeeded}).`);
+      return;
+    }
+
+    CURRENT_BASE_POOL = songs;
+
+    const theme = pickContentTheme64(songs, "songs");
+    CURRENT_CONTENT_THEME = { crit: theme.crit, label: theme.label, poolSize: theme.pool.length };
+
+    const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
+    if (picked.length < TOTAL_MATCH_ITEMS) {
+      alert("Impossible de sélectionner 32 items uniques.");
+      return;
+    }
+
+    items = picked.map((s) => ({
+      _key: s._key,
+      video: s.video,
+      label: s.label,
+    }));
+  }
+
+  showGame();
+  updateThemeStrip();
+  initTournament();
+}
 
 // =======================
 // TOURNAMENT CORE
@@ -1257,7 +1201,7 @@ function cleanupCurrentMedia() {
 }
 
 // =======================
-// VIDEO LOAD
+// VIDEO LOAD (no waiting/stalled as fail) + token
 // =======================
 function waitEventOrTimeout(target, events, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -1308,6 +1252,7 @@ function getOrCreateStatusEl(video) {
   return st;
 }
 
+// snippet limiter (songs): start 45s, stop after 20s
 function installSnippetLimiter(video, startSec, endSec, session) {
   if (!video) return;
 
@@ -1542,15 +1487,25 @@ function finishTournament() {
 
   renderClassement(ranking);
 
+  // ✅ Parcours: notifier parent (optionnel)
+  if (IS_PARCOURS) {
+    try {
+      const w = (winner != null) ? items[winner] : null;
+      parent.postMessage({
+        parcoursResult: {
+          label: "Anime Tournament",
+          mode,
+          winner: mode === "anime" ? (w?.title || null) : (w?.label || null),
+        }
+      }, "*");
+    } catch {}
+  }
+
   const replay = document.getElementById("next-match-btn");
   if (replay) {
     replay.style.display = "";
-    replay.textContent = IS_PARCOURS ? "Continuer" : "Rejouer";
+    replay.textContent = "Rejouer";
     replay.onclick = () => {
-      if (IS_PARCOURS) {
-        window.location.href = RETURN_URL || "../index.html";
-        return;
-      }
       resetTournament();
       showCustomization();
       refreshPreview();
