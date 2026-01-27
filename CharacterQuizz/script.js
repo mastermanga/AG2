@@ -1,8 +1,12 @@
 /**********************
  * Character Quizz
  * - Dataset: ../data/licenses_only.json
- * - Personnalisation: popularité/score/années/types + rounds
- * - Pas de daily
+ * - Personnalisation: popularité/score/années/types + rounds (standalone)
+ * - Mode PARCOURS:
+ *    - lit AG_parcours_filters (personnalisation globale)
+ *    - lit ?count= pour le nombre de rounds
+ *    - bypass custom-panel, lance direct
+ *    - fin => bouton "Continuer le parcours" => postMessage score
  * - Utilise uniquement "characters"
  * - 6 persos révélés progressivement (timer + essai)
  * - Score: 3000 puis -500 par perso révélé (min 0)
@@ -14,13 +18,65 @@ const REVEAL_INTERVAL_SEC = 8;
 const MAX_REVEALS = 6;
 const MIN_TITLES_TO_START = 64;
 
+// =====================
+// PARCOURS MODE
+// =====================
+const PARCOURS_CFG_KEY = "AG_parcours_filters";
+const QS = new URLSearchParams(window.location.search);
+const IS_PARCOURS = QS.get("parcours") === "1";
+const PARCOURS_COUNT = clampInt(parseInt(QS.get("count") || "1", 10), 1, 100);
+let parcoursSent = false;
+
+function loadParcoursConfig() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_CFG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizedParcoursCfg(cfg) {
+  const out = cfg && typeof cfg === "object" ? cfg : {};
+
+  const popPercent = clampInt(parseInt(out.popPercent ?? "30", 10), 5, 100);
+  const scorePercent = clampInt(parseInt(out.scorePercent ?? "100", 10), 5, 100);
+
+  let yearMin = clampInt(parseInt(out.yearMin ?? "1950", 10), 1900, 2100);
+  let yearMax = clampInt(parseInt(out.yearMax ?? "2026", 10), 1900, 2100);
+  if (yearMin > yearMax) [yearMin, yearMax] = [yearMax, yearMin];
+
+  const types = Array.isArray(out.types) && out.types.length ? out.types : ["TV", "Movie"];
+
+  return { popPercent, scorePercent, yearMin, yearMax, types };
+}
+
+function sendParcoursScore() {
+  if (parcoursSent) return;
+  parcoursSent = true;
+
+  try {
+    parent.postMessage(
+      {
+        parcoursScore: {
+          label: "Character Quizz",
+          score: totalScore,
+          total: totalRounds * MAX_SCORE,
+        },
+      },
+      "*"
+    );
+  } catch (e) {
+    console.warn("postMessage parcours failed:", e);
+  }
+}
 
 // ====== UI: menu + theme ======
-document.getElementById("back-to-menu").addEventListener("click", () => {
+document.getElementById("back-to-menu")?.addEventListener("click", () => {
   window.location.href = "../index.html";
 });
 
-document.getElementById("themeToggle").addEventListener("click", () => {
+document.getElementById("themeToggle")?.addEventListener("click", () => {
   document.body.classList.toggle("light");
   localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
@@ -51,6 +107,8 @@ function getYear(a) {
 function clampYearSliders() {
   const minEl = document.getElementById("yearMin");
   const maxEl = document.getElementById("yearMax");
+  if (!minEl || !maxEl) return;
+
   let a = parseInt(minEl.value, 10);
   let b = parseInt(maxEl.value, 10);
   if (a > b) {
@@ -74,7 +132,7 @@ function clampInt(n, a, b) {
 }
 
 /**
- * ✅ Sélection "par catégories" (comme tu veux) :
+ * ✅ Sélection "par catégories" :
  * - On suppose que `characters` est déjà trié du moins connu -> plus connu.
  * - On découpe en 6 groupes (cat1..cat6) dans l'ordre.
  * - On prend 1 perso random dans chaque groupe, puis on affiche dans cet ordre.
@@ -82,7 +140,9 @@ function clampInt(n, a, b) {
 function pick6CharactersByCategories(characters) {
   if (!Array.isArray(characters) || characters.length === 0) return [];
 
-  const clean = characters.filter(c => c && typeof c.image === "string" && c.image && typeof c.name === "string" && c.name.trim());
+  const clean = characters.filter(
+    (c) => c && typeof c.image === "string" && c.image && typeof c.name === "string" && c.name.trim()
+  );
   if (clean.length === 0) return [];
 
   if (clean.length <= MAX_REVEALS) {
@@ -92,13 +152,13 @@ function pick6CharactersByCategories(characters) {
   }
 
   const bucketCount = MAX_REVEALS; // 6
-  const bucketSize = Math.max(1, Math.floor(clean.length / bucketCount)); // ex: 18 -> 3
+  const bucketSize = Math.max(1, Math.floor(clean.length / bucketCount));
 
   const picked = [];
 
   for (let i = 0; i < bucketCount; i++) {
     const start = i * bucketSize;
-    const end = (i === bucketCount - 1) ? clean.length : Math.min(clean.length, (i + 1) * bucketSize);
+    const end = i === bucketCount - 1 ? clean.length : Math.min(clean.length, (i + 1) * bucketSize);
     const bucket = clean.slice(start, end);
     if (bucket.length === 0) continue;
 
@@ -106,10 +166,10 @@ function pick6CharactersByCategories(characters) {
     picked.push(chosen);
   }
 
-  // sécurité: si on a moins de 6 (cas rare sur petites listes), on complète au hasard sans doublon
+  // sécurité: si moins de 6, on complète sans doublon
   if (picked.length < bucketCount) {
-    const set = new Set(picked.map(x => x.name + "||" + x.image));
-    const rest = clean.filter(x => !set.has(x.name + "||" + x.image));
+    const set = new Set(picked.map((x) => x.name + "||" + x.image));
+    const rest = clean.filter((x) => !set.has(x.name + "||" + x.image));
     shuffleInPlace(rest);
     while (picked.length < bucketCount && rest.length) picked.push(rest.pop());
   }
@@ -169,16 +229,17 @@ let countdownInterval = null;
 
 // ====== UI show/hide ======
 function showCustomization() {
-  customPanel.style.display = "block";
-  gamePanel.style.display = "none";
+  if (customPanel) customPanel.style.display = "block";
+  if (gamePanel) gamePanel.style.display = "none";
 }
 function showGame() {
-  customPanel.style.display = "none";
-  gamePanel.style.display = "block";
+  if (customPanel) customPanel.style.display = "none";
+  if (gamePanel) gamePanel.style.display = "block";
 }
 
 // ====== Slider fill helper ======
 function setRangePct(el) {
+  if (!el) return;
   const min = parseFloat(el.min || "0");
   const max = parseFloat(el.max || "100");
   const val = parseFloat(el.value || "0");
@@ -196,6 +257,7 @@ function getScoreBarColor(score) {
 }
 
 function setScoreBar(score) {
+  if (!scoreBar || !scoreBarLabel) return;
   const s = Math.max(0, Math.min(MAX_SCORE, score));
   const pct = Math.max(0, Math.min(100, (s / MAX_SCORE) * 100));
   scoreBar.style.width = pct + "%";
@@ -208,71 +270,33 @@ function currentPotentialScore() {
   return Math.max(MAX_SCORE - malus, 0);
 }
 
-
-
-function initCustomUI() {
-  function syncLabels() {
-    clampYearSliders();
-
-    popValEl.textContent = popEl.value;
-    scoreValEl.textContent = scoreEl.value;
-    yearMinValEl.textContent = yearMinEl.value;
-    yearMaxValEl.textContent = yearMaxEl.value;
-
-    setRangePct(popEl);
-    setRangePct(scoreEl);
-    setRangePct(yearMinEl);
-    setRangePct(yearMaxEl);
-
-    updatePreview();
-  }
-
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) =>
-    el.addEventListener("input", syncLabels)
-  );
-
-  // type pills
-  document.querySelectorAll("#typePills .pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute(
-        "aria-pressed",
-        btn.classList.contains("active") ? "true" : "false"
-      );
-      updatePreview();
-    });
-  });
-
-  applyBtn.addEventListener("click", () => {
-    filteredAnimes = applyFilters();
-
-    // ✅ Règle: il faut au moins 64 titres pour lancer
-    if (filteredAnimes.length < MIN_TITLES_TO_START) {
-      updatePreview(); // remet le bon message + désactive le bouton
-      return;
-    }
-
-    totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
-    currentRound = 1;
-    totalScore = 0;
-
-    showGame();
-    startNewRound();
-  });
-
-  syncLabels();
-}
-
-
-// ====== Filters ======
-function applyFilters() {
-  const popPercent = parseInt(popEl.value, 10);
-  const scorePercent = parseInt(scoreEl.value, 10);
-  const yearMin = parseInt(yearMinEl.value, 10);
-  const yearMax = parseInt(yearMaxEl.value, 10);
+// ====== Filters (UI ou Parcours) ======
+function getFiltersFromUI() {
+  const popPercent = parseInt(popEl?.value || "30", 10);
+  const scorePercent = parseInt(scoreEl?.value || "100", 10);
+  const yearMin = parseInt(yearMinEl?.value || "1950", 10);
+  const yearMax = parseInt(yearMaxEl?.value || "2026", 10);
 
   const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
-  if (allowedTypes.length === 0) return [];
+  return {
+    popPercent,
+    scorePercent,
+    yearMin,
+    yearMax,
+    types: allowedTypes.length ? allowedTypes : ["TV", "Movie"],
+  };
+}
+
+function applyFilters(cfgOverride = null) {
+  const cfg = cfgOverride ? normalizedParcoursCfg(cfgOverride) : getFiltersFromUI();
+
+  const popPercent = cfg.popPercent;
+  const scorePercent = cfg.scorePercent;
+  const yearMin = cfg.yearMin;
+  const yearMax = cfg.yearMax;
+
+  const allowedTypes = cfg.types;
+  if (!allowedTypes.length) return [];
 
   let pool = allAnimes.filter((a) => {
     return (
@@ -292,23 +316,23 @@ function applyFilters() {
   pool.sort((a, b) => b._score - a._score);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  pool = pool.filter(a => {
+  pool = pool.filter((a) => {
     const chars = Array.isArray(a.characters) ? a.characters : [];
-    return chars.some(c => c && c.image && typeof c.image === "string");
+    return chars.some((c) => c && c.image && typeof c.image === "string");
   });
 
   return pool;
 }
 
-// ====== Preview ======
+// ====== Preview (standalone) ======
 function updatePreview() {
-  const pool = applyFilters();
-  const count = pool.length;
+  if (!previewCountEl || !applyBtn) return;
 
+  const pool = applyFilters(null);
+  const count = pool.length;
   const ok = count >= MIN_TITLES_TO_START;
 
   previewCountEl.textContent = `📚 Titres disponibles : ${count} (${ok ? "OK" : "Min 64"})`;
-
   previewCountEl.classList.toggle("good", ok);
   previewCountEl.classList.toggle("bad", !ok);
 
@@ -317,28 +341,80 @@ function updatePreview() {
   applyBtn.setAttribute("aria-disabled", (!ok).toString());
 }
 
+// ====== Custom UI init (standalone) ======
+function initCustomUI() {
+  function syncLabels() {
+    clampYearSliders();
+
+    if (popValEl) popValEl.textContent = popEl.value;
+    if (scoreValEl) scoreValEl.textContent = scoreEl.value;
+    if (yearMinValEl) yearMinValEl.textContent = yearMinEl.value;
+    if (yearMaxValEl) yearMaxValEl.textContent = yearMaxEl.value;
+
+    setRangePct(popEl);
+    setRangePct(scoreEl);
+    setRangePct(yearMinEl);
+    setRangePct(yearMaxEl);
+
+    updatePreview();
+  }
+
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el && el.addEventListener("input", syncLabels));
+
+  // type pills
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      updatePreview();
+    });
+  });
+
+  applyBtn?.addEventListener("click", () => {
+    filteredAnimes = applyFilters(null);
+
+    if (filteredAnimes.length < MIN_TITLES_TO_START) {
+      updatePreview();
+      return;
+    }
+
+    totalRounds = clampInt(parseInt(roundCountEl?.value || "1", 10), 1, 100);
+    currentRound = 1;
+    totalScore = 0;
+
+    showGame();
+    startNewRound();
+  });
+
+  syncLabels();
+}
 
 // ====== Game flow ======
 function resetRoundUI() {
   if (roundLabel) roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
 
-  container.innerHTML = "";
-  feedback.textContent = "";
-  feedback.className = "";
-  timerDisplay.textContent = "";
+  if (container) container.innerHTML = "";
+  if (feedback) {
+    feedback.textContent = "";
+    feedback.className = "";
+  }
+  if (timerDisplay) timerDisplay.textContent = "";
 
   revealedCount = 0;
-
   gameEnded = false;
 
-  input.value = "";
-  input.disabled = false;
-  submitBtn.disabled = true;
+  if (input) {
+    input.value = "";
+    input.disabled = false;
+  }
+  if (submitBtn) submitBtn.disabled = true;
 
-  restartBtn.style.display = "none";
-  restartBtn.textContent = (currentRound < totalRounds) ? "Suivant" : "Terminer";
+  if (restartBtn) {
+    restartBtn.style.display = "none";
+    restartBtn.textContent = currentRound < totalRounds ? "Suivant" : "Terminer";
+  }
 
-  suggestions.innerHTML = "";
+  if (suggestions) suggestions.innerHTML = "";
 
   clearInterval(countdownInterval);
   countdownInterval = null;
@@ -359,7 +435,7 @@ function startNewRound() {
     img.className = "character-img";
     img.id = "char-" + i;
     img.style.display = "none";
-    container.appendChild(img);
+    container?.appendChild(img);
   });
 
   revealNextCharacter();
@@ -382,7 +458,7 @@ function revealNextCharacter() {
 
 function resetTimer() {
   countdown = REVEAL_INTERVAL_SEC;
-  timerDisplay.textContent = `Temps restant : ${countdown} s`;
+  if (timerDisplay) timerDisplay.textContent = `Temps restant : ${countdown} s`;
 
   if (countdownInterval) clearInterval(countdownInterval);
   countdownInterval = setInterval(() => {
@@ -400,7 +476,7 @@ function resetTimer() {
       }
       return;
     }
-    timerDisplay.textContent = `Temps restant : ${countdown} s`;
+    if (timerDisplay) timerDisplay.textContent = `Temps restant : ${countdown} s`;
   }, 1000);
 }
 
@@ -418,19 +494,23 @@ function endRound(roundScore, won, messageHtml) {
   }
   revealedCount = visibleCharacters.length;
 
-  input.disabled = true;
-  submitBtn.disabled = true;
-  suggestions.innerHTML = "";
+  if (input) input.disabled = true;
+  if (submitBtn) submitBtn.disabled = true;
+  if (suggestions) suggestions.innerHTML = "";
 
   setScoreBar(roundScore);
 
-  feedback.innerHTML = messageHtml;
-  feedback.className = won ? "success" : "error";
+  if (feedback) {
+    feedback.innerHTML = messageHtml;
+    feedback.className = won ? "success" : "error";
+  }
 
   totalScore += roundScore;
 
+  if (!restartBtn) return;
+
   restartBtn.style.display = "inline-block";
-  restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
+  restartBtn.textContent = currentRound < totalRounds ? "Round suivant" : (IS_PARCOURS ? "Continuer le parcours" : "Voir le score total");
 
   restartBtn.onclick = () => {
     if (currentRound >= totalRounds) {
@@ -457,18 +537,28 @@ function loseRound(prefix) {
 
 function showFinalRecap() {
   const gameContainer = document.getElementById("container");
+  if (!gameContainer) return;
+
   gameContainer.innerHTML = `
     <div style="width:100%;max-width:520px;text-align:center;">
       <div style="font-size:1.35rem;font-weight:900;opacity:0.95;margin-bottom:10px;">🏆 Série terminée !</div>
       <div style="font-size:1.15rem;font-weight:900;margin-bottom:14px;">
         Score total : <b>${totalScore}</b> / <b>${totalRounds * MAX_SCORE}</b>
       </div>
-      <button id="backToSettings" class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
-        Retour réglages
+      <button id="finalBtn" class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
+        ${IS_PARCOURS ? "Continuer le parcours" : "Retour réglages"}
       </button>
     </div>
   `;
-  document.getElementById("backToSettings").onclick = () => window.location.reload();
+
+  document.getElementById("finalBtn").onclick = () => {
+    if (IS_PARCOURS) {
+      document.getElementById("finalBtn").disabled = true;
+      sendParcoursScore();
+    } else {
+      window.location.reload();
+    }
+  };
 }
 
 // ====== Guess logic ======
@@ -479,10 +569,12 @@ function normalizeTitle(s) {
 function checkGuess() {
   if (!currentAnime || gameEnded) return;
 
-  const guess = input.value.trim();
+  const guess = input?.value?.trim() || "";
   if (!guess) {
-    feedback.textContent = "⚠️ Tu dois écrire un nom d'anime.";
-    feedback.className = "error";
+    if (feedback) {
+      feedback.textContent = "⚠️ Tu dois écrire un nom d'anime.";
+      feedback.className = "error";
+    }
     return;
   }
 
@@ -493,13 +585,17 @@ function checkGuess() {
     return;
   }
 
-  feedback.textContent = "❌ Mauvaise réponse.";
-  feedback.className = "error";
+  if (feedback) {
+    feedback.textContent = "❌ Mauvaise réponse.";
+    feedback.className = "error";
+  }
 
-  input.value = "";
-  submitBtn.disabled = true;
-  input.focus();
-  suggestions.innerHTML = "";
+  if (input) {
+    input.value = "";
+    input.focus();
+  }
+  if (submitBtn) submitBtn.disabled = true;
+  if (suggestions) suggestions.innerHTML = "";
 
   clearInterval(countdownInterval);
   countdownInterval = null;
@@ -512,18 +608,18 @@ function checkGuess() {
 }
 
 // ====== Autocomplete ======
-input.addEventListener("input", function () {
+input?.addEventListener("input", function () {
   if (gameEnded) return;
 
   const val = this.value.toLowerCase().trim();
-  suggestions.innerHTML = "";
-  feedback.textContent = "";
-  submitBtn.disabled = true;
+  if (suggestions) suggestions.innerHTML = "";
+  if (feedback) feedback.textContent = "";
+  if (submitBtn) submitBtn.disabled = true;
 
   if (!val) return;
 
-  const titles = [...new Set(filteredAnimes.map(a => a._title))];
-  const matches = titles.filter(t => t.toLowerCase().includes(val)).slice(0, 7);
+  const titles = [...new Set(filteredAnimes.map((a) => a._title))];
+  const matches = titles.filter((t) => t.toLowerCase().includes(val)).slice(0, 7);
 
   matches.forEach((title) => {
     const div = document.createElement("div");
@@ -531,23 +627,24 @@ input.addEventListener("input", function () {
     div.addEventListener("mousedown", (e) => {
       e.preventDefault();
       input.value = title;
-      suggestions.innerHTML = "";
-      submitBtn.disabled = false;
+      if (suggestions) suggestions.innerHTML = "";
+      if (submitBtn) submitBtn.disabled = false;
       input.focus();
     });
-    suggestions.appendChild(div);
+    suggestions?.appendChild(div);
   });
 
-  submitBtn.disabled = !titles.map(t => t.toLowerCase()).includes(val);
+  const exact = titles.map((t) => t.toLowerCase()).includes(val);
+  if (submitBtn) submitBtn.disabled = !exact;
 });
 
-input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !submitBtn.disabled && !gameEnded) {
+input?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && submitBtn && !submitBtn.disabled && !gameEnded) {
     checkGuess();
   }
 });
 
-submitBtn.addEventListener("click", checkGuess);
+submitBtn?.addEventListener("click", checkGuess);
 
 // ====== Tooltip ======
 document.addEventListener("click", (e) => {
@@ -608,6 +705,45 @@ function launchFireworks() {
   animate();
 }
 
+// ====== Boot Parcours ======
+function bootParcoursMode() {
+  // on évite de sortir du parcours
+  const backBtn = document.getElementById("back-to-menu");
+  if (backBtn) backBtn.style.display = "none";
+
+  showGame();
+
+  const cfg = normalizedParcoursCfg(loadParcoursConfig());
+  filteredAnimes = applyFilters(cfg);
+
+  totalRounds = PARCOURS_COUNT;
+  currentRound = 1;
+  totalScore = 0;
+
+  if (filteredAnimes.length < MIN_TITLES_TO_START) {
+    // pool insuffisant => score 0 => continuer
+    if (feedback) {
+      feedback.innerHTML = `❌ Pool insuffisant : <b>${filteredAnimes.length}</b> titres (min ${MIN_TITLES_TO_START}).<br>Score : <b>0</b> / ${totalRounds * MAX_SCORE}`;
+      feedback.className = "error";
+    }
+    const gameContainer = document.getElementById("container");
+    if (gameContainer) {
+      const btn = document.createElement("button");
+      btn.className = "menu-btn";
+      btn.style.marginTop = "14px";
+      btn.textContent = "Continuer le parcours";
+      btn.onclick = () => {
+        btn.disabled = true;
+        sendParcoursScore();
+      };
+      gameContainer.appendChild(btn);
+    }
+    return;
+  }
+
+  startNewRound();
+}
+
 // ====== Load dataset ======
 fetch("../data/licenses_only.json")
   .then((r) => r.json())
@@ -628,5 +764,9 @@ fetch("../data/licenses_only.json")
     initCustomUI();
     updatePreview();
     showCustomization();
+
+    if (IS_PARCOURS) {
+      bootParcoursMode();
+    }
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
