@@ -1,20 +1,25 @@
 /**********************
- * CLUE (sans timer)
+ * CLUE (avec timer)
  * - 6 indices max visibles dès le début (2 colonnes)
  * - 1er indice révélé au lancement du round
  * - Ensuite :
  *   - mauvaise réponse => indice suivant (jusqu'à 6)
  *   - "Passer" => indice suivant sans tentative
- * - Défaite seulement si mauvaise réponse à 6/6
+ * - Défaite :
+ *   - mauvaise réponse à 6/6
+ *   - OU timer écoulé à 6/6
  * - Score: 3000 puis -500 par indice supplémentaire
- * - Indices possibles: Synopsis(3 mots), saison, studio, genres, thèmes,
- *   score, popularité (Top %), personnage, épisodes
  **********************/
 
 const MAX_SCORE = 3000;
 const REVEAL_PENALTY = 500;
 const MAX_REVEALS_PER_ROUND = 6;
 const MIN_TITLES_TO_START = 64;
+
+// ✅ TIMER
+const GUESS_TIME_SEC = 10;
+let timerInterval = null;
+let timeLeft = GUESS_TIME_SEC;
 
 // ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
@@ -142,6 +147,10 @@ const clueStep = document.getElementById("clueStep");
 const scoreBar = document.getElementById("score-bar");
 const scoreBarLabel = document.getElementById("score-bar-label");
 
+// ✅ timer DOM
+const timerBadge = document.getElementById("timerBadge");
+const timerVal = document.getElementById("timerVal");
+
 // ====== UI show/hide ======
 function showCustomization() {
   customPanel.style.display = "block";
@@ -184,6 +193,56 @@ function currentPotentialScore() {
   return Math.max(MAX_SCORE - penalty, 0);
 }
 
+// ====== TIMER helpers ======
+function renderTimer() {
+  if (timerVal) timerVal.textContent = String(Math.max(0, timeLeft));
+  if (timerBadge) timerBadge.classList.toggle("danger", timeLeft <= 3 && !gameEnded);
+}
+
+function stopGuessTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+function startGuessTimer() {
+  stopGuessTimer();
+  if (gameEnded) return;
+
+  // Affiche le badge
+  if (timerBadge) timerBadge.style.display = "inline-flex";
+
+  timeLeft = GUESS_TIME_SEC;
+  renderTimer();
+
+  timerInterval = setInterval(() => {
+    if (gameEnded) {
+      stopGuessTimer();
+      return;
+    }
+
+    timeLeft -= 1;
+    renderTimer();
+
+    if (timeLeft <= 0) {
+      stopGuessTimer();
+
+      // ✅ si on est à 6/6 => perdu automatiquement
+      if (revealsShown >= MAX_REVEALS_PER_ROUND) {
+        timeoutLoseRound();
+        return;
+      }
+
+      // Sinon => indice suivant auto
+      revealNextClue();
+      feedback.textContent = "⏱️ Temps écoulé. Indice suivant.";
+      feedback.className = "info";
+      input.focus();
+    }
+  }, 1000);
+}
+
 // ====== Data ======
 let allAnimes = [];
 let filteredAnimes = [];
@@ -202,7 +261,6 @@ let gameEnded = false;
 
 let globalPopRank = new Map(); // Map<animeObject, rank>
 let globalPopTotal = 0;
-
 
 // ====== Stopwords / extraction "3 mots" ======
 const STOP = new Set([
@@ -348,7 +406,6 @@ function computePopularityTopPercent(anime) {
   return `Top ${top}%`;
 }
 
-
 function pickRandomCharacterName(anime) {
   const a = Array.isArray(anime.characters) ? anime.characters : [];
   const b = Array.isArray(anime.top_characters) ? anime.top_characters : [];
@@ -446,7 +503,6 @@ function setStepLabel() {
 
 function renderValue(value) {
   if (Array.isArray(value)) {
-    // synopsis 3 mots ou genres etc
     return value.filter(Boolean).join(", ");
   }
   return String(value ?? "").trim();
@@ -491,6 +547,12 @@ function resetRoundUI() {
   initRevealGrid();
   setStepLabel();
   setScoreBar(MAX_SCORE);
+
+  // ✅ reset timer affichage
+  stopGuessTimer();
+  timeLeft = GUESS_TIME_SEC;
+  renderTimer();
+  if (timerBadge) timerBadge.style.display = "inline-flex";
 }
 
 function revealNextClue() {
@@ -506,10 +568,12 @@ function revealNextClue() {
   setStepLabel();
   setScoreBar(currentPotentialScore());
 
-  // si on est à 6, on empêche "Passer" (mais on peut encore guess)
   if (revealsShown >= MAX_REVEALS_PER_ROUND) {
     passBtn.disabled = true;
   }
+
+  // ✅ à chaque indice révélé => timer 10s
+  startGuessTimer();
 }
 
 function startNewRound() {
@@ -518,22 +582,23 @@ function startNewRound() {
   currentAnime = filteredAnimes[Math.floor(Math.random() * filteredAnimes.length)];
   const pool = buildRevealPool(currentAnime);
 
-  // on garantit exactement 6 items différents
-  // (pool est déjà shufflé)
   revealSequence = pool.slice(0, MAX_REVEALS_PER_ROUND);
 
-  // 1er indice direct
+  // 1er indice direct (démarre le timer)
   revealNextClue();
 }
 
 // ====== End round ======
 function endRound(roundScore, won, messageHtml) {
+  stopGuessTimer();
   gameEnded = true;
 
   input.disabled = true;
   submitBtn.disabled = true;
   passBtn.disabled = true;
   suggestions.innerHTML = "";
+
+  if (timerBadge) timerBadge.style.display = "none";
 
   setScoreBar(roundScore);
 
@@ -568,6 +633,12 @@ function loseRound() {
   endRound(0, false, msg);
 }
 
+// ✅ perdu par timeout (spécial)
+function timeoutLoseRound() {
+  const msg = `⏱️ Temps écoulé…<br>Réponse : <b>${currentAnime._title}</b><br>Score : <b>0</b> / ${MAX_SCORE}`;
+  endRound(0, false, msg);
+}
+
 function showFinalRecap() {
   const gameContainer = document.getElementById("container");
   gameContainer.innerHTML = `
@@ -595,6 +666,9 @@ function checkGuess() {
     return;
   }
 
+  // ✅ stop timer seulement si vrai essai
+  stopGuessTimer();
+
   const g = normalizeGuess(guess);
   const acceptable = currentAnime._titlesNorm || [];
   const ok = acceptable.includes(g);
@@ -606,7 +680,6 @@ function checkGuess() {
 
   // mauvaise réponse
   if (revealsShown >= MAX_REVEALS_PER_ROUND) {
-    // à 6/6 -> lose
     feedback.textContent = "❌ Mauvaise réponse. Fin du round.";
     feedback.className = "error";
     loseRound();
@@ -632,6 +705,7 @@ passBtn.addEventListener("click", () => {
   if (gameEnded) return;
   if (revealsShown >= MAX_REVEALS_PER_ROUND) return;
 
+  stopGuessTimer();
   revealNextClue();
   feedback.textContent = "⏭️ Indice suivant.";
   feedback.className = "info";
@@ -684,7 +758,7 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
+    document.querySelectorAll(".info-wrap.open").forEach((w) => (w.classList.remove("open")));
   }
 });
 
@@ -854,4 +928,4 @@ fetch("../data/licenses_only.json")
     updatePreview();
     showCustomization();
   })
-  .catch((e) => alert("Erreur chargement dataset: " + e.message));
+  .catch((e) => alert("Erreur chargement dataset: " + e));
