@@ -18,7 +18,10 @@ document.getElementById("back-to-menu").addEventListener("click", () => {
 
 document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
-  localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
+  localStorage.setItem(
+    "theme",
+    document.body.classList.contains("light") ? "light" : "dark"
+  );
 });
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -36,7 +39,7 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach(w => w.classList.remove("open"));
+    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
   }
 });
 
@@ -68,7 +71,7 @@ function getDisplayTitle(a) {
 }
 
 function getYear(a) {
-  const s = ((a && a.season) ? String(a.season) : "").trim();
+  const s = a && a.season ? String(a.season).trim() : "";
   const m = s.match(/(\d{4})/);
   return m ? parseInt(m[1], 10) : 0;
 }
@@ -217,7 +220,7 @@ let currentMode = "anime";
 let filteredPool = [];
 
 // ====== GAME STATE ======
-let totalTurns = 1;     // ✅ default 1
+let totalTurns = 1; // ✅ default 1
 let currentTurn = 1;
 
 let leftItem = null;
@@ -244,7 +247,7 @@ function showGame() {
 // ====== VOLUME ======
 function applyVolume() {
   const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "30", 10)));
-  [leftPlayer, rightPlayer].forEach(p => {
+  [leftPlayer, rightPlayer].forEach((p) => {
     if (!p) return;
     p.muted = false;
     p.volume = v / 100;
@@ -255,7 +258,9 @@ if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
 
 // ====== MEDIA LOADER ======
 function hardResetMedia(player) {
-  try { player.pause(); } catch {}
+  try {
+    player.pause();
+  } catch {}
   player.removeAttribute("src");
   player.load();
 }
@@ -286,6 +291,7 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
     cleanupLoadHandlers();
     player.ontimeupdate = null;
     player.onseeked = null;
+    player.onplay = null; // ✅ NEW: on nettoie aussi
   };
 
   const tokenNow = () => (player === leftPlayer ? mediaTokenLeft : mediaTokenRight);
@@ -299,6 +305,7 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
     }, STALL_TIMEOUT_MS);
   };
 
+  // ✅ NEW (Fix #3): seek fiable à 45s + autoplay seulement après seek
   const setupClipAndAutoplay = () => {
     if (!isStillValid() || done) return;
 
@@ -312,39 +319,101 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
     let end = start + CLIP_DURATION_S;
     if (dur > 0) end = Math.min(dur, end);
 
-    const canLimit = (end - start) > 0.25;
+    const canLimit = end - start > 0.25;
 
     // stop à la fin du clip
     let guard = false;
     player.ontimeupdate = () => {
       if (!isStillValid() || !canLimit || guard) return;
-      if (player.currentTime >= (end - CLIP_EPS)) {
+      if (player.currentTime >= end - CLIP_EPS) {
         guard = true;
-        try { player.pause(); } catch {}
-        // option: reset au début du clip pour rejouer facilement
-        try { player.currentTime = start; } catch {}
+        try {
+          player.pause();
+        } catch {}
+        try {
+          player.currentTime = start;
+        } catch {}
         guard = false;
       }
     };
 
-    // chercher à 45s puis jouer
+    let didSeek = false;
+    let seekingTimeout = null;
+
+    const clearSeekTimeout = () => {
+      if (seekingTimeout) clearTimeout(seekingTimeout);
+      seekingTimeout = null;
+    };
+
+    // Util: certains médias ne remplissent seekable qu'après un moment.
+    const canSeekToStart = () => {
+      try {
+        if (!player.seekable || player.seekable.length === 0) return false;
+        const max = player.seekable.end(player.seekable.length - 1);
+        return max >= start + 0.1;
+      } catch {
+        return false;
+      }
+    };
+
+    // On tente un seek. On considère "ok" quand on a un seeked ET/ou time proche.
+    const trySeek = () => {
+      if (!isStillValid() || done) return false;
+      try {
+        player.currentTime = start;
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    // IMPORTANT: si autoplay est bloqué, quand l'utilisateur clique "play",
+    // on force un seek d'abord.
+    player.onplay = () => {
+      if (!didSeek) {
+        // si on peut, on retente le seek avant que ça parte à 0
+        trySeek();
+      }
+    };
+
     player.onseeked = () => {
-      if (!isStillValid()) return;
+      if (!isStillValid() || done) return;
+      didSeek = true;
+      clearSeekTimeout();
       if (autoplay) {
         player.muted = false;
         player.play?.().catch(() => {});
       }
     };
 
-    try {
-      player.currentTime = start;
-    } catch {
-      // fallback: si seek impossible, on tente play direct
-      if (autoplay) {
-        player.muted = false;
-        player.play?.().catch(() => {});
+    const seekWithRetries = (n = 0) => {
+      if (!isStillValid() || done) return;
+
+      // si seekable est ok, on tente tout de suite
+      if (canSeekToStart()) {
+        trySeek();
+        return;
       }
-    }
+
+      // sinon on retente vite (ça se débloque souvent après metadata/canplay)
+      if (n >= 40) {
+        // ~4s max (40 * 100ms)
+        // dernier essai "soft" même si seekable pas prêt
+        trySeek();
+        return;
+      }
+      setTimeout(() => seekWithRetries(n + 1), 100);
+    };
+
+    // Sécurité: si on n'a jamais eu seeked, on ne force pas autoplay "à 0".
+    // (mais si l'utilisateur clique play, on cherche via onplay)
+    // On déclenche le loop de seek:
+    seekWithRetries();
+
+    // mini timeout pour ne pas laisser des timers zombies
+    seekingTimeout = setTimeout(() => {
+      clearSeekTimeout();
+    }, 6000);
   };
 
   const markReady = () => {
@@ -363,7 +432,9 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
     attemptIndex++;
     if (attemptIndex >= RETRY_DELAYS.length) {
       done = true;
-      try { player.pause(); } catch {}
+      try {
+        player.pause();
+      } catch {}
       return;
     }
     setTimeout(() => {
@@ -380,17 +451,31 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
 
     const src = attemptIndex === 0 ? url : withCacheBuster(url);
 
-    try { hardResetMedia(player); } catch {}
+    try {
+      hardResetMedia(player);
+    } catch {}
     player.preload = "metadata";
     player.muted = false;
     player.src = src;
     player.load();
 
-    player.onloadedmetadata = () => { if (!isStillValid() || done) return; markReady(); };
-    player.oncanplay = () => { if (!isStillValid() || done) return; markReady(); };
+    player.onloadedmetadata = () => {
+      if (!isStillValid() || done) return;
+      markReady();
+    };
+    player.oncanplay = () => {
+      if (!isStillValid() || done) return;
+      markReady();
+    };
 
-    player.onwaiting = () => { if (!isStillValid() || done) return; startStallTimer(); };
-    player.onstalled = () => { if (!isStillValid() || done) return; startStallTimer(); };
+    player.onwaiting = () => {
+      if (!isStillValid() || done) return;
+      startStallTimer();
+    };
+    player.onstalled = () => {
+      if (!isStillValid() || done) return;
+      startStallTimer();
+    };
 
     player.onplaying = () => {
       if (!isStillValid() || done) return;
@@ -398,7 +483,10 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
       stallTimer = null;
     };
 
-    player.onerror = () => { if (!isStillValid() || done) return; triggerRetry(); };
+    player.onerror = () => {
+      if (!isStillValid() || done) return;
+      triggerRetry();
+    };
 
     startStallTimer();
   };
@@ -414,21 +502,29 @@ function stopAllMedia() {
   // ✅ clear clip handlers too
   leftPlayer.ontimeupdate = null;
   leftPlayer.onseeked = null;
+  leftPlayer.onplay = null;
   rightPlayer.ontimeupdate = null;
   rightPlayer.onseeked = null;
+  rightPlayer.onplay = null;
 
-  try { leftPlayer.pause(); } catch {}
-  try { rightPlayer.pause(); } catch {}
-  leftPlayer.removeAttribute("src"); leftPlayer.load();
-  rightPlayer.removeAttribute("src"); rightPlayer.load();
+  try {
+    leftPlayer.pause();
+  } catch {}
+  try {
+    rightPlayer.pause();
+  } catch {}
+  leftPlayer.removeAttribute("src");
+  leftPlayer.load();
+  rightPlayer.removeAttribute("src");
+  rightPlayer.load();
 }
 
 // ====== UI INIT ======
 function initCustomUI() {
   // Mode pills
-  document.querySelectorAll("#modePills .pill").forEach(btn => {
+  document.querySelectorAll("#modePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("#modePills .pill").forEach(b => {
+      document.querySelectorAll("#modePills .pill").forEach((b) => {
         b.classList.remove("active");
         b.setAttribute("aria-pressed", "false");
       });
@@ -441,7 +537,7 @@ function initCustomUI() {
   });
 
   // Type pills
-  document.querySelectorAll("#typePills .pill").forEach(btn => {
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
@@ -450,7 +546,7 @@ function initCustomUI() {
   });
 
   // Song pills
-  document.querySelectorAll("#songPills .pill").forEach(btn => {
+  document.querySelectorAll("#songPills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
@@ -467,7 +563,7 @@ function initCustomUI() {
     yearMaxValEl.textContent = yearMaxEl.value;
     updatePreview();
   }
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncLabels));
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
   turnCountEl.addEventListener("input", updatePreview);
 
   // Apply
@@ -490,8 +586,8 @@ function initCustomUI() {
 }
 
 function updateModeVisibility() {
-  songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
-  volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
+  songsRow.style.display = currentMode === "songs" ? "flex" : "none";
+  volumeRow.style.display = currentMode === "songs" ? "flex" : "none";
   applyVolume();
 }
 
@@ -502,12 +598,12 @@ function applyFilters() {
   const yearMin = parseInt(yearMinEl.value, 10);
   const yearMax = parseInt(yearMaxEl.value, 10);
 
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map(b => b.dataset.type);
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
   if (currentMode === "anime") {
-    let pool = allAnimes.filter(a =>
-      a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type)
+    let pool = allAnimes.filter(
+      (a) => a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type)
     );
 
     pool.sort((a, b) => b._members - a._members);
@@ -516,22 +612,23 @@ function applyFilters() {
     pool.sort((a, b) => b._score - a._score);
     pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-    return pool.map(a => ({
+    return pool.map((a) => ({
       kind: "anime",
       _key: `anime|${a.mal_id}`,
       title: a._title,
-      image: a.image || ""
+      image: a.image || "",
     }));
   }
 
-  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map(b => b.dataset.song);
+  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
   if (allowedSongs.length === 0) return [];
 
-  let pool = allSongs.filter(s =>
-    s.animeYear >= yearMin &&
-    s.animeYear <= yearMax &&
-    allowedTypes.includes(s.animeType) &&
-    allowedSongs.includes(s.songType)
+  let pool = allSongs.filter(
+    (s) =>
+      s.animeYear >= yearMin &&
+      s.animeYear <= yearMax &&
+      allowedTypes.includes(s.animeType) &&
+      allowedSongs.includes(s.songType)
   );
 
   pool.sort((a, b) => b.animeMembers - a.animeMembers);
@@ -540,7 +637,7 @@ function applyFilters() {
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  return pool.map(s => ({
+  return pool.map((s) => ({
     kind: "song",
     _key: `song|${s._key}`,
     animeTitle: s.animeTitle || "Anime",
@@ -549,7 +646,7 @@ function applyFilters() {
     songArtists: s.songArtists || "",
     songType: s.songType,
     url: s.url,
-    image: s.animeImage || ""
+    image: s.animeImage || "",
   }));
 }
 
@@ -568,7 +665,7 @@ function updatePreview() {
   const minNeeded = Math.max(2, MIN_REQUIRED);
   const ok = pool.length >= minNeeded;
 
-  const label = (currentMode === "songs") ? "Songs" : "Titres";
+  const label = currentMode === "songs" ? "Songs" : "Titres";
   previewCountEl.textContent = ok
     ? `📚 ${label} disponibles : ${pool.length} (OK)`
     : `📚 ${label} disponibles : ${pool.length} (Min ${minNeeded})`;
@@ -598,7 +695,7 @@ function drawOne(excludeKey = null) {
   if (!filteredPool.length) return null;
   let it = filteredPool[Math.floor(Math.random() * filteredPool.length)];
   if (excludeKey && it._key === excludeKey && filteredPool.length > 1) {
-    it = filteredPool.find(x => x._key !== excludeKey) || it;
+    it = filteredPool.find((x) => x._key !== excludeKey) || it;
   }
   return it;
 }
@@ -656,7 +753,7 @@ function startGame() {
 }
 
 function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
-  const isSongs = (currentMode === "songs");
+  const isSongs = currentMode === "songs";
   const isLeft = side === "left";
 
   const img = isLeft ? leftImg : rightImg;
@@ -668,31 +765,43 @@ function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
   nameEl.style.display = revealed ? "block" : "none";
 
   if (isSongs) {
+    // ✅ Fix #1: pas d'image avant la vidéo (pas de poster)
     img.style.display = "none";
+    img.removeAttribute("src");
     pZone.style.display = revealed ? "block" : "none";
 
     if (revealed && item?.url) {
-      player.poster = item.image || "";
+      player.poster = ""; // ✅ enlever l'image avant la vidéo
       applyVolume();
 
-      if (isLeft) mediaTokenLeft++; else mediaTokenRight++;
+      if (isLeft) mediaTokenLeft++;
+      else mediaTokenRight++;
+
       const localRound = roundToken;
       const localMedia = isLeft ? mediaTokenLeft : mediaTokenRight;
 
-      try { player.pause(); } catch {}
+      try {
+        player.pause();
+      } catch {}
       player.removeAttribute("src");
       player.load();
 
       player.muted = false;
       loadMediaWithRetries(player, item.url, localRound, localMedia, { autoplay });
     } else {
-      try { player.pause(); } catch {}
+      try {
+        player.pause();
+      } catch {}
+      player.poster = "";
       player.removeAttribute("src");
       player.load();
     }
   } else {
     pZone.style.display = "none";
-    try { player.pause(); } catch {}
+    try {
+      player.pause();
+    } catch {}
+    player.poster = "";
     player.removeAttribute("src");
     player.load();
 
@@ -716,8 +825,12 @@ function hideRightCard() {
   // ✅ clear clip handlers too
   rightPlayer.ontimeupdate = null;
   rightPlayer.onseeked = null;
+  rightPlayer.onplay = null;
 
-  try { rightPlayer.pause(); } catch {}
+  try {
+    rightPlayer.pause();
+  } catch {}
+  rightPlayer.poster = "";
   rightPlayer.removeAttribute("src");
   rightPlayer.load();
 }
@@ -740,7 +853,7 @@ function renderTurn() {
   setCardContent("left", leftItem, { revealed: true, autoplay: true });
   hideRightCard();
 
-  volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
+  volumeRow.style.display = currentMode === "songs" ? "flex" : "none";
   applyVolume();
 }
 
@@ -751,7 +864,9 @@ function handleChoice(choice) {
   nextChoiceBtn.disabled = true;
 
   // éviter double audio au reveal
-  try { leftPlayer.pause(); } catch {}
+  try {
+    leftPlayer.pause();
+  } catch {}
 
   // effet visuel choix
   if (choice === "keep") {
@@ -793,14 +908,14 @@ function handleChoice(choice) {
 
 // ====== LOAD DATA ======
 fetch("../data/licenses_only.json")
-  .then(r => {
+  .then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status} - ${r.statusText}`);
     return r.json();
   })
-  .then(json => {
+  .then((json) => {
     const raw = normalizeAnimeList(json);
 
-    allAnimes = (Array.isArray(raw) ? raw : []).map(a => {
+    allAnimes = (Array.isArray(raw) ? raw : []).map((a) => {
       const title = getDisplayTitle(a);
       return {
         ...a,
@@ -821,11 +936,10 @@ fetch("../data/licenses_only.json")
 
     applyVolume();
   })
-  .catch(e => {
+  .catch((e) => {
     previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
     previewCountEl.classList.add("bad");
     applyBtn.disabled = true;
     applyBtn.classList.add("disabled");
     console.error(e);
   });
-
