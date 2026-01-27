@@ -99,7 +99,7 @@ if (!parcoursLoader && parcoursContainer) {
 // =====================
 // MAPPING JEUX
 // =====================
-const BASE = "https://mastermanga.github.io/AG/";
+const BASE = "https://mastermanga.github.io/AG2/";
 const GAME_PATHS = {
   anidle: "Anidle/index.html",
   openingquizz: "OpeningQuizz/index.html",
