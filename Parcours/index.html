@@ -7,51 +7,164 @@
   <link rel="stylesheet" href="style.css">
   <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
 </head>
+
 <body>
   <header>
     <div class="header-group">
       <button id="back-to-menu" class="toggle-btn">⬅️ Menu</button>
       <h1>🧩 Mode Parcours 🧩</h1>
+
       <div class="header-right">
         <button id="themeToggle" class="toggle-btn">🌓</button>
-    
+
         <span class="info-wrap header-help">
-          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-blind">
+          <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-parcours">
             <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor"
                 d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
             </svg>
           </span>
-    
-          <span class="info-tip" id="help-blind" role="tooltip">
-            Composer ton parcours en combinant les mini-jeux.
+
+          <span class="info-tip" id="help-parcours" role="tooltip">
+            1) Choisis tes réglages une seule fois (ça s’applique à tous les mini-jeux).
+            2) Compose ton parcours (ordre + nombre de rounds par jeu).
           </span>
         </span>
       </div>
     </div>
   </header>
 
+  <!-- ========================= PERSONNALISATION (UNE SEULE FOIS) ========================== -->
+  <!-- Menu copié (structure) depuis tes jeux (ex: 3v3) -->
+  <div id="parcours-custom-panel" class="main-container">
+    <h2>⚙️ Personnalisation</h2>
+
+    <!-- Mode -->
+    <div class="opt-row">
+      <div class="opt-label">Mode</div>
+      <div class="opt-col">
+        <div id="modePills" class="opt-pill-group">
+          <button type="button" class="pill active" data-mode="anime" aria-pressed="true">Animes</button>
+          <button type="button" class="pill" data-mode="songs" aria-pressed="false">Songs</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Popularité -->
+    <div class="opt-row">
+      <div class="opt-label">Popularité</div>
+      <div class="opt-col">
+        <input id="popPercent" type="range" min="5" max="100" step="5" value="30" />
+        <div class="opt-value">Top <span id="popPercentVal">30</span>%</div>
+      </div>
+    </div>
+
+    <!-- Score -->
+    <div class="opt-row">
+      <div class="opt-label">Score</div>
+      <div class="opt-col">
+        <input id="scorePercent" type="range" min="5" max="100" step="5" value="100" />
+        <div class="opt-value">Top <span id="scorePercentVal">100</span>%</div>
+      </div>
+    </div>
+
+    <!-- Années -->
+    <div class="opt-row">
+      <div class="opt-label">Années</div>
+      <div class="opt-col">
+        <div class="year-wrap">
+          <div class="year-sliders">
+            <input id="yearMin" type="range" min="1950" max="2026" step="1" value="1950">
+            <input id="yearMax" type="range" min="1950" max="2026" step="1" value="2026">
+          </div>
+          <div class="opt-value"><span id="yearMinVal">1950</span> → <span id="yearMaxVal">2026</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Types -->
+    <div class="opt-row">
+      <div class="opt-label">Types</div>
+      <div class="opt-col">
+        <div id="typePills" class="opt-pill-group">
+          <button type="button" class="pill active" data-type="TV" aria-pressed="true">TV</button>
+          <button type="button" class="pill active" data-type="Movie" aria-pressed="true">Movie</button>
+          <button type="button" class="pill" data-type="OVA" aria-pressed="false">OVA</button>
+          <button type="button" class="pill" data-type="ONA" aria-pressed="false">ONA</button>
+          <button type="button" class="pill" data-type="Special" aria-pressed="false">Special</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Songs (visible seulement si mode = songs) -->
+    <div class="opt-row" id="songsRow">
+      <div class="opt-label">Songs</div>
+      <div class="opt-col">
+        <div id="songPills" class="opt-pill-group">
+          <button type="button" class="pill active" data-song="OP" aria-pressed="true">Opening</button>
+          <button type="button" class="pill" data-song="ED" aria-pressed="false">Ending</button>
+          <button type="button" class="pill" data-song="IN" aria-pressed="false">Insert</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview -->
+    <div id="previewCount" class="preview-count bad">⏳ Chargement de la base…</div>
+
+    <!-- Valeur par défaut pour "Nombre" (dans le builder) -->
+    <div class="opt-row">
+      <div class="opt-label">Rounds</div>
+      <div class="opt-col opt-rounds">
+        <input id="roundCount" class="round-input" type="number" min="1" max="100" step="1" value="1" />
+        <div class="opt-hint">(1 à 100) — Sert de valeur par défaut pour “Nombre” dans le parcours.</div>
+      </div>
+    </div>
+
+    <div class="start-wrap">
+      <button id="applyFiltersBtn" class="menu-btn">✅ Lancer avec ces réglages</button>
+    </div>
+  </div>
+
   <!-- === Builder Section === -->
-  <div id="container">
+  <div id="container" style="display:none;">
     <section id="parcours-builder" class="daily-recap-block">
       <h2>Construisez votre parcours personnalisé</h2>
+
       <div class="builder-row">
         <label for="gameType">Jeu</label>
+
         <select id="gameType">
           <option value="anidle">Anidle</option>
           <option value="openingquizz">Opening Quizz</option>
           <option value="characterquizz">Character Quizz</option>
-          <option value="animetournament">AnimeTournament</option>
-          <option value="blindranking">BlindRanking</option>
+          <option value="animetournament">Anime Tournament</option>
+          <option value="blindranking">Blind Ranking</option>
+
+          <option value="keeponext">Keep Or Next</option>
+          <option value="leftorright">Left Or Right</option>
+          <option value="higherorlower">Higher Or Lower</option>
+          <option value="toppick">Top Pick</option>
+          <option value="threevthree">3 v 3</option>
+          <option value="fakeortruth">Fake Or Truth</option>
+          <option value="clue">Clue</option>
+          <option value="intrus">Intrus</option>
+          <option value="fusion">Fusion</option>
+          <option value="pixelart">Pixel Art</option>
         </select>
+
+        <!-- Mode optionnel (Auto/Anime/Songs) pour les jeux qui le gèrent -->
         <select id="modeOption" style="display:none"></select>
+
         <label for="stepCount">Nombre</label>
         <input type="number" id="stepCount" min="1" value="1" style="width:70px;">
+
         <button id="addStepBtn" class="toggle-btn">Ajouter</button>
       </div>
+
       <div id="steps-list"></div>
       <button id="startParcoursBtn" class="toggle-btn" style="display:none;margin:0 auto;">Lancer le Parcours</button>
     </section>
+
     <!-- === Recap Section === -->
     <section id="recap" class="daily-recap-block" style="display:none;">
       <h2>Récapitulatif du Parcours</h2>
@@ -62,19 +175,20 @@
       </div>
     </section>
   </div>
+
   <!-- === Parcours Container (Jeu en cours) === -->
   <div id="parcours-container" style="display:none;flex-direction:column;align-items:center;">
     <iframe id="parcours-iframe"
       width="100%" height="610" frameborder="0"
       style="margin-top:18px;max-width:1000px;border-radius:14px;box-shadow:0 4px 18px #00bcd455;display:none;background:#181818;">
     </iframe>
+
     <div id="parcours-score" style="margin-top: 60px; display: none;"></div>
     <div id="parcours-finish" style="margin: 24px 0 10px 0; text-align:center; display: none;"></div>
   </div>
-  <footer>
-    © 2025 mastermanga
-  </footer>
-  <!-- Script du parcours -->
+
+  <footer>© 2025 mastermanga</footer>
+
   <script src="script.js"></script>
 </body>
 </html>
