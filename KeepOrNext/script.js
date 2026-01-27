@@ -18,10 +18,7 @@ document.getElementById("back-to-menu").addEventListener("click", () => {
 
 document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
-  localStorage.setItem(
-    "theme",
-    document.body.classList.contains("light") ? "light" : "dark"
-  );
+  localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -48,6 +45,9 @@ const MIN_REQUIRED = 64;
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const STALL_TIMEOUT_MS = 6000;
 
+// sécurité anti-blocage (si ça ne joue jamais)
+const MAX_WALL_SNIPPET_MS = 60000;
+
 // ✅ Clip settings (Songs)
 const CLIP_START_S = 45;
 const CLIP_DURATION_S = 20;
@@ -71,7 +71,7 @@ function getDisplayTitle(a) {
 }
 
 function getYear(a) {
-  const s = a && a.season ? String(a.season).trim() : "";
+  const s = ((a && a.season) ? String(a.season) : "").trim();
   const m = s.match(/(\d{4})/);
   return m ? parseInt(m[1], 10) : 0;
 }
@@ -234,6 +234,10 @@ let roundToken = 0;
 let mediaTokenLeft = 0;
 let mediaTokenRight = 0;
 
+// wall timers (anti-blocage)
+let wallTimerLeft = null;
+let wallTimerRight = null;
+
 // ====== UI SHOW/HIDE ======
 function showCustomization() {
   customPanel.style.display = "block";
@@ -258,44 +262,36 @@ if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
 
 // ====== MEDIA LOADER ======
 function hardResetMedia(player) {
-  try {
-    player.pause();
-  } catch {}
+  try { player.pause(); } catch {}
   player.removeAttribute("src");
   player.load();
 }
 function withCacheBuster(url) {
-  const sep = url.includes("?") ? "&" : "?";
-  return url + sep + "t=" + Date.now();
+  const [base, frag] = url.split("#");
+  const sep = base.includes("?") ? "&" : "?";
+  const busted = base + sep + "t=" + Date.now();
+  return frag ? busted + "#" + frag : busted;
 }
 
-// ✅ Load with retries + clip (start 45s, play 20s)
-function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = true } = {}) {
+// ✅ Loader générique (comme TopPick) : retries + anti-stall + callback onReady
+function loadMediaWithRetries(player, url, localRound, localMedia, { onReady } = {}) {
   let attemptIndex = 0;
   let stallTimer = null;
   let done = false;
 
-  const cleanupLoadHandlers = () => {
-    if (stallTimer) clearTimeout(stallTimer);
-    stallTimer = null;
-
+  const cleanup = () => {
+    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
     player.onloadedmetadata = null;
     player.oncanplay = null;
+    player.onloadeddata = null;
     player.onplaying = null;
     player.onwaiting = null;
     player.onstalled = null;
     player.onerror = null;
   };
 
-  const cleanupAllHandlers = () => {
-    cleanupLoadHandlers();
-    player.ontimeupdate = null;
-    player.onseeked = null;
-    player.onplay = null; // ✅ NEW: on nettoie aussi
-  };
-
   const tokenNow = () => (player === leftPlayer ? mediaTokenLeft : mediaTokenRight);
-  const isStillValid = () => localRound === roundToken && localMedia === tokenNow();
+  const isStillValid = () => (localRound === roundToken && localMedia === tokenNow());
 
   const startStallTimer = () => {
     if (stallTimer) clearTimeout(stallTimer);
@@ -305,136 +301,20 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
     }, STALL_TIMEOUT_MS);
   };
 
-  // ✅ NEW (Fix #3): seek fiable à 45s + autoplay seulement après seek
-  const setupClipAndAutoplay = () => {
-    if (!isStillValid() || done) return;
-
-    const dur = Number.isFinite(player.duration) ? player.duration : 0;
-
-    // clamp start si dur connue et vidéo trop courte
-    let start = CLIP_START_S;
-    if (dur > 0) start = Math.max(0, Math.min(start, Math.max(0, dur - 0.25)));
-
-    // end = start + 20s, clamp si dur connue
-    let end = start + CLIP_DURATION_S;
-    if (dur > 0) end = Math.min(dur, end);
-
-    const canLimit = end - start > 0.25;
-
-    // stop à la fin du clip
-    let guard = false;
-    player.ontimeupdate = () => {
-      if (!isStillValid() || !canLimit || guard) return;
-      if (player.currentTime >= end - CLIP_EPS) {
-        guard = true;
-        try {
-          player.pause();
-        } catch {}
-        try {
-          player.currentTime = start;
-        } catch {}
-        guard = false;
-      }
-    };
-
-    let didSeek = false;
-    let seekingTimeout = null;
-
-    const clearSeekTimeout = () => {
-      if (seekingTimeout) clearTimeout(seekingTimeout);
-      seekingTimeout = null;
-    };
-
-    // Util: certains médias ne remplissent seekable qu'après un moment.
-    const canSeekToStart = () => {
-      try {
-        if (!player.seekable || player.seekable.length === 0) return false;
-        const max = player.seekable.end(player.seekable.length - 1);
-        return max >= start + 0.1;
-      } catch {
-        return false;
-      }
-    };
-
-    // On tente un seek. On considère "ok" quand on a un seeked ET/ou time proche.
-    const trySeek = () => {
-      if (!isStillValid() || done) return false;
-      try {
-        player.currentTime = start;
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    // IMPORTANT: si autoplay est bloqué, quand l'utilisateur clique "play",
-    // on force un seek d'abord.
-    player.onplay = () => {
-      if (!didSeek) {
-        // si on peut, on retente le seek avant que ça parte à 0
-        trySeek();
-      }
-    };
-
-    player.onseeked = () => {
-      if (!isStillValid() || done) return;
-      didSeek = true;
-      clearSeekTimeout();
-      if (autoplay) {
-        player.muted = false;
-        player.play?.().catch(() => {});
-      }
-    };
-
-    const seekWithRetries = (n = 0) => {
-      if (!isStillValid() || done) return;
-
-      // si seekable est ok, on tente tout de suite
-      if (canSeekToStart()) {
-        trySeek();
-        return;
-      }
-
-      // sinon on retente vite (ça se débloque souvent après metadata/canplay)
-      if (n >= 40) {
-        // ~4s max (40 * 100ms)
-        // dernier essai "soft" même si seekable pas prêt
-        trySeek();
-        return;
-      }
-      setTimeout(() => seekWithRetries(n + 1), 100);
-    };
-
-    // Sécurité: si on n'a jamais eu seeked, on ne force pas autoplay "à 0".
-    // (mais si l'utilisateur clique play, on cherche via onplay)
-    // On déclenche le loop de seek:
-    seekWithRetries();
-
-    // mini timeout pour ne pas laisser des timers zombies
-    seekingTimeout = setTimeout(() => {
-      clearSeekTimeout();
-    }, 6000);
-  };
-
   const markReady = () => {
     if (!isStillValid() || done) return;
     done = true;
-
-    // on vire les handlers de load/retry, mais on garde le clip/seek qu’on pose juste après
-    cleanupLoadHandlers();
-
-    setupClipAndAutoplay();
+    cleanup();
+    onReady?.();
   };
 
   const triggerRetry = () => {
     if (!isStillValid() || done) return;
-    cleanupAllHandlers();
+    cleanup();
     attemptIndex++;
     if (attemptIndex >= RETRY_DELAYS.length) {
       done = true;
-      try {
-        player.pause();
-      } catch {}
+      try { player.pause(); } catch {}
       return;
     }
     setTimeout(() => {
@@ -446,77 +326,147 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
   const doAttempt = () => {
     if (!isStillValid() || done) return;
 
-    // important: clear old handlers from previous attempts/rounds
-    cleanupAllHandlers();
-
     const src = attemptIndex === 0 ? url : withCacheBuster(url);
 
-    try {
-      hardResetMedia(player);
-    } catch {}
+    try { hardResetMedia(player); } catch {}
     player.preload = "metadata";
     player.muted = false;
     player.src = src;
     player.load();
 
-    player.onloadedmetadata = () => {
-      if (!isStillValid() || done) return;
-      markReady();
-    };
-    player.oncanplay = () => {
-      if (!isStillValid() || done) return;
-      markReady();
-    };
+    player.onloadedmetadata = () => { if (!isStillValid() || done) return; markReady(); };
+    player.oncanplay = () => { if (!isStillValid() || done) return; markReady(); };
+    player.onloadeddata = () => { if (!isStillValid() || done) return; markReady(); };
 
-    player.onwaiting = () => {
-      if (!isStillValid() || done) return;
-      startStallTimer();
-    };
-    player.onstalled = () => {
-      if (!isStillValid() || done) return;
-      startStallTimer();
-    };
+    player.onwaiting = () => { if (!isStillValid() || done) return; startStallTimer(); };
+    player.onstalled = () => { if (!isStillValid() || done) return; startStallTimer(); };
 
     player.onplaying = () => {
       if (!isStillValid() || done) return;
-      if (stallTimer) clearTimeout(stallTimer);
-      stallTimer = null;
+      if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
     };
 
-    player.onerror = () => {
-      if (!isStillValid() || done) return;
-      triggerRetry();
-    };
+    player.onerror = () => { if (!isStillValid() || done) return; triggerRetry(); };
 
     startStallTimer();
   };
 
+  attemptIndex = 0;
   doAttempt();
-  return cleanupAllHandlers;
+  return cleanup;
+}
+
+function clearWallTimerFor(player) {
+  if (player === leftPlayer) {
+    if (wallTimerLeft) clearTimeout(wallTimerLeft);
+    wallTimerLeft = null;
+  } else {
+    if (wallTimerRight) clearTimeout(wallTimerRight);
+    wallTimerRight = null;
+  }
+}
+
+// ✅ Clip “comme TopPick” : currentTime=start puis play, stop après 20s DE VIDEO.
+function playClip(player, localRound, localMedia, { autoplay = true } = {}) {
+  const tokenNow = () => (player === leftPlayer ? mediaTokenLeft : mediaTokenRight);
+  const isStillValid = () => (localRound === roundToken && localMedia === tokenNow());
+
+  // clean anciens handlers
+  player.ontimeupdate = null;
+  player.onended = null;
+
+  clearWallTimerFor(player);
+
+  // anti-blocage
+  const wall = setTimeout(() => {
+    if (!isStillValid()) return;
+    try { player.pause(); } catch {}
+  }, MAX_WALL_SNIPPET_MS);
+
+  if (player === leftPlayer) wallTimerLeft = wall;
+  else wallTimerRight = wall;
+
+  // calc start/end (clamp si durée connue)
+  let start = CLIP_START_S;
+  const dur = player.duration;
+
+  let endTime = start + CLIP_DURATION_S;
+  if (Number.isFinite(dur) && dur > 1) {
+    start = Math.min(CLIP_START_S, Math.max(0, dur - 0.25));
+    endTime = Math.min(start + CLIP_DURATION_S, Math.max(0, dur - 0.05));
+  }
+
+  const stopSnippet = () => {
+    if (!isStillValid()) return;
+    clearWallTimerFor(player);
+    try { player.pause(); } catch {}
+    try { player.currentTime = start; } catch {}
+  };
+
+  player.ontimeupdate = () => {
+    if (!isStillValid()) return;
+    if (player.currentTime >= (endTime - CLIP_EPS)) stopSnippet();
+  };
+  player.onended = () => stopSnippet();
+
+  // ✅ tentative seek + re-seek (si le navigateur “retombe” à 0)
+  const trySeek = () => {
+    if (!isStillValid()) return;
+    try { player.currentTime = start; } catch {}
+  };
+
+  // 1) seek d’abord
+  trySeek();
+
+  // 2) puis play (autoplay)
+  if (autoplay) {
+    player.muted = false;
+    const p = player.play?.();
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  }
+
+  // 3) re-seek rapide si ça reste proche de 0 (comme une “récupération”)
+  let tries = 0;
+  const seeker = setInterval(() => {
+    if (!isStillValid()) { clearInterval(seeker); return; }
+    const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
+
+    // si on est bien vers start, ok
+    if (Math.abs(ct - start) < 0.8) { clearInterval(seeker); return; }
+
+    tries++;
+    trySeek();
+
+    if (tries >= 15) { clearInterval(seeker); }
+  }, 120);
+
+  // si user clique play plus tard, on force le seek avant que ça parte à 0
+  player.onplay = () => {
+    if (!isStillValid()) return;
+    const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
+    if (ct < (start - 1)) trySeek();
+  };
 }
 
 function stopAllMedia() {
   mediaTokenLeft++;
   mediaTokenRight++;
 
-  // ✅ clear clip handlers too
+  clearWallTimerFor(leftPlayer);
+  clearWallTimerFor(rightPlayer);
+
   leftPlayer.ontimeupdate = null;
-  leftPlayer.onseeked = null;
+  leftPlayer.onended = null;
   leftPlayer.onplay = null;
+
   rightPlayer.ontimeupdate = null;
-  rightPlayer.onseeked = null;
+  rightPlayer.onended = null;
   rightPlayer.onplay = null;
 
-  try {
-    leftPlayer.pause();
-  } catch {}
-  try {
-    rightPlayer.pause();
-  } catch {}
-  leftPlayer.removeAttribute("src");
-  leftPlayer.load();
-  rightPlayer.removeAttribute("src");
-  rightPlayer.load();
+  try { leftPlayer.pause(); } catch {}
+  try { rightPlayer.pause(); } catch {}
+  leftPlayer.removeAttribute("src"); leftPlayer.load();
+  rightPlayer.removeAttribute("src"); rightPlayer.load();
 }
 
 // ====== UI INIT ======
@@ -569,7 +519,7 @@ function initCustomUI() {
   // Apply
   applyBtn.addEventListener("click", () => {
     filteredPool = applyFilters();
-    totalTurns = clampInt(parseInt(turnCountEl.value || "1", 10), 1, 100); // ✅ min 1
+    totalTurns = clampInt(parseInt(turnCountEl.value || "1", 10), 1, 100);
 
     const minNeeded = Math.max(2, MIN_REQUIRED);
     if (filteredPool.length < minNeeded) return;
@@ -586,8 +536,8 @@ function initCustomUI() {
 }
 
 function updateModeVisibility() {
-  songsRow.style.display = currentMode === "songs" ? "flex" : "none";
-  volumeRow.style.display = currentMode === "songs" ? "flex" : "none";
+  songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
+  volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
   applyVolume();
 }
 
@@ -602,8 +552,8 @@ function applyFilters() {
   if (allowedTypes.length === 0) return [];
 
   if (currentMode === "anime") {
-    let pool = allAnimes.filter(
-      (a) => a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type)
+    let pool = allAnimes.filter((a) =>
+      a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type)
     );
 
     pool.sort((a, b) => b._members - a._members);
@@ -616,19 +566,18 @@ function applyFilters() {
       kind: "anime",
       _key: `anime|${a.mal_id}`,
       title: a._title,
-      image: a.image || "",
+      image: a.image || ""
     }));
   }
 
   const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
   if (allowedSongs.length === 0) return [];
 
-  let pool = allSongs.filter(
-    (s) =>
-      s.animeYear >= yearMin &&
-      s.animeYear <= yearMax &&
-      allowedTypes.includes(s.animeType) &&
-      allowedSongs.includes(s.songType)
+  let pool = allSongs.filter((s) =>
+    s.animeYear >= yearMin &&
+    s.animeYear <= yearMax &&
+    allowedTypes.includes(s.animeType) &&
+    allowedSongs.includes(s.songType)
   );
 
   pool.sort((a, b) => b.animeMembers - a.animeMembers);
@@ -646,7 +595,7 @@ function applyFilters() {
     songArtists: s.songArtists || "",
     songType: s.songType,
     url: s.url,
-    image: s.animeImage || "",
+    image: s.animeImage || ""
   }));
 }
 
@@ -665,7 +614,7 @@ function updatePreview() {
   const minNeeded = Math.max(2, MIN_REQUIRED);
   const ok = pool.length >= minNeeded;
 
-  const label = currentMode === "songs" ? "Songs" : "Titres";
+  const label = (currentMode === "songs") ? "Songs" : "Titres";
   previewCountEl.textContent = ok
     ? `📚 ${label} disponibles : ${pool.length} (OK)`
     : `📚 ${label} disponibles : ${pool.length} (Min ${minNeeded})`;
@@ -753,7 +702,7 @@ function startGame() {
 }
 
 function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
-  const isSongs = currentMode === "songs";
+  const isSongs = (currentMode === "songs");
   const isLeft = side === "left";
 
   const img = isLeft ? leftImg : rightImg;
@@ -765,45 +714,62 @@ function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
   nameEl.style.display = revealed ? "block" : "none";
 
   if (isSongs) {
-    // ✅ Fix #1: pas d'image avant la vidéo (pas de poster)
+    // ✅ (1) jamais d'image avant la vidéo en Songs
     img.style.display = "none";
     img.removeAttribute("src");
+
     pZone.style.display = revealed ? "block" : "none";
 
     if (revealed && item?.url) {
-      player.poster = ""; // ✅ enlever l'image avant la vidéo
+      // ✅ (1) pas de poster non plus
+      player.poster = "";
+
       applyVolume();
 
+      // tokens
       if (isLeft) mediaTokenLeft++;
       else mediaTokenRight++;
 
       const localRound = roundToken;
       const localMedia = isLeft ? mediaTokenLeft : mediaTokenRight;
 
-      try {
-        player.pause();
-      } catch {}
+      // reset + load
+      try { player.pause(); } catch {}
       player.removeAttribute("src");
       player.load();
 
       player.muted = false;
-      loadMediaWithRetries(player, item.url, localRound, localMedia, { autoplay });
+
+      loadMediaWithRetries(player, item.url, localRound, localMedia, {
+        onReady: () => {
+          // ✅ seek+play “comme TopPick”
+          if (localRound !== roundToken) return;
+          const tokenNow = isLeft ? mediaTokenLeft : mediaTokenRight;
+          if (localMedia !== tokenNow) return;
+
+          applyVolume();
+          player.muted = false;
+          playClip(player, localRound, localMedia, { autoplay });
+        }
+      });
     } else {
-      try {
-        player.pause();
-      } catch {}
+      try { player.pause(); } catch {}
       player.poster = "";
       player.removeAttribute("src");
       player.load();
+      clearWallTimerFor(player);
+      player.ontimeupdate = null;
+      player.onended = null;
+      player.onplay = null;
     }
   } else {
+    // mode anime (image)
     pZone.style.display = "none";
-    try {
-      player.pause();
-    } catch {}
+    try { player.pause(); } catch {}
     player.poster = "";
     player.removeAttribute("src");
     player.load();
+    clearWallTimerFor(player);
 
     if (revealed && item?.image) {
       img.src = item.image;
@@ -822,14 +788,13 @@ function hideRightCard() {
 
   mediaTokenRight++;
 
-  // ✅ clear clip handlers too
+  clearWallTimerFor(rightPlayer);
+
   rightPlayer.ontimeupdate = null;
-  rightPlayer.onseeked = null;
+  rightPlayer.onended = null;
   rightPlayer.onplay = null;
 
-  try {
-    rightPlayer.pause();
-  } catch {}
+  try { rightPlayer.pause(); } catch {}
   rightPlayer.poster = "";
   rightPlayer.removeAttribute("src");
   rightPlayer.load();
@@ -853,7 +818,7 @@ function renderTurn() {
   setCardContent("left", leftItem, { revealed: true, autoplay: true });
   hideRightCard();
 
-  volumeRow.style.display = currentMode === "songs" ? "flex" : "none";
+  volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
   applyVolume();
 }
 
@@ -864,9 +829,7 @@ function handleChoice(choice) {
   nextChoiceBtn.disabled = true;
 
   // éviter double audio au reveal
-  try {
-    leftPlayer.pause();
-  } catch {}
+  try { leftPlayer.pause(); } catch {}
 
   // effet visuel choix
   if (choice === "keep") {
