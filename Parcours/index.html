@@ -26,17 +26,17 @@
           </span>
 
           <span class="info-tip" id="help-parcours" role="tooltip">
-            1) Compose ton parcours (ordre + nombre de rounds par jeu).
-            2) Choisis tes réglages une seule fois (ça s’applique à tous les mini-jeux).
+            1) Compose ton parcours (ordre + mode Anime/Songs/Stat + nombre de rounds).<br>
+            2) Ensuite tu choisis les réglages globaux (pop/score/années/types + songs).<br>
+            3) Ces réglages s’appliquent à tous les jeux du parcours.
           </span>
         </span>
       </div>
     </div>
   </header>
 
-  <!-- ========================= BUILDER + RECAP (AU DÉPART) ========================== -->
-  <div id="container" style="display:flex;">
-    <!-- === Builder Section === -->
+  <!-- ========================= BUILDER (AU DÉPART) ========================== -->
+  <div id="container">
     <section id="parcours-builder" class="daily-recap-block">
       <h2>Construisez votre parcours personnalisé</h2>
 
@@ -62,7 +62,7 @@
           <option value="pixelart">Pixel Art</option>
         </select>
 
-        <!-- Mode optionnel (Auto/Anime/Songs) pour les jeux qui le gèrent -->
+        <!-- Mode optionnel (Anime/Songs/Stat) selon le jeu -->
         <select id="modeOption" style="display:none"></select>
 
         <label for="stepCount">Nombre</label>
@@ -72,45 +72,27 @@
       </div>
 
       <div id="steps-list"></div>
-
-      <!-- ✅ Ce bouton mène désormais à la personnalisation (pas au recap direct) -->
       <button id="startParcoursBtn" class="toggle-btn" style="display:none;margin:0 auto;">
-        Lancer le Parcours
+        Continuer (Réglages)
       </button>
     </section>
 
-    <!-- === Recap Section === -->
+    <!-- ========================= RECAP (APRÈS RÉGLAGES) ========================== -->
     <section id="recap" class="daily-recap-block" style="display:none;">
       <h2>Récapitulatif du Parcours</h2>
       <ul id="parcoursRecapList"></ul>
+
       <div style="text-align:center;">
-        <button id="editParcoursBtn" class="toggle-btn">Modifier</button>
-        <button id="launchConfirmedBtn" class="toggle-btn" style="margin-left:12px;">
-          Confirmer & Lancer
-        </button>
+        <button id="editParcoursBtn" class="toggle-btn">Modifier parcours</button>
+        <button id="editSettingsBtn" class="toggle-btn" style="margin-left:12px;">Modifier réglages</button>
+        <button id="launchConfirmedBtn" class="toggle-btn" style="margin-left:12px;">Confirmer & Lancer</button>
       </div>
     </section>
   </div>
 
   <!-- ========================= PERSONNALISATION (APRÈS BUILDER) ========================== -->
   <div id="parcours-custom-panel" class="main-container" style="display:none;">
-    <h2>⚙️ Personnalisation</h2>
-
-    <!-- ✅ Bouton retour builder -->
-    <div class="start-wrap" style="justify-content:flex-start;">
-      <button id="backToBuilderBtn" class="menu-btn">⬅️ Retour au parcours</button>
-    </div>
-
-    <!-- Mode -->
-    <div class="opt-row">
-      <div class="opt-label">Mode</div>
-      <div class="opt-col">
-        <div id="modePills" class="opt-pill-group">
-          <button type="button" class="pill active" data-mode="anime" aria-pressed="true">Animes</button>
-          <button type="button" class="pill" data-mode="songs" aria-pressed="false">Songs</button>
-        </div>
-      </div>
-    </div>
+    <h2>⚙️ Personnalisation (globale)</h2>
 
     <!-- Popularité -->
     <div class="opt-row">
@@ -158,8 +140,8 @@
       </div>
     </div>
 
-    <!-- Songs (visible seulement si mode = songs) -->
-    <div class="opt-row" id="songsRow">
+    <!-- Songs types (affiché seulement si le parcours contient du Songs) -->
+    <div class="opt-row" id="songsRow" style="display:none;">
       <div class="opt-label">Songs</div>
       <div class="opt-col">
         <div id="songPills" class="opt-pill-group">
@@ -183,12 +165,12 @@
     </div>
 
     <div class="start-wrap">
-      <!-- ✅ mène au RECAP (et sauvegarde cfg) -->
-      <button id="applyFiltersBtn" class="menu-btn">✅ Lancer avec ces réglages</button>
+      <button id="applyFiltersBtn" class="menu-btn">✅ Valider les réglages</button>
+      <button id="backToBuilderBtn" class="toggle-btn">⬅️ Retour parcours</button>
     </div>
   </div>
 
-  <!-- ========================= PARCOURS CONTAINER (JEU EN COURS) ========================== -->
+  <!-- ========================= PARCOURS (IFRAME) ========================== -->
   <div id="parcours-container" style="display:none;flex-direction:column;align-items:center;">
     <iframe id="parcours-iframe"
       width="100%" height="610" frameborder="0"
@@ -200,7 +182,6 @@
   </div>
 
   <footer>© 2025 mastermanga</footer>
-
   <script src="script.js"></script>
 </body>
 </html>
