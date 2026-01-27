@@ -516,14 +516,37 @@ body::before{
   box-shadow:none;
 }
 
-/* infos + feedback */
+/* ===== Timer (modifié) ===== */
+/* On garde ton style de base + on ajoute des états "urgence" sans toucher au HTML */
 #timer{
   margin: 4px 0 0;
   font-weight: 1000;
   color:#00eaff;
   text-shadow: 0 0 14px rgba(0,234,255,0.25);
   text-align:center;
+  transition: transform .15s ease, color .15s ease, text-shadow .15s ease;
 }
+
+/* Si tu veux l'urgence : (optionnel) tu peux ajouter la classe via JS
+   -> #timer.warn / #timer.danger (je te donne le JS si tu veux)
+*/
+#timer.warn{
+  color:#fff96a;
+  text-shadow: 0 0 14px rgba(255,249,106,0.22);
+  transform: scale(1.02);
+}
+#timer.danger{
+  color:#fd654c;
+  text-shadow: 0 0 18px rgba(253,101,76,0.28);
+  transform: scale(1.06);
+  animation: timerPulse .65s ease-in-out infinite;
+}
+@keyframes timerPulse{
+  0%,100%{ transform: scale(1.05); }
+  50%{ transform: scale(1.00); }
+}
+
+/* infos + feedback */
 #feedback{
   margin:0;
   font-weight: 900;
@@ -581,6 +604,8 @@ body.light .suggestions{
   border-color: rgba(66,165,245,0.45);
 }
 body.light #timer{ color:#1565c0; }
+body.light #timer.warn{ color:#b8860b; text-shadow: 0 0 14px rgba(184,134,11,0.18); }
+body.light #timer.danger{ color:#d32f2f; text-shadow: 0 0 16px rgba(211,47,47,0.20); }
 body.light .info-tip{
   background: linear-gradient(120deg, #e0f7fa 90%, #1565c01a 100%);
   border: 1.5px solid rgba(66, 165, 245, 0.45);
