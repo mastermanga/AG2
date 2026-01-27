@@ -1,7 +1,9 @@
 /**********************
  * Fake Or Truth — Image A + Audio B (45s -> 20s)
  * ✅ 25% Truth / 75% Fake
- * ✅ Reveal = Vidéo B + Audio B
+ * ✅ Truth = match parfait (A === B : même song)
+ * ✅ Fake = sinon (même anime autre song OU anime différent)
+ * ✅ Reveal = Vidéo A si Truth, sinon Vidéo B
  * ✅ Robust audio load/seek/buffer + autoplay fallback click
  **********************/
 
@@ -157,6 +159,10 @@ function isNotAllowedError(reason) {
   return name === "NotAllowedError" || /notallowed/i.test(msg);
 }
 
+function normStr(s) {
+  return String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 // ====== Songs extraction ======
 function extractSongsFromAnime(anime) {
   const songs = [];
@@ -234,11 +240,12 @@ const resultDiv = document.getElementById("result");
 const nextBtn = document.getElementById("nextBtn");
 
 const mediaStatusEl = document.getElementById("mediaStatus");
+const songALineEl = document.getElementById("songALine");
 const containerEl = document.getElementById("container");
 
 const imageAEl = document.getElementById("imageA");
-const videoPlayer = document.getElementById("videoPlayer");   // reveal B
-const audioPlayer = document.getElementById("audioPlayer");   // audio B
+const videoPlayer = document.getElementById("videoPlayer"); // reveal A ou B
+const audioPlayer = document.getElementById("audioPlayer"); // audio B
 
 const btnTruth = document.getElementById("btnTruth");
 const btnFake = document.getElementById("btnFake");
@@ -267,9 +274,12 @@ let currentRound = 1;
 let totalScore = 0;
 
 // ====== Round state ======
-let imageSong = null; // A (sert à l'image/anime)
-let audioSong = null; // B (sert à l'audio + reveal vidéo)
-let isMatch = false;  // Truth = même anime ?
+let imageSong = null; // A
+let audioSong = null; // B
+let isMatch = false;  // Truth = match parfait (A=B)
+
+// extra: utile pour feedback Fake
+let fakeIsSameAnime = false;
 
 let roundToken = 0;
 let rerollsLeft = MAX_REROLLS_PER_ROUND;
@@ -508,6 +518,7 @@ function rerollDuel(localToken, msg) {
   imageSong = pair.A;
   audioSong = pair.B;
   isMatch = pair.isMatch;
+  fakeIsSameAnime = pair.fakeIsSameAnime;
 
   // annule tout ce qui traîne
   roundToken++;
@@ -548,7 +559,7 @@ function armSegment(localToken) {
     if (t >= segmentEnd - 0.05) {
       try { audioPlayer.pause(); } catch {}
       clearSegment();
-      setMediaStatus("✅ À toi : Truth (même anime) ou Fake (anime différent) ?");
+      setMediaStatus("✅ À toi : Truth (match parfait A=B) ou Fake (sinon) ?");
       btnTruth.disabled = false;
       btnFake.disabled = false;
     }
@@ -562,9 +573,27 @@ function sameAnime(a, b) {
   return a.animeTitleLower && b.animeTitleLower && a.animeTitleLower === b.animeTitleLower;
 }
 
-function pickSongSameAnime(base) {
-  const same = filteredSongs.filter(s => sameAnime(s, base));
-  return same.length ? pickRandom(same) : base;
+function sameSong(a, b) {
+  if (!a || !b) return false;
+
+  // si URL identique, match parfait
+  if (a.url && b.url && a.url === b.url) return true;
+
+  if (!sameAnime(a, b)) return false;
+
+  const nA = safeNum(a.songNumber) || 1;
+  const nB = safeNum(b.songNumber) || 1;
+
+  return (
+    a.songType === b.songType &&
+    nA === nB &&
+    normStr(a.songName) === normStr(b.songName)
+  );
+}
+
+function pickSongSameAnimeDifferentSong(base) {
+  const same = filteredSongs.filter(s => sameAnime(s, base) && !sameSong(s, base) && s?.url);
+  return same.length ? pickRandom(same) : null;
 }
 
 function pickSongDifferentAnime(base) {
@@ -584,12 +613,39 @@ function choosePair() {
   const truth = Math.random() < TRUTH_PROB;
 
   if (truth) {
-    const B = pickSongSameAnime(A);
-    return { A, B, isMatch: true };
-  } else {
-    const B = pickSongDifferentAnime(A);
-    return { A, B, isMatch: false };
+    // ✅ match parfait
+    return { A, B: A, isMatch: true, fakeIsSameAnime: false };
   }
+
+  // Fake = soit même anime mais autre song, soit anime différent (50/50)
+  const sameAnimeButWrong = Math.random() < 0.50;
+
+  let B = null;
+  let fakeSame = false;
+
+  if (sameAnimeButWrong) {
+    B = pickSongSameAnimeDifferentSong(A);
+    if (!B) {
+      B = pickSongDifferentAnime(A);
+      fakeSame = false;
+    } else {
+      fakeSame = true;
+    }
+  } else {
+    B = pickSongDifferentAnime(A);
+    fakeSame = false;
+  }
+
+  if (!B?.url) return null;
+
+  // sécurité: éviter exact-match accidentel
+  if (sameSong(A, B)) {
+    B = pickSongDifferentAnime(A);
+    fakeSame = false;
+    if (!B?.url) return null;
+  }
+
+  return { A, B, isMatch: false, fakeIsSameAnime: fakeSame };
 }
 
 // ====== Round flow ======
@@ -604,6 +660,8 @@ function resetControls() {
   resultDiv.className = "";
 
   setMediaStatus("");
+  if (songALineEl) songALineEl.textContent = "";
+
   stopPlayback();
   clearSegment();
 
@@ -623,11 +681,9 @@ function startNewRound() {
   rerollsLeft = MAX_REROLLS_PER_ROUND;
   resetControls();
 
-  // reveal vidéo B a besoin de webm vidéo
+  // reveal vidéo a besoin de webm vidéo
   if (!CAN_PLAY_WEBM_VIDEO) {
     setMediaStatus("⚠️ WebM non supporté (vidéo reveal impossible sur ce navigateur).");
-    // Le jeu audio peut encore marcher, mais tu as demandé reveal vidéo B.
-    // On stop ici pour éviter confusion.
     finishRoundFailure("WebM vidéo non supporté.");
     return;
   }
@@ -638,6 +694,7 @@ function startNewRound() {
   imageSong = pair.A;
   audioSong = pair.B;
   isMatch = pair.isMatch;
+  fakeIsSameAnime = pair.fakeIsSameAnime;
 
   autoStartRound(localToken);
 }
@@ -648,6 +705,11 @@ async function autoStartRound(localToken) {
 
   // 1) Image A
   setImageForA(imageSong);
+
+  // ✅ Affiche le titre complet du Song A pendant le round
+  if (songALineEl) {
+    songALineEl.textContent = `A : ${formatRevealLine(imageSong)}`;
+  }
 
   // 2) Charger + pin audio B
   let ok = false;
@@ -722,16 +784,18 @@ async function autoStartRound(localToken) {
   setMediaStatus("▶️ Lecture…");
 }
 
-// ====== Reveal : Vidéo B + Audio B ======
-async function revealVideoBWithAudio(localToken) {
+// ====== Reveal : Vidéo A si Truth, sinon Vidéo B ======
+async function revealVideoWithAudio(localToken) {
   if (localToken !== roundToken) return;
 
   stopPlayback();
   clearSegment();
 
+  const revealSong = isMatch ? imageSong : audioSong; // ✅ A si Truth, sinon B
+
   // cache-buster pour éviter vieux cache si tu spam
   hardReset(videoPlayer);
-  videoPlayer.src = withCacheBuster(audioSong.url);
+  videoPlayer.src = withCacheBuster(revealSong.url);
   videoPlayer.preload = "metadata";
   videoPlayer.load();
 
@@ -743,7 +807,7 @@ async function revealVideoBWithAudio(localToken) {
   videoPlayer.muted = false;
   applyVolume();
 
-  setMediaStatus("🎬 Reveal : Vidéo B");
+  setMediaStatus(isMatch ? "🎬 Reveal : Vidéo A (Truth)" : "🎬 Reveal : Vidéo B");
 
   try {
     await waitEvent(videoPlayer, "loadedmetadata", ["error"], LOAD_TIMEOUT_MS, localToken);
@@ -766,7 +830,7 @@ async function revealVideoBWithAudio(localToken) {
       if (localToken !== roundToken) return;
       try {
         await videoPlayer.play();
-        setMediaStatus("🎬 Reveal : Vidéo B");
+        setMediaStatus(isMatch ? "🎬 Reveal : Vidéo A (Truth)" : "🎬 Reveal : Vidéo B");
       } catch {
         setMediaStatus("⚠️ Reveal vidéo bloqué.");
       }
@@ -811,26 +875,30 @@ function endRoundAndMaybeNext(roundScore) {
   };
 }
 
-function checkAnswer(userSaysMatch) {
+function checkAnswer(userSaysTruth) {
   if (!imageSong || !audioSong) return;
 
   const localToken = roundToken;
-  const good = (userSaysMatch === isMatch);
 
-  // reveal demandé: vidéo B + audio B
-  revealVideoBWithAudio(localToken);
+  // Truth = match parfait A=B
+  const good = (userSaysTruth === isMatch);
+
+  // reveal demandé: vidéo A si Truth, sinon vidéo B
+  revealVideoWithAudio(localToken);
 
   btnTruth.disabled = true;
   btnFake.disabled = true;
 
-  const verdict = isMatch ? "✅ TRUTH (MÊME ANIME)" : "❌ FAKE (ANIME DIFFÉRENT)";
+  const verdict = isMatch
+    ? "✅ TRUTH (MATCH PARFAIT A=B)"
+    : (fakeIsSameAnime ? "❌ FAKE (même anime, song différent)" : "❌ FAKE (anime différent)");
 
   if (good) {
     const score = MAX_SCORE;
     resultDiv.innerHTML = `
       🎉 Bonne réponse !<br><b>${verdict}</b>
-      <em>Image (A) : ${formatAnimeLineFromSong(imageSong)}</em>
-      <em>Vidéo/Audio (B) : ${formatRevealLine(audioSong)}</em>
+      <em>A : ${formatRevealLine(imageSong)}</em>
+      <em>B : ${formatRevealLine(audioSong)}</em>
       <div style="margin-top:8px;">Score : <b>${score}</b> / 3000</div>
     `;
     resultDiv.className = "correct";
@@ -841,8 +909,8 @@ function checkAnswer(userSaysMatch) {
     resultDiv.innerHTML = `
       ❌ Mauvaise réponse.<br>
       Réponse correcte : <b>${verdict}</b>
-      <em>Image (A) : ${formatAnimeLineFromSong(imageSong)}</em>
-      <em>Vidéo/Audio (B) : ${formatRevealLine(audioSong)}</em>
+      <em>A : ${formatRevealLine(imageSong)}</em>
+      <em>B : ${formatRevealLine(audioSong)}</em>
       <div style="margin-top:8px;">Score : <b>0</b> / 3000</div>
     `;
     resultDiv.className = "incorrect";
