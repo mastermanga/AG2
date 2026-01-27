@@ -1,23 +1,54 @@
 // ===============================
-// ANIDLE — script.js (modifié)
-// - Menu personnalisation identique (prévu pour mode futur)
-// - MIN_REQUIRED = 64
-// - Rounds: 1 → 100 (1 par défaut)
-// - Types: si aucun type actif, force TV + Movie (donc Movie par défaut garanti côté JS)
+// ANIDLE — script.js (PARCOURS READY)
+// ✅ Supporte Mode Parcours : ?parcours=1&count=XX
+// ✅ Récupère la personnalisation globale depuis localStorage["AG_parcours_filters"]
+// ✅ Ignore le menu de personnalisation en parcours (lance direct)
+// ✅ En fin d'étape : parent.postMessage({parcoursScore:{label,score,total}}, "*")
 // ===============================
 
+/* ===============================
+   CONSTANTES
+================================= */
 const MAX_SCORE = 3000;
 const TENTATIVE_COST = 150;
 const INDICE_COST = 300;
 
 const MIN_REQUIRED = 64;
+
+// Rounds en parcours (count)
 const ROUNDS_MIN = 1;
 const ROUNDS_MAX = 100;
 
-// ========== MENU + THEME ==========
-document.getElementById("back-to-menu")?.addEventListener("click", () => {
-  window.location.href = "../index.html";
-});
+// Clé config globale Parcours
+const PARCOURS_CFG_KEY = "AG_parcours_filters";
+
+/* ===============================
+   MODE PARCOURS (URL)
+================================= */
+const urlParams = new URLSearchParams(window.location.search);
+const IS_PARCOURS = urlParams.get("parcours") === "1";
+
+function clampInt(v, min, max, fallback) {
+  const n = parseInt(String(v ?? ""), 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+const PARCOURS_COUNT = IS_PARCOURS ? clampInt(urlParams.get("count"), ROUNDS_MIN, ROUNDS_MAX, 1) : 1;
+
+/* ===============================
+   THEME + MENU
+================================= */
+const backBtn = document.getElementById("back-to-menu");
+if (backBtn) {
+  if (IS_PARCOURS) {
+    // En parcours : on évite de casser le flow
+    backBtn.style.display = "none";
+  } else {
+    backBtn.addEventListener("click", () => {
+      window.location.href = "../index.html";
+    });
+  }
+}
 
 document.getElementById("themeToggle")?.addEventListener("click", () => {
   document.body.classList.toggle("light");
@@ -28,7 +59,9 @@ window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
 });
 
-// ========== TOOLTIP AIDE ==========
+/* ===============================
+   TOOLTIP AIDE
+================================= */
 document.addEventListener("pointerdown", (e) => {
   const wrap = e.target.closest(".info-wrap");
 
@@ -42,7 +75,20 @@ document.addEventListener("pointerdown", (e) => {
   document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
 });
 
-// ========== HELPERS ==========
+/* ===============================
+   HELPERS DATASET
+================================= */
+function normalizeAnimeList(json) {
+  if (Array.isArray(json)) return json;
+  if (json && Array.isArray(json.animes)) return json.animes;
+  return [];
+}
+
+function safeNum(x) {
+  const n = +x;
+  return Number.isFinite(n) ? n : 0;
+}
+
 function getDisplayTitle(a) {
   return (
     a.title_english ||
@@ -55,11 +101,11 @@ function getDisplayTitle(a) {
 }
 
 function getYear(a) {
-  const s = String(a.season || "").trim(); // ex: "spring 2013"
+  // ex: "spring 2013"
+  const s = String(a.season || "").trim();
   if (!s) return 0;
-  const parts = s.split(/\s+/);
-  const maybeYear = parseInt(parts[1] || parts[0] || "0", 10);
-  return Number.isFinite(maybeYear) ? maybeYear : 0;
+  const m = s.match(/(\d{4})/);
+  return m ? parseInt(m[1], 10) : 0;
 }
 
 function shuffleInPlace(arr) {
@@ -70,6 +116,9 @@ function shuffleInPlace(arr) {
   return arr;
 }
 
+/* ===============================
+   HELPERS UI PERSONNALISATION (NORMAL)
+================================= */
 function clampYearSliders() {
   const minEl = document.getElementById("yearMin");
   const maxEl = document.getElementById("yearMax");
@@ -109,7 +158,7 @@ function ensureDefaultTypes() {
   const active = pills.filter((b) => b.classList.contains("active"));
   if (active.length > 0) return;
 
-  // ✅ sécurité: si rien n'est sélectionné, on active TV + Movie
+  // sécurité: si rien n'est sélectionné, on active TV + Movie
   pills.forEach((b) => {
     const t = b.dataset.type;
     const should = t === "TV" || t === "Movie";
@@ -117,62 +166,53 @@ function ensureDefaultTypes() {
   });
 }
 
-// ========== MODE (prévu pour le futur) ==========
-let contentMode = "anime"; // seul mode actuel
+/* ===============================
+   MODE (prévu futur) — Anidle = anime only
+================================= */
+let contentMode = "anime";
 function initModeUI() {
-  // Supporte 2 formats possibles :
-  // 1) des boutons .pill avec data-mode dans un #modePills
-  // 2) des boutons avec ids #mode-anime / #mode-other
-  const modeBtns = Array.from(document.querySelectorAll('[data-mode]'));
-  const animeBtn = document.getElementById("mode-anime");
+  const modeBtns = Array.from(document.querySelectorAll("#modePills .pill[data-mode]"));
+  if (!modeBtns.length) return;
 
-  // Si rien dans le HTML, on ne fait rien
-  if (!modeBtns.length && !animeBtn) return;
+  modeBtns.forEach((b) => {
+    const m = b.dataset.mode;
+    setPillActive(b, m === contentMode);
+    if (b.disabled) b.setAttribute("aria-disabled", "true");
 
-  // Format data-mode
-  if (modeBtns.length) {
-    // default: anime actif si trouvé
-    modeBtns.forEach((b) => {
-      const m = b.dataset.mode;
-      setPillActive(b, m === contentMode);
-      if (b.disabled) b.setAttribute("aria-disabled", "true");
-      b.addEventListener("click", () => {
-        if (b.disabled) return;
-        const next = b.dataset.mode;
-        if (!next || next === contentMode) return;
-        contentMode = next;
-
-        modeBtns.forEach((x) => setPillActive(x, x.dataset.mode === contentMode));
-        updatePreview();
-      });
+    b.addEventListener("click", () => {
+      if (b.disabled) return;
+      const next = b.dataset.mode;
+      if (!next || next === contentMode) return;
+      contentMode = next;
+      modeBtns.forEach((x) => setPillActive(x, x.dataset.mode === contentMode));
+      updatePreview();
     });
-    return;
-  }
-
-  // Format ids
-  if (animeBtn) {
-    animeBtn.classList.add("active");
-    animeBtn.setAttribute("aria-pressed", "true");
-  }
+  });
 }
 
-// ========== GLOBAL DATA ==========
+/* ===============================
+   GLOBAL DATA
+================================= */
 let allAnimes = [];
-let filteredBase = []; // pool après personnalisation
+let filteredBase = []; // pool après personnalisation (normal ou parcours)
 let targetAnime = null;
 
-// ========== MULTI-ROUNDS STATE ==========
+/* ===============================
+   MULTI-ROUNDS STATE
+================================= */
 let totalRounds = 1;
 let currentRound = 1; // 1..totalRounds
 let totalScore = 0;
 
-// ========== GAME STATE ==========
+/* ===============================
+   GAME STATE
+================================= */
 let attemptCount = 0;
 let gameOver = false;
 
-// -- Indices state --
 let indicesActivated = { studio: false, saison: false, genres: false, score: false };
 let indicesAvailable = { studio: false, saison: false, genres: false, score: false };
+
 let indicesGenresFound = [];
 let indicesYearAtActivation = null;
 let indicesStudioAtActivation = null;
@@ -180,39 +220,124 @@ let indicesScoreRange = null;
 let indicesGenresFoundSet = new Set();
 let indicesScoreRangeActivation = [0, 0];
 
-// ========== UI TOGGLE (perso vs jeu) ==========
+/* ===============================
+   UI TOGGLE (perso vs jeu)
+================================= */
 function showCustomization() {
   document.body.classList.remove("game-started");
 }
-
 function showGame() {
   document.body.classList.add("game-started");
 }
 
-// ========== LOAD DATA ==========
-fetch("../data/licenses_only.json")
-  .then((r) => r.json())
-  .then((data) => {
-    allAnimes = (Array.isArray(data) ? data : []).map((a) => {
-      const title = getDisplayTitle(a);
-      return {
-        ...a,
-        _title: title,
-        _titleLower: title.toLowerCase(),
-        _year: getYear(a),
-        _members: Number.isFinite(+a.members) ? +a.members : 0,
-        _score: Number.isFinite(+a.score) ? +a.score : 0,
-        _type: a.type || "Unknown",
-      };
-    });
+/* ===============================
+   PARCOURS CONFIG (global)
+================================= */
+function loadParcoursConfig() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_CFG_KEY);
+    if (!raw) return null;
+    const cfg = JSON.parse(raw);
+    return cfg && typeof cfg === "object" ? cfg : null;
+  } catch {
+    return null;
+  }
+}
 
-    initPersonalisationUI();
-    updatePreview();
-    showCustomization();
-  })
-  .catch((e) => alert("Erreur chargement dataset: " + e.message));
+function getParcoursConfigWithFallback() {
+  const cfg = loadParcoursConfig() || {};
+  const yearMin = Number.isFinite(+cfg.yearMin) ? +cfg.yearMin : 1950;
+  const yearMax = Number.isFinite(+cfg.yearMax) ? +cfg.yearMax : 2026;
 
-// ========== PERSONALISATION UI ==========
+  const types = Array.isArray(cfg.types) ? cfg.types.filter(Boolean) : [];
+  const safeTypes = types.length ? types : ["TV", "Movie"];
+
+  return {
+    popPercent: Number.isFinite(+cfg.popPercent) ? +cfg.popPercent : 30,
+    scorePercent: Number.isFinite(+cfg.scorePercent) ? +cfg.scorePercent : 100,
+    yearMin: Math.min(yearMin, yearMax),
+    yearMax: Math.max(yearMin, yearMax),
+    types: safeTypes,
+  };
+}
+
+/* ===============================
+   APPLY FILTERS
+================================= */
+function applyFiltersFromUI() {
+  const popPercent = parseInt(document.getElementById("popPercent")?.value || "30", 10);
+  const scorePercent = parseInt(document.getElementById("scorePercent")?.value || "100", 10);
+  const yearMin = parseInt(document.getElementById("yearMin")?.value || "1950", 10);
+  const yearMax = parseInt(document.getElementById("yearMax")?.value || "2026", 10);
+
+  const allowedTypes = [...document.querySelectorAll(".pill[data-type].active")].map((b) => b.dataset.type);
+  if (!allowedTypes.length) return [];
+
+  return applyFiltersCore({
+    popPercent,
+    scorePercent,
+    yearMin: Math.min(yearMin, yearMax),
+    yearMax: Math.max(yearMin, yearMax),
+    types: allowedTypes,
+  });
+}
+
+function applyFiltersFromConfig(cfg) {
+  const popPercent = clampInt(cfg.popPercent, 5, 100, 30);
+  const scorePercent = clampInt(cfg.scorePercent, 5, 100, 100);
+  const yearMin = clampInt(cfg.yearMin, 1900, 2100, 1950);
+  const yearMax = clampInt(cfg.yearMax, 1900, 2100, 2026);
+  const types = Array.isArray(cfg.types) && cfg.types.length ? cfg.types : ["TV", "Movie"];
+
+  return applyFiltersCore({
+    popPercent,
+    scorePercent,
+    yearMin: Math.min(yearMin, yearMax),
+    yearMax: Math.max(yearMin, yearMax),
+    types,
+  });
+}
+
+function applyFiltersCore({ popPercent, scorePercent, yearMin, yearMax, types }) {
+  if (!types || !types.length) return [];
+
+  // 1) année + type
+  let pool = allAnimes.filter((a) => a._year >= yearMin && a._year <= yearMax && types.includes(a._type));
+
+  // 2) popularité top %
+  pool.sort((a, b) => b._members - a._members);
+  pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
+
+  // 3) score top %
+  pool.sort((a, b) => b._score - a._score);
+  pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
+
+  return pool;
+}
+
+/* ===============================
+   PREVIEW COUNT (NORMAL)
+================================= */
+function updatePreview() {
+  const preview = document.getElementById("previewCount");
+  const btn = document.getElementById("applyFiltersBtn");
+
+  ensureDefaultTypes();
+  const pool = applyFiltersFromUI();
+  const ok = pool.length >= MIN_REQUIRED;
+
+  if (preview) {
+    preview.textContent = `📚 Titres disponibles : ${pool.length} ${ok ? "(OK)" : `(Min ${MIN_REQUIRED})`}`;
+    preview.classList.toggle("good", ok);
+    preview.classList.toggle("bad", !ok);
+  }
+
+  if (btn) btn.disabled = !ok;
+}
+
+/* ===============================
+   INIT PERSONNALISATION (NORMAL)
+================================= */
 function initPersonalisationUI() {
   initModeUI();
 
@@ -226,12 +351,10 @@ function initPersonalisationUI() {
   const yMinVal = document.getElementById("yearMinVal");
   const yMaxVal = document.getElementById("yearMaxVal");
 
-  // rounds (1..100)
+  // rounds (normal)
   const roundInput = document.getElementById("roundCount");
   if (roundInput) {
-    roundInput.addEventListener("input", () => {
-      clampRoundsValue();
-    });
+    roundInput.addEventListener("input", () => clampRoundsValue());
     clampRoundsValue();
   }
 
@@ -249,32 +372,26 @@ function initPersonalisationUI() {
   // Pills types
   document.querySelectorAll(".pill[data-type]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      // toggle
       const next = !btn.classList.contains("active");
       setPillActive(btn, next);
 
-      // si on a tout désactivé -> sécurité (TV + Movie)
       const active = document.querySelectorAll(".pill[data-type].active");
-      if (active.length === 0) {
-        ensureDefaultTypes();
-      }
+      if (active.length === 0) ensureDefaultTypes();
 
       updatePreview();
     });
   });
 
-  // ✅ Garantit Movie par défaut (et TV) même si HTML n’a pas été mis à jour
   ensureDefaultTypes();
 
   document.getElementById("applyFiltersBtn")?.addEventListener("click", () => {
-    filteredBase = applyFilters();
+    filteredBase = applyFiltersFromUI();
 
     if (filteredBase.length < MIN_REQUIRED) {
       alert(`Pas assez de titres pour lancer (${filteredBase.length}/${MIN_REQUIRED}).`);
       return;
     }
 
-    // multi-rounds: session
     totalRounds = clampRoundsValue();
     currentRound = 1;
     totalScore = 0;
@@ -284,52 +401,77 @@ function initPersonalisationUI() {
   });
 
   syncLabels();
+  showCustomization();
 }
 
-// ========== APPLY FILTERS ==========
-function applyFilters() {
-  // (contentMode prévu pour futur; pour l’instant: anime)
-  const popPercent = parseInt(document.getElementById("popPercent")?.value || "25", 10);
-  const scorePercent = parseInt(document.getElementById("scorePercent")?.value || "25", 10);
-  const yearMin = parseInt(document.getElementById("yearMin")?.value || "1950", 10);
-  const yearMax = parseInt(document.getElementById("yearMax")?.value || "2026", 10);
+/* ===============================
+   INIT PARCOURS (GLOBAL)
+================================= */
+function showParcoursConfigError(msg) {
+  // On reste côté "jeu" pour afficher un message visible
+  showGame();
 
-  const allowedTypes = [...document.querySelectorAll(".pill[data-type].active")].map((b) => b.dataset.type);
-  if (allowedTypes.length === 0) return [];
+  const container = document.getElementById("successContainer") || document.getElementById("results") || document.body;
+  if (!container) return;
 
-  // 1) année + type
-  let pool = allAnimes.filter((a) => a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type));
+  const html = `
+    <div style="margin:18px auto; max-width:720px; text-align:center; padding:18px; border-radius:14px;
+                background: rgba(0,0,0,0.25); border:1px solid rgba(255,80,80,0.45);">
+      <div style="font-size:1.6rem; font-weight:900; margin-bottom:10px;">❌ Parcours impossible</div>
+      <div style="opacity:0.95; line-height:1.35;">
+        ${msg}
+      </div>
+      <div style="margin-top:14px; display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
+        <button class="menu-btn" id="parcoursGoBackBtn" style="padding:0.75rem 1.2rem;">↩️ Retour au Parcours</button>
+      </div>
+    </div>
+  `;
 
-  // 2) popularité top %
-  pool.sort((a, b) => b._members - a._members);
-  pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
-
-  // 3) score top %
-  pool.sort((a, b) => b._score - a._score);
-  pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
-
-  return pool;
-}
-
-// ========== PREVIEW COUNT ==========
-function updatePreview() {
-  const preview = document.getElementById("previewCount");
-  const btn = document.getElementById("applyFiltersBtn");
-
-  ensureDefaultTypes();
-  const pool = applyFilters();
-  const ok = pool.length >= MIN_REQUIRED;
-
-  if (preview) {
-    preview.textContent = `📚 Titres disponibles : ${pool.length} ${ok ? "(OK)" : "(Min 64)"}`;
-    preview.classList.toggle("good", ok);
-    preview.classList.toggle("bad", !ok);
+  if (container === document.body) {
+    document.body.insertAdjacentHTML("afterbegin", html);
+  } else {
+    container.innerHTML = html;
+    if (container.style) container.style.display = "block";
   }
 
-  if (btn) btn.disabled = !ok;
+  const btn = document.getElementById("parcoursGoBackBtn");
+  if (btn) {
+    btn.onclick = () => {
+      // depuis /Anidle/ => ../Parcours/ (si ton dossier s'appelle autrement, adapte ici)
+      try {
+        window.top.location.href = "../Parcours/index.html";
+      } catch {
+        window.location.href = "../Parcours/index.html";
+      }
+    };
+  }
 }
 
-// ========== GAME INIT ==========
+function initParcoursRun() {
+  // On saute la personnalisation locale
+  // (body.game-started cache #custom-panel et affiche #game-panel via ton CSS)
+  const cfg = getParcoursConfigWithFallback();
+  filteredBase = applyFiltersFromConfig(cfg);
+
+  if (filteredBase.length < MIN_REQUIRED) {
+    showParcoursConfigError(
+      `Ta personnalisation globale donne seulement <b>${filteredBase.length}</b> titres pour Anidle (min ${MIN_REQUIRED}).<br>
+       Ajuste la personnalisation globale du Parcours (années/types/popularité/score) puis relance.`
+    );
+    return;
+  }
+
+  totalRounds = PARCOURS_COUNT;
+  currentRound = 1;
+  totalScore = 0;
+
+  showGame();
+  startNewGame();
+}
+
+/* ===============================
+   GAME INIT
+================================= */
 function resetScoreBar() {
   const scoreBar = document.getElementById("score-bar");
   const scoreBarLabel = document.getElementById("score-bar-label");
@@ -340,7 +482,6 @@ function resetScoreBar() {
 function startNewGame() {
   if (!filteredBase.length) return;
 
-  // choisit un anime mystère DANS filteredBase
   targetAnime = filteredBase[Math.floor(Math.random() * filteredBase.length)];
 
   attemptCount = 0;
@@ -348,6 +489,7 @@ function startNewGame() {
 
   indicesActivated = { studio: false, saison: false, genres: false, score: false };
   indicesAvailable = { studio: false, saison: false, genres: false, score: false };
+
   indicesGenresFound = [];
   indicesGenresFoundSet = new Set();
   indicesYearAtActivation = null;
@@ -386,7 +528,9 @@ function startNewGame() {
   updateScoreBar();
 }
 
-// ========== INDICES BUTTONS ==========
+/* ===============================
+   INDICES BUTTONS
+================================= */
 document.getElementById("btnIndiceStudio")?.addEventListener("click", function () {
   if (!indicesAvailable.studio || indicesActivated.studio) return;
   indicesActivated.studio = true;
@@ -427,14 +571,16 @@ document.getElementById("btnIndiceScore")?.addEventListener("click", function ()
   updateScoreBar();
 });
 
-// ========== SCORE BAR ==========
+/* ===============================
+   SCORE BAR
+================================= */
 function updateScoreBar() {
   const scoreBar = document.getElementById("score-bar");
   const scoreBarLabel = document.getElementById("score-bar-label");
 
   const indiceCount = Object.values(indicesActivated).filter(Boolean).length;
 
-  // 1ère tentative ne retire pas 150 (comme ton ancien code)
+  // 1ère tentative ne retire pas 150
   const tentative = Math.max(0, attemptCount - 1);
 
   let score = MAX_SCORE - tentative * TENTATIVE_COST - indiceCount * INDICE_COST;
@@ -455,7 +601,9 @@ function updateScoreBar() {
   }
 }
 
-// ========== AUTOCOMPLETE (top 5) ==========
+/* ===============================
+   AUTOCOMPLETE (top 5)
+================================= */
 document.getElementById("animeInput")?.addEventListener("input", function () {
   if (gameOver) return;
 
@@ -481,7 +629,6 @@ document.getElementById("animeInput")?.addEventListener("input", function () {
   });
 });
 
-// Enter = valider
 document.getElementById("animeInput")?.addEventListener("keydown", function (e) {
   if (e.key === "Enter") {
     e.preventDefault();
@@ -489,7 +636,9 @@ document.getElementById("animeInput")?.addEventListener("keydown", function (e) 
   }
 });
 
-// ========== GUESS ==========
+/* ===============================
+   GUESS
+================================= */
 function guessAnime() {
   if (gameOver) return;
 
@@ -612,7 +761,9 @@ function guessAnime() {
   } else {
     cellYear.classList.add("red");
     cellYear.textContent =
-      guessedAnime._year < (targetAnime?._year || 0) ? `🔼 ${guessedAnime._year}` : `${guessedAnime._year} 🔽`;
+      guessedAnime._year < (targetAnime?._year || 0)
+        ? `🔼 ${guessedAnime._year}`
+        : `${guessedAnime._year} 🔽`;
   }
   row.appendChild(cellYear);
 
@@ -637,8 +788,7 @@ function guessAnime() {
     const targetSet = new Set(allTarget.map(norm).filter(Boolean));
     const common = [...guessedSet].filter((x) => targetSet.has(x));
 
-    const isExactSame =
-      guessedSet.size === targetSet.size && [...guessedSet].every((x) => targetSet.has(x));
+    const isExactSame = guessedSet.size === targetSet.size && [...guessedSet].every((x) => targetSet.has(x));
 
     if (isExactSame) cellGenres.classList.add("green");
     else if (common.length > 0) cellGenres.classList.add("orange");
@@ -690,7 +840,9 @@ function guessAnime() {
   }
 }
 
-// ========== AIDE LIST (FILTRÉE PAR INDICES + RANDOM) ==========
+/* ===============================
+   AIDE LIST (filtrée par indices + random)
+================================= */
 function updateAideList() {
   const aideDiv = document.getElementById("aideContainer");
   if (!aideDiv) return;
@@ -700,18 +852,15 @@ function updateAideList() {
   if (indicesActivated.studio && indicesStudioAtActivation) {
     filtered = filtered.filter((a) => (a.studio || "") === indicesStudioAtActivation);
   }
-
   if (indicesActivated.saison && indicesYearAtActivation) {
     filtered = filtered.filter((a) => String(a._year) === String(indicesYearAtActivation));
   }
-
   if (indicesActivated.genres && indicesGenresFound.length > 0) {
     filtered = filtered.filter((a) => {
       const allG = [...(a.genres || []), ...(a.themes || [])];
       return indicesGenresFound.every((x) => allG.includes(x));
     });
   }
-
   if (indicesActivated.score && indicesScoreRange) {
     filtered = filtered.filter((a) => a._score >= indicesScoreRange[0] && a._score <= indicesScoreRange[1]);
   }
@@ -734,7 +883,9 @@ window.selectFromAide = function (title) {
   guessAnime();
 };
 
-// ========== CONFETTIS ==========
+/* ===============================
+   CONFETTIS
+================================= */
 function launchFireworks() {
   const canvas = document.getElementById("fireworks");
   if (!canvas) return;
@@ -781,13 +932,34 @@ function launchFireworks() {
   animate();
 }
 
-// ========== VICTOIRE + MULTI-ROUNDS ==========
+/* ===============================
+   VICTOIRE + MULTI-ROUNDS + PARCOURS
+================================= */
 function computeRoundScore() {
   const indiceCount = Object.values(indicesActivated).filter(Boolean).length;
   const tentative = Math.max(0, attemptCount - 1);
   let score = MAX_SCORE - tentative * TENTATIVE_COST - indiceCount * INDICE_COST;
   score = Math.max(0, Math.min(score, MAX_SCORE));
   return score;
+}
+
+let parcoursPosted = false;
+function postParcoursScore() {
+  if (parcoursPosted) return;
+  parcoursPosted = true;
+
+  const payload = {
+    label: "Anidle",
+    score: totalScore,
+    total: totalRounds * MAX_SCORE,
+  };
+
+  try {
+    // Le parent écoute e.data.parcoursScore
+    window.parent?.postMessage({ parcoursScore: payload }, "*");
+  } catch (e) {
+    console.error("postMessage failed:", e);
+  }
 }
 
 function showSuccessMessage() {
@@ -798,6 +970,10 @@ function showSuccessMessage() {
   totalScore += roundScore;
 
   const hasNext = currentRound < totalRounds;
+
+  const ctaLabel = hasNext
+    ? "➡️ Round suivant"
+    : (IS_PARCOURS ? "✅ Continuer le parcours" : "✅ Terminer");
 
   container.innerHTML = `
     <div id="winMessage" style="margin-bottom: 18px; font-size: 2rem; font-weight: bold; text-align: center;">
@@ -815,7 +991,7 @@ function showSuccessMessage() {
 
       <div style="margin-top:14px; display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
         <button id="nextRoundBtn" class="menu-btn" style="padding:0.75rem 1.2rem; font-size:1.05rem;">
-          ${hasNext ? "➡️ Round suivant" : "✅ Terminer"}
+          ${ctaLabel}
         </button>
       </div>
     </div>
@@ -825,25 +1001,74 @@ function showSuccessMessage() {
   container.scrollIntoView({ behavior: "smooth", block: "start" });
 
   const nextBtn = document.getElementById("nextRoundBtn");
-  if (nextBtn) {
-    nextBtn.onclick = () => {
-      if (currentRound < totalRounds) {
-        currentRound += 1;
-        startNewGame(); // même personnalisation
-      } else {
-        // fin session => retour personnalisation
-        showCustomization();
+  if (!nextBtn) return;
 
-        const results = document.getElementById("results");
-        const aide = document.getElementById("aideContainer");
-        const suggestions = document.getElementById("suggestions");
-        const input = document.getElementById("animeInput");
+  nextBtn.onclick = () => {
+    if (currentRound < totalRounds) {
+      currentRound += 1;
+      startNewGame();
+      return;
+    }
 
-        if (results) results.innerHTML = "";
-        if (aide) aide.innerHTML = "";
-        if (suggestions) suggestions.innerHTML = "";
-        if (input) input.value = "";
-      }
-    };
-  }
+    // Fin de session
+    if (IS_PARCOURS) {
+      // On envoie le score au parent pour passer au jeu suivant
+      postParcoursScore();
+      // Optionnel : on désactive tout
+      const input = document.getElementById("animeInput");
+      if (input) input.disabled = true;
+      nextBtn.disabled = true;
+      nextBtn.textContent = "✅ Envoyé";
+      return;
+    }
+
+    // Mode normal : retour personnalisation
+    showCustomization();
+
+    const results = document.getElementById("results");
+    const aide = document.getElementById("aideContainer");
+    const suggestions = document.getElementById("suggestions");
+    const input = document.getElementById("animeInput");
+    if (results) results.innerHTML = "";
+    if (aide) aide.innerHTML = "";
+    if (suggestions) suggestions.innerHTML = "";
+    if (input) input.value = "";
+  };
 }
+
+/* ===============================
+   LOAD DATASET + BOOT
+================================= */
+fetch("../data/licenses_only.json")
+  .then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status} - ${r.statusText}`);
+    return r.json();
+  })
+  .then((json) => {
+    const raw = normalizeAnimeList(json);
+
+    allAnimes = (Array.isArray(raw) ? raw : []).map((a) => {
+      const title = getDisplayTitle(a);
+      return {
+        ...a,
+        _title: title,
+        _titleLower: String(title).toLowerCase(),
+        _year: getYear(a),
+        _members: safeNum(a.members),
+        _score: safeNum(a.score),
+        _type: a.type || "Unknown",
+      };
+    });
+
+    if (IS_PARCOURS) {
+      initParcoursRun();
+    } else {
+      initPersonalisationUI();
+      updatePreview();
+      showCustomization();
+    }
+  })
+  .catch((e) => {
+    alert("Erreur chargement dataset: " + e.message);
+    console.error(e);
+  });
