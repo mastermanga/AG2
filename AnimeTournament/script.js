@@ -1,5 +1,9 @@
 // =======================
-// Anime Tournament — script.js (COMPLET + Thème contenu + Songs snippet 45s/20s)
+// Anime Tournament — script.js (COMPLET + MODIFS PARCOURS)
+// - Ajout support "Parcours" : lecture config via URL (?from=parcours&autostart=1...) et/ou localStorage
+// - Si autostart/parcours => applique la personnalisation globale + démarre direct (menu perso caché)
+// - Back-to-menu peut rediriger vers return=...
+// - Hook fin de mini-jeu: dispatch CustomEvent + postMessage (utile pour le parcours)
 // - Thème contenu (pool EXACT 64) pour choisir les 32 items
 // - "Libre" a la même chance que chaque autre critère (anime: 1/6 ; songs: 1/7 car + critères)
 // - Si un critère ne peut pas produire 64 => fallback "Libre"
@@ -25,6 +29,183 @@ const SONG_PLAY_SEC = 20;
 // retries vidéos
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const LOAD_TIMEOUT_MS = 6000;
+
+// =======================
+// PARCOURS SUPPORT (NEW)
+// =======================
+const URL_PARAMS = new URLSearchParams(window.location.search);
+
+function truthyParam(v) {
+  if (v == null) return false;
+  const s = String(v).trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "y" || s === "on";
+}
+
+function detectParcours() {
+  // plusieurs alias possibles
+  if (truthyParam(URL_PARAMS.get("from")) && URL_PARAMS.get("from").toLowerCase() === "parcours") return true;
+  if (truthyParam(URL_PARAMS.get("parcours"))) return true;
+  if (truthyParam(URL_PARAMS.get("autostart"))) return true;
+
+  // fallback localStorage (plusieurs clés possibles)
+  const keys = [
+    "AG2_PARCOURS_ACTIVE",
+    "ag2_parcours_active",
+    "parcours_active",
+    "AG2_PARCOURS",
+  ];
+  for (const k of keys) {
+    const v = localStorage.getItem(k);
+    if (truthyParam(v)) return true;
+  }
+  return false;
+}
+
+const IS_PARCOURS = detectParcours();
+
+// return URL (parcours)
+function getReturnUrl() {
+  const fromUrl = URL_PARAMS.get("return");
+  if (fromUrl) {
+    try {
+      return decodeURIComponent(fromUrl);
+    } catch {
+      return fromUrl;
+    }
+  }
+  const lsKeys = ["AG2_PARCOURS_RETURN", "ag2_parcours_return", "parcours_return"];
+  for (const k of lsKeys) {
+    const v = localStorage.getItem(k);
+    if (v && String(v).trim()) return v;
+  }
+  return "../index.html";
+}
+const RETURN_URL = getReturnUrl();
+
+// config global : URL > localStorage > null
+function parseCsvParam(p) {
+  if (!p) return [];
+  return String(p)
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function readConfigFromUrl() {
+  const modeParam = (URL_PARAMS.get("mode") || URL_PARAMS.get("tournamentMode") || "").trim().toLowerCase();
+  const mode =
+    modeParam === "songs" || modeParam === "song" || modeParam === "musique" ? "songs" :
+    modeParam === "anime" || modeParam === "animes" ? "anime" :
+    null;
+
+  const pop = parseInt(URL_PARAMS.get("pop") || URL_PARAMS.get("popPercent") || "", 10);
+  const score = parseInt(URL_PARAMS.get("score") || URL_PARAMS.get("scorePercent") || "", 10);
+  const yearMin = parseInt(URL_PARAMS.get("yearMin") || URL_PARAMS.get("ymin") || "", 10);
+  const yearMax = parseInt(URL_PARAMS.get("yearMax") || URL_PARAMS.get("ymax") || "", 10);
+
+  const types = parseCsvParam(URL_PARAMS.get("types"));
+  const songs = parseCsvParam(URL_PARAMS.get("songs") || URL_PARAMS.get("songKinds"));
+
+  const hasSomething =
+    mode !== null ||
+    Number.isFinite(pop) ||
+    Number.isFinite(score) ||
+    Number.isFinite(yearMin) ||
+    Number.isFinite(yearMax) ||
+    types.length ||
+    songs.length;
+
+  if (!hasSomething) return null;
+
+  return {
+    source: "url",
+    autostart: truthyParam(URL_PARAMS.get("autostart")) || truthyParam(URL_PARAMS.get("parcours")),
+    mode,
+    popPercent: Number.isFinite(pop) ? pop : null,
+    scorePercent: Number.isFinite(score) ? score : null,
+    yearMin: Number.isFinite(yearMin) ? yearMin : null,
+    yearMax: Number.isFinite(yearMax) ? yearMax : null,
+    types,      // ex: ["TV","Movie"]
+    songKinds: songs, // ex: ["opening","ending","insert"] ou ["OP","ED","IN"]
+  };
+}
+
+function safeJsonParse(s) {
+  try { return JSON.parse(s); } catch { return null; }
+}
+
+function normalizeConfigObject(raw) {
+  if (!raw || typeof raw !== "object") return null;
+
+  const modeParam = String(raw.mode || raw.tournamentMode || raw.gameMode || "").trim().toLowerCase();
+  const mode =
+    modeParam === "songs" || modeParam === "song" || modeParam === "musique" ? "songs" :
+    modeParam === "anime" || modeParam === "animes" ? "anime" :
+    null;
+
+  const pop = Number.isFinite(+raw.popPercent) ? +raw.popPercent : (Number.isFinite(+raw.pop) ? +raw.pop : null);
+  const score = Number.isFinite(+raw.scorePercent) ? +raw.scorePercent : (Number.isFinite(+raw.score) ? +raw.score : null);
+  const yearMin = Number.isFinite(+raw.yearMin) ? +raw.yearMin : (Number.isFinite(+raw.yMin) ? +raw.yMin : null);
+  const yearMax = Number.isFinite(+raw.yearMax) ? +raw.yearMax : (Number.isFinite(+raw.yMax) ? +raw.yMax : null);
+
+  const types = Array.isArray(raw.types) ? raw.types : (Array.isArray(raw.allowedTypes) ? raw.allowedTypes : []);
+  const songKinds = Array.isArray(raw.songKinds) ? raw.songKinds : (Array.isArray(raw.allowedSongs) ? raw.allowedSongs : []);
+
+  return {
+    source: "localStorage",
+    autostart: !!raw.autostart || !!raw.parcours,
+    mode,
+    popPercent: pop,
+    scorePercent: score,
+    yearMin,
+    yearMax,
+    types: types.map(String),
+    songKinds: songKinds.map(String),
+  };
+}
+
+function readConfigFromLocalStorage() {
+  // plusieurs clés candidates (tu peux garder celle que tu veux côté parcours)
+  const keys = [
+    "AG2_PERSONALISATION",
+    "AG2_PERSONNALISATION",
+    "AG2_GLOBAL_PERSONALISATION",
+    "AG2_PARCOURS_PERSONALISATION",
+    "parcoursPersonalisation",
+    "parcours_personalisation",
+    "AG2_PARCOURS_CONFIG",
+    "parcoursConfig",
+  ];
+
+  for (const k of keys) {
+    const v = localStorage.getItem(k);
+    if (!v) continue;
+    const raw = safeJsonParse(v);
+    const cfg = normalizeConfigObject(raw);
+    if (cfg) return cfg;
+  }
+  return null;
+}
+
+function readGlobalConfig() {
+  const urlCfg = readConfigFromUrl();
+  if (urlCfg) return urlCfg;
+  const lsCfg = readConfigFromLocalStorage();
+  if (lsCfg) return lsCfg;
+  return null;
+}
+
+const GLOBAL_CFG = readGlobalConfig();
+
+function notifyParcoursFinished(detail) {
+  try {
+    window.dispatchEvent(new CustomEvent("ag2:minigame:finished", { detail }));
+  } catch {}
+  try {
+    // utile si le mini-jeu est dans une iframe
+    window.parent?.postMessage({ type: "ag2:minigame:finished", detail }, "*");
+  } catch {}
+}
 
 // =======================
 // GLOBAL STATE
@@ -117,7 +298,8 @@ function round1(x) {
 // BASIC UI
 // =======================
 document.getElementById("back-to-menu")?.addEventListener("click", () => {
-  window.location.href = "../index.html";
+  // Parcours: possibilité de retour dédié
+  window.location.href = RETURN_URL || "../index.html";
 });
 
 document.getElementById("themeToggle")?.addEventListener("click", () => {
@@ -379,6 +561,67 @@ function ensureDefaultSongs() {
 }
 
 // =======================
+// APPLY GLOBAL CFG TO UI (NEW)
+// =======================
+function applyConfigToUI(cfg) {
+  if (!cfg) return;
+
+  // Mode
+  if (cfg.mode === "anime" || cfg.mode === "songs") {
+    mode = cfg.mode;
+    syncModeButtons();
+  }
+
+  // sliders
+  const popEl = document.getElementById("popPercent");
+  const scoreEl = document.getElementById("scorePercent");
+  const yMinEl = document.getElementById("yearMin");
+  const yMaxEl = document.getElementById("yearMax");
+
+  if (popEl && Number.isFinite(+cfg.popPercent)) popEl.value = String(clamp(+cfg.popPercent, 5, 100));
+  if (scoreEl && Number.isFinite(+cfg.scorePercent)) scoreEl.value = String(clamp(+cfg.scorePercent, 5, 100));
+  if (yMinEl && Number.isFinite(+cfg.yearMin)) yMinEl.value = String(+cfg.yearMin);
+  if (yMaxEl && Number.isFinite(+cfg.yearMax)) yMaxEl.value = String(+cfg.yearMax);
+
+  // types
+  const types = (Array.isArray(cfg.types) ? cfg.types : []).map((x) => String(x).trim());
+  const typePills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
+  if (typePills.length && types.length) {
+    typePills.forEach((b) => {
+      const t = String(b.dataset.type || "").trim();
+      const on = types.some((x) => x.toLowerCase() === t.toLowerCase());
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+  ensureDefaultTypes();
+
+  // songs kinds: accepte ["opening","ending","insert"] ou ["OP","ED","IN"]
+  const songKindsRaw = (Array.isArray(cfg.songKinds) ? cfg.songKinds : []).map((x) => String(x).trim().toLowerCase());
+  const normalizeSongKind = (k) => {
+    if (k === "op" || k === "opening" || k === "openings") return "opening";
+    if (k === "ed" || k === "ending" || k === "endings") return "ending";
+    if (k === "in" || k === "insert" || k === "inserts") return "insert";
+    return null;
+  };
+  const songKinds = songKindsRaw.map(normalizeSongKind).filter(Boolean);
+
+  const songPills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
+  if (songPills.length && songKinds.length) {
+    songPills.forEach((b) => {
+      const s = String(b.dataset.song || "").trim().toLowerCase();
+      const on = songKinds.includes(s);
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+  ensureDefaultSongs();
+
+  // clamp + refresh labels
+  clampYearSliders();
+}
+
+// =======================
 // UI READ
 // =======================
 function readOptions() {
@@ -407,13 +650,20 @@ function readOptions() {
   if (yMinVal) yMinVal.textContent = String(yMin);
   if (yMaxVal) yMaxVal.textContent = String(yMax);
 
-  const types = new Set(
+  let types = new Set(
     [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type)
   );
+  // fallback si UI absente
+  if (!types.size) types = new Set(["TV", "Movie"]);
 
   const songKinds = new Set(
     [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song)
   );
+  // fallback si UI absente
+  const hasSongUI = document.querySelectorAll("#songPills .pill").length > 0;
+  const incOP = hasSongUI ? songKinds.has("opening") : true;
+  const incED = hasSongUI ? songKinds.has("ending") : false;
+  const incIN = hasSongUI ? songKinds.has("insert") : false;
 
   return {
     pop,
@@ -421,9 +671,9 @@ function readOptions() {
     yMin,
     yMax,
     types,
-    incOP: songKinds.has("opening"),
-    incED: songKinds.has("ending"),
-    incIN: songKinds.has("insert"),
+    incOP,
+    incED,
+    incIN,
   };
 }
 
@@ -568,7 +818,6 @@ function popularityTopPercent(pool, seedItem, getPop) {
   const idx = sorted.findIndex(x => (x?._key && seedItem?._key && x._key === seedItem._key));
   const rank = (idx >= 0) ? (idx + 1) : 1;
   const raw = Math.ceil((rank / Math.max(1, sorted.length)) * 100);
-  // arrondi "sympa" en pas de 5
   const pct = clamp(Math.round(raw / 5) * 5, 5, 100);
   return pct;
 }
@@ -626,8 +875,6 @@ function pickContentTheme64(basePool, modeLocal) {
   const getSongSeason = (it) => String(it?.songSeason || "").trim();
   const getArtistsArr = (it) => Array.isArray(it?.artistsArr) ? it.artistsArr : [];
 
-  // On essaye des seeds jusqu'à trouver un pool >= 64,
-  // sinon on tombe sur Libre.
   const MAX_TRIES = 80;
 
   for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
@@ -640,47 +887,29 @@ function pickContentTheme64(basePool, modeLocal) {
     const seed = basePool[Math.floor(Math.random() * basePool.length)];
     if (!seed) continue;
 
-    // YEAR (anime)
     if (crit === "YEAR") {
       const y = getYear(seed);
       if (!y) continue;
       const pool = basePool.filter(it => getYear(it) === y);
       if (pool.length < THEME_POOL_SIZE) continue;
-      return {
-        crit,
-        label: `Année : ${y}`,
-        pool: pickUniqueN(pool, THEME_POOL_SIZE),
-      };
+      return { crit, label: `Année : ${y}`, pool: pickUniqueN(pool, THEME_POOL_SIZE) };
     }
 
-    // SONG SEASON (songs)
     if (crit === "SONG_SEASON" && modeLocal === "songs") {
       const season = getSongSeason(seed);
       if (!season) continue;
       const pool = basePool.filter(it => norm(getSongSeason(it)) === norm(season));
       if (pool.length < THEME_POOL_SIZE) continue;
-      return {
-        crit,
-        label: `Saison song : ${season}`,
-        pool: pickUniqueN(pool, THEME_POOL_SIZE),
-      };
+      return { crit, label: `Saison song : ${season}`, pool: pickUniqueN(pool, THEME_POOL_SIZE) };
     }
 
-    // STUDIO (anime + songs): pool agrandi par cumul de studios
     if (crit === "STUDIO") {
       const built = buildStudioPool64(basePool, getStudio, THEME_POOL_SIZE);
       if (!built) continue;
-
-      // label = premier studio du seed (simple + lisible)
       const st = getStudio(seed) || "Studio";
-      return {
-        crit,
-        label: `Studio : ${st}`,
-        pool: built,
-      };
+      return { crit, label: `Studio : ${st}`, pool: built };
     }
 
-    // TAG (anime + songs) -> tags = genres+themes (anime)
     if (crit === "TAG") {
       const tags = Array.isArray(seed._tags) ? seed._tags : (Array.isArray(seed.tags) ? seed.tags : []);
       if (!tags.length) continue;
@@ -688,33 +917,22 @@ function pickContentTheme64(basePool, modeLocal) {
       if (!t) continue;
       const pool = basePool.filter(it => hasTag(it, t));
       if (pool.length < THEME_POOL_SIZE) continue;
-      return {
-        crit,
-        label: `Tag : ${t}`,
-        pool: pickUniqueN(pool, THEME_POOL_SIZE),
-      };
+      return { crit, label: `Tag : ${t}`, pool: pickUniqueN(pool, THEME_POOL_SIZE) };
     }
 
-    // SCORE_NEAR (anime + songs)
     if (crit === "SCORE_NEAR") {
       const sc = getScore(seed);
       if (!sc) continue;
       const pool = nearbyPool(basePool, getScore, sc, THEME_POOL_SIZE);
       if (pool.length < THEME_POOL_SIZE) continue;
 
-      // delta = max distance dans le pool
       let delta = 0;
       for (const it of pool) delta = Math.max(delta, Math.abs(getScore(it) - sc));
       delta = round1(delta);
 
-      return {
-        crit,
-        label: `Score proche — ${round1(sc)} ± ${delta}`,
-        pool, // déjà 64
-      };
+      return { crit, label: `Score proche — ${round1(sc)} ± ${delta}`, pool };
     }
 
-    // POP_NEAR (anime + songs)
     if (crit === "POP_NEAR") {
       const pop = getPop(seed);
       if (!pop) continue;
@@ -722,14 +940,9 @@ function pickContentTheme64(basePool, modeLocal) {
       if (pool.length < THEME_POOL_SIZE) continue;
 
       const pct = popularityTopPercent(basePool, seed, getPop);
-      return {
-        crit,
-        label: `Popularité proche — Top ${pct}%`,
-        pool, // déjà 64
-      };
+      return { crit, label: `Popularité proche — Top ${pct}%`, pool };
     }
 
-    // ARTIST (songs)
     if (crit === "ARTIST" && modeLocal === "songs") {
       const arts = getArtistsArr(seed).filter(Boolean);
       if (!arts.length) continue;
@@ -737,15 +950,10 @@ function pickContentTheme64(basePool, modeLocal) {
       if (!a) continue;
       const pool = basePool.filter(it => getArtistsArr(it).some(x => norm(x) === norm(a)));
       if (pool.length < THEME_POOL_SIZE) continue;
-      return {
-        crit,
-        label: `Artiste : ${a}`,
-        pool: pickUniqueN(pool, THEME_POOL_SIZE),
-      };
+      return { crit, label: `Artiste : ${a}`, pool: pickUniqueN(pool, THEME_POOL_SIZE) };
     }
   }
 
-  // Si on n'arrive pas à faire 64 -> Libre
   return { crit: "FREE", label: "Libre", pool: pickUniqueN(basePool, THEME_POOL_SIZE) };
 }
 
@@ -789,6 +997,9 @@ function refreshPreview() {
 // UI EVENTS
 // =======================
 function wireCustomizationUI() {
+  // si pas de custom panel (parcours), on skip
+  if (!document.getElementById("custom-panel")) return;
+
   document.querySelectorAll("#custom-panel input").forEach((e) => {
     e.addEventListener("input", refreshPreview);
   });
@@ -864,8 +1075,22 @@ fetch(DATA_URL)
     initModePillsIfAny();
     syncModeButtons();
     wireCustomizationUI();
+
+    // ✅ applique config globale (parcours)
+    applyConfigToUI(GLOBAL_CFG);
     refreshPreview();
-    showCustomization();
+
+    // ✅ parcours: démarre direct si demandé
+    const shouldAutoStart = !!(GLOBAL_CFG?.autostart) || truthyParam(URL_PARAMS.get("autostart")) || (IS_PARCOURS && truthyParam(URL_PARAMS.get("parcours")));
+    if (shouldAutoStart) {
+      // cache le panel si présent
+      const custom = document.getElementById("custom-panel");
+      if (custom) custom.style.display = "none";
+      startGame();
+    } else {
+      showCustomization();
+    }
+
     updateVolumeVisibility();
     updateThemeStrip();
   })
@@ -892,14 +1117,11 @@ function startGame() {
       return;
     }
 
-    // base pool
     CURRENT_BASE_POOL = titles;
 
-    // thème pool 64
     const theme = pickContentTheme64(titles, "anime");
     CURRENT_CONTENT_THEME = { crit: theme.crit, label: theme.label, poolSize: theme.pool.length };
 
-    // pick 32 depuis pool 64
     const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
     if (picked.length < TOTAL_MATCH_ITEMS) {
       alert("Impossible de sélectionner 32 items uniques.");
@@ -1127,7 +1349,6 @@ function installSnippetLimiter(video, startSec, endSec, session) {
 
   const onPlay = () => {
     if (session !== LOAD_SESSION) return;
-    // si on relance / si on est trop loin, on ramène au start
     if (!armed || video.currentTime < startSec - 0.25 || video.currentTime > endSec + 0.25) {
       safeSeek(startSec);
       armed = true;
@@ -1145,7 +1366,6 @@ function installSnippetLimiter(video, startSec, endSec, session) {
   video.addEventListener("play", onPlay);
   video.addEventListener("timeupdate", onTime);
 
-  // return cleanup
   return () => {
     video.removeEventListener("play", onPlay);
     video.removeEventListener("timeupdate", onTime);
@@ -1196,7 +1416,6 @@ async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, s
       video.addEventListener("stalled", onWaiting);
       video.addEventListener("playing", onPlaying);
 
-      // snippet setup (songs duel)
       let cleanupSnippet = null;
       if (snippet) {
         const dur = video.duration;
@@ -1208,14 +1427,12 @@ async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, s
           end = Math.min(start + SONG_PLAY_SEC, Math.max(0, dur - 0.05));
         }
 
-        // place le curseur au start même si pas autoplay
         try { video.currentTime = start; } catch {}
         cleanupSnippet = installSnippetLimiter(video, start, end, session);
       }
 
       if (autoplay) {
         try {
-          // si snippet: play démarre à ~45s et s'arrête à +20s
           await video.play();
           if (status) status.textContent = "✅ Lecture";
         } catch {
@@ -1229,16 +1446,13 @@ async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, s
         video.removeEventListener("waiting", onWaiting);
         video.removeEventListener("stalled", onWaiting);
         video.removeEventListener("playing", onPlaying);
-        // cleanupSnippet reste actif tant que la vidéo existe (match courant)
-        // il sera détruit quand on supprime le DOM ou cleanupCurrentMedia()
       }, 1500);
 
-      // si on change de session, on nettoie
       if (session !== LOAD_SESSION && cleanupSnippet) cleanupSnippet();
 
       return true;
     } catch {
-      // retry seulement sur error/abort/timeout
+      // retry
     }
   }
 
@@ -1359,11 +1573,28 @@ function finishTournament() {
 
   renderClassement(ranking);
 
+  // ✅ Hook parcours
+  const winnerLabel =
+    winner === null ? null :
+    (mode === "anime" ? (items[winner]?.title || null) : (items[winner]?.label || null));
+
+  notifyParcoursFinished({
+    game: "anime_tournament",
+    mode,
+    theme: CURRENT_CONTENT_THEME || null,
+    winner: winnerLabel,
+    ranking: ranking.map((idx) => (mode === "anime" ? (items[idx]?.title || "") : (items[idx]?.label || ""))),
+  });
+
   const replay = document.getElementById("next-match-btn");
   if (replay) {
     replay.style.display = "";
-    replay.textContent = "Rejouer";
+    replay.textContent = IS_PARCOURS ? "Continuer" : "Rejouer";
     replay.onclick = () => {
+      if (IS_PARCOURS) {
+        window.location.href = RETURN_URL || "../index.html";
+        return;
+      }
       resetTournament();
       showCustomization();
       refreshPreview();
