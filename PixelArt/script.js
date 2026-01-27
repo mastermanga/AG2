@@ -5,12 +5,15 @@
  * - Effet aléatoire au début de chaque round
  * - Poster: moyen + dur (moins simple)
  * - Glitch: layout random par round + bandes plus fines
+ * - Timer: 10s par manche => manche suivante (ou perdu si déjà en facile)
  **********************/
 
 const MAX_SCORE = 3000;
 const STAGE_SCORES = [3000, 2000, 1000];
 const STAGE_NAMES = ["Difficile", "Moyen", "Facile"];
 const MIN_TITLES_TO_START = 64;
+
+const STAGE_TIME = 10; // secondes par manche
 
 const EFFECTS = [
   { id: "pixel",    label: "Pixel" },
@@ -184,6 +187,11 @@ let currentEffect = null;
 let stage = 0;
 let gameEnded = false;
 
+// timer state
+let stageTimerId = null;
+let timeLeft = STAGE_TIME;
+let stageInfoBase = "";
+
 // art nodes
 let artWrap = null;
 let artImg = null;
@@ -211,6 +219,45 @@ let gridCounts = null;
 // glitch layout (stable par round)
 let glitchSeed = 0;
 let glitchLayout = null;
+
+// ====== Timer helpers ======
+function clearStageTimer() {
+  if (stageTimerId) {
+    clearInterval(stageTimerId);
+    stageTimerId = null;
+  }
+}
+
+function renderInfoLine() {
+  if (!infoLine) return;
+  if (!stageInfoBase) {
+    infoLine.textContent = "";
+    return;
+  }
+  infoLine.textContent = `${stageInfoBase} — ⏱️ ${timeLeft}s`;
+}
+
+function startStageTimer() {
+  clearStageTimer();
+  timeLeft = STAGE_TIME;
+  renderInfoLine();
+
+  stageTimerId = setInterval(() => {
+    if (gameEnded) { clearStageTimer(); return; }
+
+    timeLeft -= 1;
+    renderInfoLine();
+
+    if (timeLeft <= 0) {
+      clearStageTimer();
+      if (stage < 2) {
+        advanceStage("timeout");
+      } else {
+        loseRound("⏱️ Temps écoulé.");
+      }
+    }
+  }, 1000);
+}
 
 // ====== UI show/hide ======
 function showCustomization() {
@@ -408,6 +455,9 @@ function resetVisualState() {
 
 // ====== Round UI ======
 function resetRoundUI() {
+  clearStageTimer();
+  stageInfoBase = "";
+
   roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
   feedback.textContent = "";
   feedback.className = "";
@@ -421,7 +471,6 @@ function resetRoundUI() {
   input.disabled = true;
   submitBtn.disabled = true;
 
-  // Important: bouton "Suivant" visible (si ton HTML l'avait en display:none)
   nextBtn.style.display = "inline-block";
   nextBtn.disabled = true;
   nextBtn.textContent = "Suivant";
@@ -457,11 +506,11 @@ async function startNewRound() {
   zoomDx = (Math.random() * 2 - 1) * 140;
   zoomDy = (Math.random() * 2 - 1) * 140;
 
-  // grid counts random par round => pattern moins répétitif
+  // grid counts random par round (HARD plus dur)
   const rng = mulberry32(seedBase);
   gridCounts = {
-    v: [rInt(rng, 2, 4), rInt(rng, 6, 9), rInt(rng, 10, 13)],
-    h: [rInt(rng, 2, 3), rInt(rng, 5, 8), rInt(rng, 9, 11)],
+    v: [rInt(rng, 1, 2), rInt(rng, 6, 9),  rInt(rng, 10, 13)], // HARD durci
+    h: [rInt(rng, 1, 2), rInt(rng, 5, 8),  rInt(rng, 9, 11)], // HARD durci
   };
 
   feedback.textContent = "⏳ Chargement de l'image...";
@@ -473,13 +522,17 @@ async function startNewRound() {
     artWrap._loadedImage = loaded;
 
     buildEffectOverlay();
-    applyStage();
+    applyStage(true);
 
     feedback.textContent = "";
     input.disabled = false;
     nextBtn.disabled = false;
     input.focus();
   } catch (e) {
+    clearStageTimer();
+    stageInfoBase = "";
+    renderInfoLine();
+
     feedback.textContent = "❌ Erreur: impossible de charger l'image.";
     feedback.className = "error";
     gameEnded = true;
@@ -587,14 +640,17 @@ function buildEffectOverlay() {
 }
 
 // ====== Apply stage ======
-function applyStage() {
+function applyStage(resetTimer = true) {
   if (!currentAnime || !currentEffect || !artWrap) return;
 
   artWrap.className = "art-wrap";
   artWrap.classList.remove("ready");
 
   setScoreBar(currentPotentialScore());
-  infoLine.textContent = `Manche ${stage + 1}/3 — ${STAGE_NAMES[stage]} — Effet : ${currentEffect.label}`;
+
+  stageInfoBase = `Manche ${stage + 1}/3 — ${STAGE_NAMES[stage]} — Effet : ${currentEffect.label}`;
+  if (resetTimer && !gameEnded) startStageTimer();
+  else renderInfoLine();
 
   if (!gameEnded) {
     nextBtn.textContent = "Suivant";
@@ -619,11 +675,11 @@ function applyStage() {
     renderPixelated(artWrap._loadedImage, samples);
   }
 
-  // BlurZoom
+  // BlurZoom (MEDIUM plus dur)
   if (id === "blurzoom") {
-    const blur  = [12, 5.2, 2.2][stage];
-    const scale = [2.65, 1.38, 1.10][stage];
-    const mult  = [0.32, 0.14, 0.05][stage];
+    const blur  = [12, 7.4, 2.2][stage];
+    const scale = [2.65, 1.85, 1.10][stage];
+    const mult  = [0.32, 0.22, 0.05][stage];
 
     artWrap.style.setProperty("--blur", `${blur}px`);
     artWrap.style.setProperty("--scale", `${scale}`);
@@ -633,7 +689,7 @@ function applyStage() {
 
   // Mosaic
   if (id === "mosaic") {
-    const revealN = [12, 36, 66][stage]; // un peu + dur en medium
+    const revealN = [12, 36, 66][stage];
     const tiles = overlayMosaic.querySelectorAll(".tile");
     tiles.forEach(t => t.classList.remove("show"));
     for (let i = 0; i < Math.min(revealN, mosaicOrder.length); i++) {
@@ -642,7 +698,7 @@ function applyStage() {
     }
   }
 
-  // Grid V/H (counts random par round => pattern change)
+  // Grid V/H
   if (id === "grid") {
     const vShow = gridCounts?.v?.[stage] ?? [3, 8, 12][stage];
     const hShow = gridCounts?.h?.[stage] ?? [2, 7, 10][stage];
@@ -662,17 +718,12 @@ function applyStage() {
     }
   }
 
-  // Poster / Contraste (MEDIUM plus dur)
+  // Poster / Contraste
   if (id === "poster") {
     artWrap.classList.add("use-canvas");
     const opts = [
-      // HARD: inchangé (tu disais qu’il est parfait)
       { px: 14, levels: 6,  contrast: 1.55, brightness: 0.92, gamma: 0.88, sat: 0.35, noise: 14, dither: 0.55, vignette: 0.38 },
-
-      // MEDIUM: plus dur (moins simple)
       { px: 18, levels: 7,  contrast: 1.42, brightness: 0.95, gamma: 0.90, sat: 0.48, noise: 12, dither: 0.46, vignette: 0.33 },
-
-      // EASY: ok
       { px: 40, levels: 14, contrast: 1.08, brightness: 1.02, gamma: 1.00, sat: 0.88, noise: 6,  dither: 0.18, vignette: 0.16 },
     ][stage];
 
@@ -731,15 +782,15 @@ function applyStage() {
     }
   }
 
-  // Glitch (layout random par round + bandes plus fines)
+  // Glitch (MEDIUM plus dur)
   if (id === "glitch") {
     artWrap.classList.add("use-canvas");
 
     const opts = [
       // HARD
       { slices: 20, maxShift: 72, blur: 0.9,  sat: 0.60, contrast: 1.40, brightness: 0.92, hueJitter: 70, masks: 12, vMasks: 3, pixel: 24, scanlineEvery: 3, scanAlpha: 0.14 },
-      // MEDIUM
-      { slices: 12, maxShift: 34, blur: 0.55, sat: 0.82, contrast: 1.20, brightness: 0.98, hueJitter: 36, masks: 6,  vMasks: 1, pixel: 0,  scanlineEvery: 4, scanAlpha: 0.10 },
+      // MEDIUM (durci)
+      { slices: 16, maxShift: 52, blur: 0.70, sat: 0.72, contrast: 1.30, brightness: 0.95, hueJitter: 55, masks: 10, vMasks: 2, pixel: 16, scanlineEvery: 3, scanAlpha: 0.13 },
       // EASY
       { slices: 7,  maxShift: 16, blur: 0.25, sat: 1.00, contrast: 1.06, brightness: 1.03, hueJitter: 16, masks: 2,  vMasks: 0, pixel: 0,  scanlineEvery: 6, scanAlpha: 0.06 },
     ][stage];
@@ -753,27 +804,38 @@ function applyStage() {
 function advanceStage(reason) {
   if (gameEnded) return;
 
+  clearStageTimer();
+
   if (stage < 2) {
     stage += 1;
 
-    feedback.textContent = (reason === "wrong")
-      ? "❌ Mauvaise réponse — manche suivante."
-      : "⏭️ Manche suivante.";
+    feedback.textContent =
+      (reason === "wrong")   ? "❌ Mauvaise réponse — manche suivante." :
+      (reason === "timeout") ? "⏱️ Temps écoulé — manche suivante." :
+                               "⏭️ Manche suivante.";
     feedback.className = "error";
 
     input.value = "";
     submitBtn.disabled = true;
     suggestions.innerHTML = "";
 
-    applyStage();
+    applyStage(true);
     input.focus();
   } else {
-    loseRound(reason === "wrong" ? "❌ Mauvaise réponse." : "⏭️ Passé.");
+    loseRound(
+      reason === "wrong" ? "❌ Mauvaise réponse." :
+      reason === "timeout" ? "⏱️ Temps écoulé." :
+      "⏭️ Passé."
+    );
   }
 }
 
 // ====== End round ======
 function endRound(roundScore, won, messageHtml) {
+  clearStageTimer();
+  stageInfoBase = "";
+  renderInfoLine();
+
   gameEnded = true;
 
   // affiche en clair à la fin
@@ -1038,7 +1100,6 @@ function renderPosterMystery(img, opts) {
 function createGlitchLayout(w, h, seed) {
   const rng = mulberry32(seed);
 
-  // On génère "plus que nécessaire", ensuite on prend les N premiers selon la manche.
   const slices = [];
   for (let i = 0; i < 28; i++) {
     const sliceH = rInt(rng, 10, Math.max(18, Math.floor(h * 0.085)));
@@ -1055,7 +1116,6 @@ function createGlitchLayout(w, h, seed) {
 
   const masksH = [];
   for (let i = 0; i < 22; i++) {
-    // bandes fines (fix du "trop grosse")
     const mh = rInt(rng, 6, Math.max(10, Math.floor(h * 0.035)));
     const my = rInt(rng, 0, Math.max(0, h - mh));
     masksH.push({ y: my, h: mh, a: rRange(rng, 0.42, 0.68) });
@@ -1077,12 +1137,10 @@ function renderGlitchCanvas(img, opts) {
   const w = artCanvas.width;
   const h = artCanvas.height;
 
-  // Layout stable pour le round (mais random entre rounds)
   if (!glitchLayout || glitchLayout.w !== w || glitchLayout.h !== h || glitchLayout.seed !== glitchSeed) {
     glitchLayout = createGlitchLayout(w, h, glitchSeed);
   }
 
-  // Offscreen base
   const off = document.createElement("canvas");
   off.width = w;
   off.height = h;
@@ -1092,7 +1150,6 @@ function renderGlitchCanvas(img, opts) {
   octx.imageSmoothingEnabled = true;
   drawImageCover(octx, img, 0, 0, w, h);
 
-  // Pixel pre-pass (hard)
   let base = off;
   if (opts.pixel && opts.pixel > 0) {
     const p = document.createElement("canvas");
@@ -1113,19 +1170,16 @@ function renderGlitchCanvas(img, opts) {
 
   ctx.clearRect(0, 0, w, h);
 
-  // base "sale"
   ctx.save();
   ctx.filter = `blur(${opts.blur}px) saturate(${opts.sat}) contrast(${opts.contrast}) brightness(${opts.brightness})`;
   ctx.drawImage(base, 0, 0);
   ctx.restore();
 
-  // scanlines
   ctx.save();
   ctx.fillStyle = `rgba(0,0,0,${opts.scanAlpha})`;
   for (let y = 0; y < h; y += opts.scanlineEvery) ctx.fillRect(0, y, w, 1);
   ctx.restore();
 
-  // slices: même layout, intensité via opts.maxShift / hueJitter
   const sl = glitchLayout.slices.slice(0, opts.slices);
   for (const s of sl) {
     const dx = Math.floor(s.dx * opts.maxShift);
@@ -1145,7 +1199,6 @@ function renderGlitchCanvas(img, opts) {
     ctx.restore();
   }
 
-  // masks noirs horizontaux (plus fins)
   const mhArr = glitchLayout.masksH.slice(0, opts.masks || 0);
   for (const m of mhArr) {
     ctx.save();
@@ -1154,7 +1207,6 @@ function renderGlitchCanvas(img, opts) {
     ctx.restore();
   }
 
-  // masks verticaux (hard)
   const mvArr = glitchLayout.masksV.slice(0, opts.vMasks || 0);
   for (const m of mvArr) {
     ctx.save();
@@ -1166,7 +1218,8 @@ function renderGlitchCanvas(img, opts) {
 
 window.addEventListener("resize", () => {
   if (!gameEnded && currentAnime && currentEffect && artWrap?.classList.contains("use-canvas")) {
-    applyStage();
+    // on ne reset pas le timer sur un resize
+    applyStage(false);
   }
 });
 
@@ -1233,4 +1286,3 @@ fetch("../data/licenses_only.json")
     showCustomization();
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
-
