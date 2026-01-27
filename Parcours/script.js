@@ -64,9 +64,14 @@ const previewCountEl = document.getElementById("previewCount");
 const applyFiltersBtn = document.getElementById("applyFiltersBtn");
 const roundCountEl = document.getElementById("roundCount");
 
+// optionnel (si tu ajoutes le bouton)
+const backToBuilderBtn = document.getElementById("backToBuilderBtn");
+
 // =====================
 // DOMS (builder/recap/parcours)
 // =====================
+const builderSection = document.getElementById("parcours-builder");
+
 const stepsList = document.getElementById("steps-list");
 const gameType = document.getElementById("gameType");
 const modeOption = document.getElementById("modeOption");
@@ -139,7 +144,7 @@ function gameNameLabel(type) {
   return map[type] || type;
 }
 
-// Jeux qui gèrent (souvent) un paramètre mode=anime|songs
+// Jeux qui acceptent mode=anime|songs (ou auto)
 const MODE_CAPABLE = new Set(["animetournament", "blindranking", "toppick", "threevthree"]);
 
 // =====================
@@ -149,9 +154,53 @@ let parcoursSteps = [];
 let parcoursScores = [];
 
 // =====================
+// NAVIGATION UI (FLOW)
+// =====================
+function showBuilder() {
+  // on sort du fullscreen si besoin
+  document.body.classList.remove("parcours-fullscreen");
+
+  // panels
+  if (customPanel) customPanel.style.display = "none";
+  if (container) container.style.display = "flex";
+  if (builderSection) builderSection.style.display = "";
+  if (recapSection) recapSection.style.display = "none";
+
+  // iframe zone
+  if (parcoursContainer) parcoursContainer.style.display = "none";
+}
+
+function showCustomizationStep() {
+  // cache builder + recap
+  if (container) container.style.display = "none";
+  if (builderSection) builderSection.style.display = "none";
+  if (recapSection) recapSection.style.display = "none";
+
+  // montre personnalisation
+  if (customPanel) customPanel.style.display = "block";
+
+  // refresh
+  try { syncLabels(); } catch {}
+  try { updatePreview(); } catch {}
+}
+
+function showRecapStep() {
+  // cache personnalisation
+  if (customPanel) customPanel.style.display = "none";
+
+  // montre container + recap
+  if (container) container.style.display = "flex";
+  if (builderSection) builderSection.style.display = "none";
+  if (recapSection) recapSection.style.display = "block";
+
+  // regen recap content
+  showRecap();
+}
+
+// =====================
 // CUSTOM PANEL LOGIC
 // =====================
-const MIN_REQUIRED = 64; // même esprit que tes jeux, sécurité
+const MIN_REQUIRED = 64;
 
 function clampYearSliders() {
   let a = parseInt(yearMinEl.value, 10);
@@ -234,6 +283,7 @@ function applyConfigToUI(cfg) {
   });
 
   syncLabels();
+
   // valeur par défaut dans le builder
   stepCount.value = String(cfg.defaultRounds || 1);
 }
@@ -246,7 +296,7 @@ function syncLabels() {
   yearMaxValEl.textContent = yearMaxEl.value;
 }
 
-// ====== Data minimal pour preview (comme dans tes jeux) ======
+// ====== Data minimal pour preview ======
 function normalizeAnimeList(json) {
   if (Array.isArray(json)) return json;
   if (json && Array.isArray(json.animes)) return json.animes;
@@ -293,6 +343,7 @@ function extractSongsFromAnime(anime) {
         animeMembers: anime._members,
         animeScore: anime._score,
         _key: `${b.type}|${it.number || ""}|${it.name || ""}|${url}|${anime.mal_id || ""}`,
+        songYear,
       });
     }
   }
@@ -400,19 +451,35 @@ function initCustomPanel() {
     updatePreview();
   };
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", onInput));
+
+  // roundCount = valeur par défaut du builder
   roundCountEl.addEventListener("input", () => {
     stepCount.value = String(Math.max(1, Math.min(100, parseInt(roundCountEl.value || "1", 10))));
   });
 
-  // apply settings
+  // bouton retour builder (si présent)
+  if (backToBuilderBtn) {
+    backToBuilderBtn.addEventListener("click", () => {
+      showBuilder();
+    });
+  }
+
+  // apply settings -> on va AU RECAP (pas au builder)
   applyFiltersBtn.addEventListener("click", () => {
+    if (!parcoursSteps.length) {
+      // sécurité : si quelqu’un arrive ici sans builder
+      showBuilder();
+      return;
+    }
+
     const cfg = collectParcoursConfig();
     localStorage.setItem(PARCOURS_CFG_KEY, JSON.stringify(cfg));
-    // show builder
-    customPanel.style.display = "none";
-    container.style.display = "flex";
+
     // default stepCount
     stepCount.value = String(cfg.defaultRounds || 1);
+
+    // -> recap
+    showRecapStep();
   });
 
   // restore cfg if exists
@@ -424,7 +491,7 @@ function initCustomPanel() {
 }
 
 // =====================
-// BUILDER: MODE OPTION (auto/anime/songs)
+// BUILDER: MODE OPTION
 // =====================
 gameType.addEventListener("change", () => {
   if (MODE_CAPABLE.has(gameType.value)) {
@@ -450,7 +517,7 @@ addStepBtn.addEventListener("click", () => {
 
   const mode = modeOption.style.display === "none" ? null : modeOption.value;
 
-  // IMPORTANT: on garde count (pas de découpage)
+  // on garde count (pas de découpage)
   parcoursSteps.push({ type, mode, count });
   renderSteps();
   startParcoursBtn.style.display = parcoursSteps.length > 0 ? "block" : "none";
@@ -507,16 +574,17 @@ function removeStep(idx) {
 }
 
 // =====================
-// RECAP
+// FLOW: LANCER -> PERSONNALISATION
 // =====================
 startParcoursBtn.addEventListener("click", () => {
   if (parcoursSteps.length === 0) return;
-  showRecap();
+  showCustomizationStep();
 });
 
+// =====================
+// RECAP
+// =====================
 function showRecap() {
-  document.getElementById("parcours-builder").style.display = "none";
-  recapSection.style.display = "block";
   recapList.innerHTML = "";
 
   parcoursSteps.forEach((step, i) => {
@@ -532,8 +600,7 @@ function showRecap() {
 }
 
 editParcoursBtn.addEventListener("click", () => {
-  document.getElementById("parcours-builder").style.display = "";
-  recapSection.style.display = "none";
+  showBuilder();
 });
 
 // =====================
@@ -551,9 +618,12 @@ launchConfirmedBtn.addEventListener("click", () => {
 // IFRAME FLOW
 // =====================
 function startIframeParcours() {
-  // hide builder/recap
-  container.style.display = "none";
-  recapSection.style.display = "none";
+  // hide tout
+  if (customPanel) customPanel.style.display = "none";
+  if (container) container.style.display = "none";
+  if (builderSection) builderSection.style.display = "none";
+  if (recapSection) recapSection.style.display = "none";
+
   document.body.classList.add("parcours-fullscreen");
 
   parcoursContainer.style.display = "flex";
@@ -568,7 +638,7 @@ function resolveStepMode(step) {
   const cfg = loadParcoursConfig() || { mode: "anime" };
   if (!MODE_CAPABLE.has(step.type)) return null;
   if (!step.mode || step.mode === "auto") return cfg.mode || "anime";
-  return step.mode;
+  return step.mode; // anime|songs
 }
 
 function launchIframeStep(idx) {
@@ -590,7 +660,7 @@ function launchIframeStep(idx) {
   params.set("count", String(step.count || 1));
 
   const m = resolveStepMode(step);
-  if (m) params.set("mode", m); // anime|songs
+  if (m) params.set("mode", m);
 
   const url = `${urlBase}?${params.toString()}`;
 
@@ -628,7 +698,6 @@ window.addEventListener("message", (e) => {
 // FINAL RECAP + CLEANUP
 // =====================
 function showFinalRecap() {
-  // cleanup inProgress (important)
   localStorage.removeItem(PARCOURS_INPROGRESS_KEY);
   localStorage.removeItem(PARCOURS_INDEX_KEY);
 
@@ -673,14 +742,14 @@ function showFinalRecap() {
 window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem(PARCOURS_INPROGRESS_KEY)) {
     if (confirm("Un Mode Parcours est en cours, continuer ?")) {
-      // on masque settings/builder et on relance direct
-      customPanel.style.display = "none";
-      container.style.display = "none";
+      if (customPanel) customPanel.style.display = "none";
+      if (container) container.style.display = "none";
       startIframeParcours();
     } else {
       localStorage.removeItem(PARCOURS_INPROGRESS_KEY);
       localStorage.removeItem(PARCOURS_STEPS_KEY);
       localStorage.removeItem(PARCOURS_INDEX_KEY);
+      showBuilder();
     }
   }
 });
@@ -714,9 +783,15 @@ fetch("../data/licenses_only.json")
     initCustomPanel();
     updatePreview();
 
-    // au départ: settings visibles, builder caché
-    customPanel.style.display = "block";
-    container.style.display = "none";
+    // ✅ AU DÉPART : Builder visible, personnalisation cachée
+    showBuilder();
+
+    // init du select modeOption selon jeu sélectionné
+    gameType.dispatchEvent(new Event("change"));
+
+    // si config sauvegardée : applique le defaultRounds au champ Nombre
+    const saved = loadParcoursConfig();
+    if (saved?.defaultRounds) stepCount.value = String(saved.defaultRounds);
   })
   .catch((e) => {
     previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
