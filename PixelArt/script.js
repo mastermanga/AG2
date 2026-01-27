@@ -700,8 +700,8 @@ function applyStage(resetTimer = true) {
 
   // Grid V/H
   if (id === "grid") {
-    const vShow = gridCounts?.v?.[stage] ?? [3, 8, 12][stage];
-    const hShow = gridCounts?.h?.[stage] ?? [2, 7, 10][stage];
+    const vShow = gridCounts?.v?.[stage] ?? [3, 5, 7][stage];
+    const hShow = gridCounts?.h?.[stage] ?? [2, 4, 6][stage];
 
     const vStrips = overlayGridV.querySelectorAll(".strip");
     const hStrips = overlayGridH.querySelectorAll(".strip");
