@@ -791,7 +791,7 @@ async function revealVideoWithAudio(localToken) {
   stopPlayback();
   clearSegment();
 
-  const revealSong = isMatch ? imageSong : audioSong; // ✅ A si Truth, sinon B
+  const revealSong = imageSong; // ✅ toujours A
 
   // cache-buster pour éviter vieux cache si tu spam
   hardReset(videoPlayer);
@@ -807,7 +807,7 @@ async function revealVideoWithAudio(localToken) {
   videoPlayer.muted = false;
   applyVolume();
 
-  setMediaStatus(isMatch ? "🎬 Reveal : Vidéo A (Truth)" : "🎬 Reveal : Vidéo B");
+  setMediaStatus("🎬 Reveal : Vidéo A");
 
   try {
     await waitEvent(videoPlayer, "loadedmetadata", ["error"], LOAD_TIMEOUT_MS, localToken);
