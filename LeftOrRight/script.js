@@ -5,14 +5,12 @@
  * - Chaque duel est indépendant : après un duel, les 2 items ne reviennent plus dans la partie
  * - Anime : 2 covers -> choix libre
  * - Songs : 2 vidéos visibles direct (gauche/droite)
- *          autoplay best-effort non-mute de la gauche
- *          volume global
- *          anti-bug media + retries: 1 essai + 5 retries (2/4/6/8/10s)
- *
- * ✅ UPDATE demandé :
- * - Songs : start at 45s, play 20s (temps vidéo), stop + reset
- * - Enlever l'image avant la vidéo (pas de poster)
- * - Autoplay si absent (best-effort sur la gauche)
+ *          ✅ autoplay best-effort non-mute de la gauche
+ *          ✅ la droite démarre quand la gauche a fini son extrait
+ *          ✅ volume global
+ *          ✅ anti-bug media + retries (0/2/4/6/8/10s)
+ *          ✅ start 45s, play 20s (temps vidéo), stop + reset
+ *          ✅ pas d'image avant la vidéo (pas de poster)
  **********************/
 
 // ====== MENU & THEME ======
@@ -250,87 +248,20 @@ function withCacheBuster(url) {
   const busted = base + sep + "t=" + Date.now();
   return frag ? busted + "#" + frag : busted;
 }
-
-// ✅ Stop + clear handlers
 function stopVideo(player) {
   try { player.pause(); } catch {}
   player.ontimeupdate = null;
   player.onended = null;
   player.onplay = null;
+  player.onloadedmetadata = null;
+  player.oncanplay = null;
+  player.onloadeddata = null;
+  player.onplaying = null;
+  player.onwaiting = null;
+  player.onstalled = null;
+  player.onerror = null;
   player.removeAttribute("src");
   player.load();
-}
-
-// ✅ Clip controller : seek 45s, play 20s (temps vidéo), stop + reset
-function setupClipPlayback(player, localDuel, localMedia, { autoplay = false } = {}) {
-  const isStillValid = () => (localDuel === duelToken && localMedia === mediaToken);
-
-  // anti-blocage (si ça ne joue jamais)
-  let wallTimer = setTimeout(() => {
-    if (!isStillValid()) return;
-    try { player.pause(); } catch {}
-  }, MAX_WALL_SNIPPET_MS);
-
-  const clearWall = () => {
-    if (wallTimer) clearTimeout(wallTimer);
-    wallTimer = null;
-  };
-
-  // calc start/end avec clamp si durée connue
-  const dur = player.duration;
-  let start = CLIP_START_S;
-  let endTime = start + CLIP_DURATION_S;
-
-  if (Number.isFinite(dur) && dur > 1) {
-    start = Math.min(CLIP_START_S, Math.max(0, dur - 0.25));
-    endTime = Math.min(start + CLIP_DURATION_S, Math.max(0, dur - 0.05));
-  }
-
-  const stopSnippet = () => {
-    if (!isStillValid()) return;
-    clearWall();
-    try { player.pause(); } catch {}
-    try { player.currentTime = start; } catch {}
-  };
-
-  player.ontimeupdate = () => {
-    if (!isStillValid()) return;
-    if (player.currentTime >= (endTime - CLIP_EPS)) stopSnippet();
-  };
-  player.onended = () => stopSnippet();
-
-  // si l’utilisateur clique Play, on force un seek avant que ça parte à 0
-  player.onplay = () => {
-    if (!isStillValid()) return;
-    const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
-    if (ct < (start - 1)) {
-      try { player.currentTime = start; } catch {}
-    }
-  };
-
-  // seek direct
-  try { player.currentTime = start; } catch {}
-
-  // re-seek rapide si le navigateur retombe à 0
-  let tries = 0;
-  const seeker = setInterval(() => {
-    if (!isStillValid()) { clearInterval(seeker); return; }
-    const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
-
-    if (Math.abs(ct - start) < 0.8) { clearInterval(seeker); return; }
-
-    tries++;
-    try { player.currentTime = start; } catch {}
-
-    if (tries >= 15) clearInterval(seeker);
-  }, 120);
-
-  // autoplay best-effort
-  if (autoplay) {
-    player.muted = false;
-    const p = player.play?.();
-    if (p && typeof p.catch === "function") p.catch(() => {});
-  }
 }
 
 // ✅ Loader + callback onReady (style TopPick)
@@ -412,6 +343,80 @@ function loadMediaWithRetries(player, url, localDuel, localMedia, { onReady } = 
   attemptIndex = 0;
   doAttempt();
   return cleanup;
+}
+
+// ✅ Clip controller : seek 45s, play 20s (temps vidéo), stop + reset + callback onDone
+function setupClipPlayback(player, localDuel, localMedia, { autoplay = false, onDone } = {}) {
+  const isStillValid = () => (localDuel === duelToken && localMedia === mediaToken);
+
+  let finished = false;
+  const finishOnce = () => {
+    if (finished) return;
+    finished = true;
+    onDone?.();
+  };
+
+  let wallTimer = setTimeout(() => {
+    if (!isStillValid()) return;
+    try { player.pause(); } catch {}
+    finishOnce();
+  }, MAX_WALL_SNIPPET_MS);
+
+  const clearWall = () => {
+    if (wallTimer) clearTimeout(wallTimer);
+    wallTimer = null;
+  };
+
+  const dur = player.duration;
+  let start = CLIP_START_S;
+  let endTime = start + CLIP_DURATION_S;
+
+  if (Number.isFinite(dur) && dur > 1) {
+    start = Math.min(CLIP_START_S, Math.max(0, dur - 0.25));
+    endTime = Math.min(start + CLIP_DURATION_S, Math.max(0, dur - 0.05));
+  }
+
+  const stopSnippet = () => {
+    if (!isStillValid()) return;
+    clearWall();
+    try { player.pause(); } catch {}
+    try { player.currentTime = start; } catch {}
+    finishOnce();
+  };
+
+  player.ontimeupdate = () => {
+    if (!isStillValid()) return;
+    if (player.currentTime >= (endTime - CLIP_EPS)) stopSnippet();
+  };
+  player.onended = () => stopSnippet();
+
+  player.onplay = () => {
+    if (!isStillValid()) return;
+    const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
+    if (ct < (start - 1)) {
+      try { player.currentTime = start; } catch {}
+    }
+  };
+
+  // seek direct
+  try { player.currentTime = start; } catch {}
+
+  // re-seek rapide si ça retombe à 0
+  let tries = 0;
+  const seeker = setInterval(() => {
+    if (!isStillValid()) { clearInterval(seeker); return; }
+    const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
+    if (Math.abs(ct - start) < 0.8) { clearInterval(seeker); return; }
+    tries++;
+    try { player.currentTime = start; } catch {}
+    if (tries >= 15) clearInterval(seeker);
+  }, 120);
+
+  if (autoplay) {
+    player.muted = false;
+    const p = player.play?.();
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  }
 }
 
 // ====== INIT CUSTOM UI ======
@@ -614,7 +619,7 @@ function updateTopLabels() {
 
 function updatePrompt() {
   promptLine.textContent = currentMode === "songs"
-    ? "Choisis ton Song préféré (autoplay gauche)"
+    ? "Choisis ton Song préféré"
     : "Choisis ton Anime préféré";
 }
 
@@ -646,9 +651,24 @@ function renderDuel() {
     return;
   }
 
-  // songs: 2 vidéos direct
+  // songs: 2 vidéos direct (droite démarre quand gauche finit)
   const localDuel = ++duelToken;
   const localMedia = ++mediaToken;
+
+  let rightReady = false;
+  let leftFinished = false;
+
+  const startRightIfPossible = () => {
+    if (localDuel !== duelToken || localMedia !== mediaToken) return;
+    if (!leftFinished) return;
+    if (!rightReady) return;
+
+    applyVolume();
+    rightVid.muted = false;
+
+    const p = rightVid.play?.();
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  };
 
   // reset players
   [leftVid, rightVid].forEach((v) => {
@@ -660,32 +680,50 @@ function renderDuel() {
     v.load();
     v.muted = false;
 
-    // ✅ enlever l'image avant la vidéo
+    // ✅ pas d'image avant la vidéo
     v.poster = "";
     v.removeAttribute("poster");
   });
 
   applyVolume();
 
-  // ✅ load + onReady => seek 45, play 20, stop + reset
+  // LEFT
   if (leftItem?.url) {
     loadMediaWithRetries(leftVid, leftItem.url, localDuel, localMedia, {
       onReady: () => {
         if (localDuel !== duelToken || localMedia !== mediaToken) return;
+
         applyVolume();
         leftVid.muted = false;
-        setupClipPlayback(leftVid, localDuel, localMedia, { autoplay: true }); // ✅ autoplay gauche
+
+        setupClipPlayback(leftVid, localDuel, localMedia, {
+          autoplay: true,
+          onDone: () => {
+            if (localDuel !== duelToken || localMedia !== mediaToken) return;
+            leftFinished = true;
+            startRightIfPossible();
+          }
+        });
       }
     });
+  } else {
+    leftFinished = true;
   }
 
+  // RIGHT
   if (rightItem?.url) {
     loadMediaWithRetries(rightVid, rightItem.url, localDuel, localMedia, {
       onReady: () => {
         if (localDuel !== duelToken || localMedia !== mediaToken) return;
+
         applyVolume();
         rightVid.muted = false;
-        setupClipPlayback(rightVid, localDuel, localMedia, { autoplay: false }); // pas d'autoplay droite
+
+        // arm clip (seek 45 + stop 20) mais pas autoplay
+        setupClipPlayback(rightVid, localDuel, localMedia, { autoplay: false });
+
+        rightReady = true;
+        startRightIfPossible();
       }
     });
   }
