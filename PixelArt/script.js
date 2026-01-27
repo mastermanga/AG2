@@ -509,8 +509,8 @@ async function startNewRound() {
   // grid counts random par round (HARD plus dur)
   const rng = mulberry32(seedBase);
   gridCounts = {
-    v: [rInt(rng, 1, 2), rInt(rng, 6, 9),  rInt(rng, 10, 13)], // HARD durci
-    h: [rInt(rng, 1, 2), rInt(rng, 5, 8),  rInt(rng, 9, 11)], // HARD durci
+    v: [rInt(rng, 1, 2), rInt(rng, 3, 5),  rInt(rng, 6, 9)], // HARD durci
+    h: [rInt(rng, 1, 2), rInt(rng, 3, 4),  rInt(rng, 5, 8)], // HARD durci
   };
 
   feedback.textContent = "⏳ Chargement de l'image...";
