@@ -218,7 +218,25 @@ body.light #custom-panel { background:#fff; box-shadow:0 0 18px #42a5f555; }
   user-select:none;
 }
 
-/* ==== MEDIA WRAPPER (Image A / Video B reveal) ==== */
+/* ==== TITRE SONG A ==== */
+.song-line{
+  width:100%;
+  max-width:520px;
+  margin: 0 auto 10px auto;
+  padding:10px 12px;
+  border-radius:14px;
+  background: rgba(0,0,0,0.14);
+  border:1px solid rgba(0,188,212,0.22);
+  font-weight:900;
+  opacity:0.95;
+  text-align:center;
+}
+body.light .song-line{
+  background: rgba(66,165,245,0.12);
+  border-color: rgba(66,165,245,0.25);
+}
+
+/* ==== MEDIA WRAPPER (Image A / Video reveal) ==== */
 #videoWrapper{
   width:100%; max-width:520px;
   margin:4px auto 10px auto;
@@ -241,8 +259,7 @@ body.light #custom-panel { background:#fff; box-shadow:0 0 18px #42a5f555; }
   aspect-ratio: 16 / 9;
 }
 
-
-/* ✅ Video B (reveal) */
+/* ✅ Video reveal */
 #videoWrapper video{
   width:100% !important;
   display:block;
