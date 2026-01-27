@@ -8,6 +8,7 @@
  * - Tours indépendants
  * - Songs : vidéo non mutée + volume global
  * - Loader media + retries (0/2/4/6/8/10s)
+ * - Songs : start at 45s, play 20s
  **********************/
 
 // ====== MENU & THEME ======
@@ -43,6 +44,11 @@ document.addEventListener("click", (e) => {
 const MIN_REQUIRED = 64;
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const STALL_TIMEOUT_MS = 6000;
+
+// ✅ Clip settings (Songs)
+const CLIP_START_S = 45;
+const CLIP_DURATION_S = 20;
+const CLIP_EPS = 0.05;
 
 function normalizeAnimeList(json) {
   if (Array.isArray(json)) return json;
@@ -257,20 +263,29 @@ function withCacheBuster(url) {
   const sep = url.includes("?") ? "&" : "?";
   return url + sep + "t=" + Date.now();
 }
+
+// ✅ Load with retries + clip (start 45s, play 20s)
 function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = true } = {}) {
   let attemptIndex = 0;
   let stallTimer = null;
   let done = false;
 
-  const cleanup = () => {
+  const cleanupLoadHandlers = () => {
     if (stallTimer) clearTimeout(stallTimer);
     stallTimer = null;
+
     player.onloadedmetadata = null;
     player.oncanplay = null;
     player.onplaying = null;
     player.onwaiting = null;
     player.onstalled = null;
     player.onerror = null;
+  };
+
+  const cleanupAllHandlers = () => {
+    cleanupLoadHandlers();
+    player.ontimeupdate = null;
+    player.onseeked = null;
   };
 
   const tokenNow = () => (player === leftPlayer ? mediaTokenLeft : mediaTokenRight);
@@ -284,19 +299,67 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
     }, STALL_TIMEOUT_MS);
   };
 
+  const setupClipAndAutoplay = () => {
+    if (!isStillValid() || done) return;
+
+    const dur = Number.isFinite(player.duration) ? player.duration : 0;
+
+    // clamp start si dur connue et vidéo trop courte
+    let start = CLIP_START_S;
+    if (dur > 0) start = Math.max(0, Math.min(start, Math.max(0, dur - 0.25)));
+
+    // end = start + 20s, clamp si dur connue
+    let end = start + CLIP_DURATION_S;
+    if (dur > 0) end = Math.min(dur, end);
+
+    const canLimit = (end - start) > 0.25;
+
+    // stop à la fin du clip
+    let guard = false;
+    player.ontimeupdate = () => {
+      if (!isStillValid() || !canLimit || guard) return;
+      if (player.currentTime >= (end - CLIP_EPS)) {
+        guard = true;
+        try { player.pause(); } catch {}
+        // option: reset au début du clip pour rejouer facilement
+        try { player.currentTime = start; } catch {}
+        guard = false;
+      }
+    };
+
+    // chercher à 45s puis jouer
+    player.onseeked = () => {
+      if (!isStillValid()) return;
+      if (autoplay) {
+        player.muted = false;
+        player.play?.().catch(() => {});
+      }
+    };
+
+    try {
+      player.currentTime = start;
+    } catch {
+      // fallback: si seek impossible, on tente play direct
+      if (autoplay) {
+        player.muted = false;
+        player.play?.().catch(() => {});
+      }
+    }
+  };
+
   const markReady = () => {
     if (!isStillValid() || done) return;
     done = true;
-    cleanup();
-    if (autoplay) {
-      player.muted = false;
-      player.play?.().catch(() => {});
-    }
+
+    // on vire les handlers de load/retry, mais on garde le clip/seek qu’on pose juste après
+    cleanupLoadHandlers();
+
+    setupClipAndAutoplay();
   };
 
   const triggerRetry = () => {
     if (!isStillValid() || done) return;
-    cleanup();
+    cleanupAllHandlers();
     attemptIndex++;
     if (attemptIndex >= RETRY_DELAYS.length) {
       done = true;
@@ -311,6 +374,10 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
 
   const doAttempt = () => {
     if (!isStillValid() || done) return;
+
+    // important: clear old handlers from previous attempts/rounds
+    cleanupAllHandlers();
+
     const src = attemptIndex === 0 ? url : withCacheBuster(url);
 
     try { hardResetMedia(player); } catch {}
@@ -337,12 +404,19 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { autoplay = 
   };
 
   doAttempt();
-  return cleanup;
+  return cleanupAllHandlers;
 }
 
 function stopAllMedia() {
   mediaTokenLeft++;
   mediaTokenRight++;
+
+  // ✅ clear clip handlers too
+  leftPlayer.ontimeupdate = null;
+  leftPlayer.onseeked = null;
+  rightPlayer.ontimeupdate = null;
+  rightPlayer.onseeked = null;
+
   try { leftPlayer.pause(); } catch {}
   try { rightPlayer.pause(); } catch {}
   leftPlayer.removeAttribute("src"); leftPlayer.load();
@@ -638,6 +712,11 @@ function hideRightCard() {
   rightPlayerZone.style.display = "none";
 
   mediaTokenRight++;
+
+  // ✅ clear clip handlers too
+  rightPlayer.ontimeupdate = null;
+  rightPlayer.onseeked = null;
+
   try { rightPlayer.pause(); } catch {}
   rightPlayer.removeAttribute("src");
   rightPlayer.load();
@@ -749,3 +828,4 @@ fetch("../data/licenses_only.json")
     applyBtn.classList.add("disabled");
     console.error(e);
   });
+
