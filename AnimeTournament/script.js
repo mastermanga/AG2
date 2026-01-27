@@ -1,14 +1,16 @@
 // =======================
-// Anime Tournament — script.js (COMPLET + MODIFS PARCOURS)
-// - Ajout support "Parcours" : lecture config via URL (?from=parcours&autostart=1...) et/ou localStorage
-// - Si autostart/parcours => applique la personnalisation globale + démarre direct (menu perso caché)
-// - Back-to-menu peut rediriger vers return=...
-// - Hook fin de mini-jeu: dispatch CustomEvent + postMessage (utile pour le parcours)
+// Anime Tournament — script.js (COMPLET + FIX PARCOURS)
 // - Thème contenu (pool EXACT 64) pour choisir les 32 items
-// - "Libre" a la même chance que chaque autre critère (anime: 1/6 ; songs: 1/7 car + critères)
+// - "Libre" a la même chance que chaque autre critère (anime: 1/6 ; songs: 1/7)
 // - Si un critère ne peut pas produire 64 => fallback "Libre"
 // - STUDIO: pool “agrandi” en cumulant plusieurs studios jusqu'à atteindre 64 (sinon Libre)
 // - Songs: start à 45s, durée 20s (extrait), autoplay gauche
+//
+// ✅ FIX PARCOURS
+// - Autostart UNIQUEMENT après chargement dataset
+// - Apply config parcours au DOM (sliders + pills + mode + rounds)
+// - Si parcours => pas d'écran personnalisation du tournoi (autostart direct)
+// - Back-to-menu => return URL si fourni
 // =======================
 
 // =======================
@@ -31,7 +33,7 @@ const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const LOAD_TIMEOUT_MS = 6000;
 
 // =======================
-// PARCOURS SUPPORT (NEW)
+// PARCOURS SUPPORT (FIX)
 // =======================
 const URL_PARAMS = new URLSearchParams(window.location.search);
 
@@ -41,19 +43,16 @@ function truthyParam(v) {
   return s === "1" || s === "true" || s === "yes" || s === "y" || s === "on";
 }
 
-function detectParcours() {
-  // plusieurs alias possibles
-  if (truthyParam(URL_PARAMS.get("from")) && URL_PARAMS.get("from").toLowerCase() === "parcours") return true;
-  if (truthyParam(URL_PARAMS.get("parcours"))) return true;
-  if (truthyParam(URL_PARAMS.get("autostart"))) return true;
+function safeJsonParse(s) {
+  try { return JSON.parse(s); } catch { return null; }
+}
 
-  // fallback localStorage (plusieurs clés possibles)
-  const keys = [
-    "AG2_PARCOURS_ACTIVE",
-    "ag2_parcours_active",
-    "parcours_active",
-    "AG2_PARCOURS",
-  ];
+function detectParcours() {
+  const from = (URL_PARAMS.get("from") || "").trim().toLowerCase();
+  if (from === "parcours") return true;
+  if (truthyParam(URL_PARAMS.get("parcours"))) return true;
+
+  const keys = ["AG2_PARCOURS_ACTIVE", "ag2_parcours_active", "parcours_active", "AG2_PARCOURS"];
   for (const k of keys) {
     const v = localStorage.getItem(k);
     if (truthyParam(v)) return true;
@@ -63,18 +62,13 @@ function detectParcours() {
 
 const IS_PARCOURS = detectParcours();
 
-// return URL (parcours)
 function getReturnUrl() {
-  const fromUrl = URL_PARAMS.get("return");
-  if (fromUrl) {
-    try {
-      return decodeURIComponent(fromUrl);
-    } catch {
-      return fromUrl;
-    }
+  const u = URL_PARAMS.get("return");
+  if (u) {
+    try { return decodeURIComponent(u); } catch { return u; }
   }
-  const lsKeys = ["AG2_PARCOURS_RETURN", "ag2_parcours_return", "parcours_return"];
-  for (const k of lsKeys) {
+  const keys = ["AG2_PARCOURS_RETURN", "ag2_parcours_return", "parcours_return"];
+  for (const k of keys) {
     const v = localStorage.getItem(k);
     if (v && String(v).trim()) return v;
   }
@@ -82,90 +76,37 @@ function getReturnUrl() {
 }
 const RETURN_URL = getReturnUrl();
 
-// config global : URL > localStorage > null
-function parseCsvParam(p) {
-  if (!p) return [];
-  return String(p)
-    .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean);
-}
-
-function readConfigFromUrl() {
-  const modeParam = (URL_PARAMS.get("mode") || URL_PARAMS.get("tournamentMode") || "").trim().toLowerCase();
-  const mode =
-    modeParam === "songs" || modeParam === "song" || modeParam === "musique" ? "songs" :
-    modeParam === "anime" || modeParam === "animes" ? "anime" :
-    null;
-
-  const pop = parseInt(URL_PARAMS.get("pop") || URL_PARAMS.get("popPercent") || "", 10);
-  const score = parseInt(URL_PARAMS.get("score") || URL_PARAMS.get("scorePercent") || "", 10);
-  const yearMin = parseInt(URL_PARAMS.get("yearMin") || URL_PARAMS.get("ymin") || "", 10);
-  const yearMax = parseInt(URL_PARAMS.get("yearMax") || URL_PARAMS.get("ymax") || "", 10);
-
-  const types = parseCsvParam(URL_PARAMS.get("types"));
-  const songs = parseCsvParam(URL_PARAMS.get("songs") || URL_PARAMS.get("songKinds"));
-
-  const hasSomething =
-    mode !== null ||
-    Number.isFinite(pop) ||
-    Number.isFinite(score) ||
-    Number.isFinite(yearMin) ||
-    Number.isFinite(yearMax) ||
-    types.length ||
-    songs.length;
-
-  if (!hasSomething) return null;
-
-  return {
-    source: "url",
-    autostart: truthyParam(URL_PARAMS.get("autostart")) || truthyParam(URL_PARAMS.get("parcours")),
-    mode,
-    popPercent: Number.isFinite(pop) ? pop : null,
-    scorePercent: Number.isFinite(score) ? score : null,
-    yearMin: Number.isFinite(yearMin) ? yearMin : null,
-    yearMax: Number.isFinite(yearMax) ? yearMax : null,
-    types,      // ex: ["TV","Movie"]
-    songKinds: songs, // ex: ["opening","ending","insert"] ou ["OP","ED","IN"]
-  };
-}
-
-function safeJsonParse(s) {
-  try { return JSON.parse(s); } catch { return null; }
-}
-
-function normalizeConfigObject(raw) {
+function normalizeCfg(raw) {
   if (!raw || typeof raw !== "object") return null;
 
-  const modeParam = String(raw.mode || raw.tournamentMode || raw.gameMode || "").trim().toLowerCase();
+  const modeParam = String(raw.mode || raw.gameMode || "").trim().toLowerCase();
   const mode =
     modeParam === "songs" || modeParam === "song" || modeParam === "musique" ? "songs" :
-    modeParam === "anime" || modeParam === "animes" ? "anime" :
-    null;
+    modeParam === "anime" || modeParam === "animes" ? "anime" : null;
 
-  const pop = Number.isFinite(+raw.popPercent) ? +raw.popPercent : (Number.isFinite(+raw.pop) ? +raw.pop : null);
-  const score = Number.isFinite(+raw.scorePercent) ? +raw.scorePercent : (Number.isFinite(+raw.score) ? +raw.score : null);
+  const popPercent = Number.isFinite(+raw.popPercent) ? +raw.popPercent : (Number.isFinite(+raw.pop) ? +raw.pop : null);
+  const scorePercent = Number.isFinite(+raw.scorePercent) ? +raw.scorePercent : (Number.isFinite(+raw.score) ? +raw.score : null);
   const yearMin = Number.isFinite(+raw.yearMin) ? +raw.yearMin : (Number.isFinite(+raw.yMin) ? +raw.yMin : null);
   const yearMax = Number.isFinite(+raw.yearMax) ? +raw.yearMax : (Number.isFinite(+raw.yMax) ? +raw.yMax : null);
+  const rounds = Number.isFinite(+raw.rounds) ? +raw.rounds : (Number.isFinite(+raw.count) ? +raw.count : null);
 
   const types = Array.isArray(raw.types) ? raw.types : (Array.isArray(raw.allowedTypes) ? raw.allowedTypes : []);
   const songKinds = Array.isArray(raw.songKinds) ? raw.songKinds : (Array.isArray(raw.allowedSongs) ? raw.allowedSongs : []);
 
   return {
-    source: "localStorage",
     autostart: !!raw.autostart || !!raw.parcours,
     mode,
-    popPercent: pop,
-    scorePercent: score,
+    popPercent,
+    scorePercent,
     yearMin,
     yearMax,
+    rounds,
     types: types.map(String),
     songKinds: songKinds.map(String),
   };
 }
 
-function readConfigFromLocalStorage() {
-  // plusieurs clés candidates (tu peux garder celle que tu veux côté parcours)
+function readCfgFromLocalStorage() {
   const keys = [
     "AG2_PERSONALISATION",
     "AG2_PERSONNALISATION",
@@ -176,36 +117,61 @@ function readConfigFromLocalStorage() {
     "AG2_PARCOURS_CONFIG",
     "parcoursConfig",
   ];
-
   for (const k of keys) {
     const v = localStorage.getItem(k);
     if (!v) continue;
     const raw = safeJsonParse(v);
-    const cfg = normalizeConfigObject(raw);
+    const cfg = normalizeCfg(raw);
     if (cfg) return cfg;
   }
   return null;
 }
 
-function readGlobalConfig() {
-  const urlCfg = readConfigFromUrl();
-  if (urlCfg) return urlCfg;
-  const lsCfg = readConfigFromLocalStorage();
-  if (lsCfg) return lsCfg;
-  return null;
+function parseCsvParam(p) {
+  if (!p) return [];
+  return String(p).split(",").map(x => x.trim()).filter(Boolean);
 }
 
-const GLOBAL_CFG = readGlobalConfig();
+function readCfgFromUrl() {
+  const modeParam = (URL_PARAMS.get("mode") || "").trim().toLowerCase();
+  const mode =
+    modeParam === "songs" || modeParam === "song" ? "songs" :
+    modeParam === "anime" || modeParam === "animes" ? "anime" : null;
 
-function notifyParcoursFinished(detail) {
-  try {
-    window.dispatchEvent(new CustomEvent("ag2:minigame:finished", { detail }));
-  } catch {}
-  try {
-    // utile si le mini-jeu est dans une iframe
-    window.parent?.postMessage({ type: "ag2:minigame:finished", detail }, "*");
-  } catch {}
+  const pop = parseInt(URL_PARAMS.get("pop") || URL_PARAMS.get("popPercent") || "", 10);
+  const score = parseInt(URL_PARAMS.get("score") || URL_PARAMS.get("scorePercent") || "", 10);
+  const yearMin = parseInt(URL_PARAMS.get("yearMin") || URL_PARAMS.get("ymin") || "", 10);
+  const yearMax = parseInt(URL_PARAMS.get("yearMax") || URL_PARAMS.get("ymax") || "", 10);
+  const rounds = parseInt(URL_PARAMS.get("count") || URL_PARAMS.get("rounds") || "", 10);
+
+  const types = parseCsvParam(URL_PARAMS.get("types"));
+  const songs = parseCsvParam(URL_PARAMS.get("songs") || URL_PARAMS.get("songKinds"));
+
+  const has = mode || Number.isFinite(pop) || Number.isFinite(score) || Number.isFinite(yearMin) || Number.isFinite(yearMax)
+    || Number.isFinite(rounds) || types.length || songs.length || truthyParam(URL_PARAMS.get("autostart")) || truthyParam(URL_PARAMS.get("parcours"));
+
+  if (!has) return null;
+
+  return {
+    autostart: truthyParam(URL_PARAMS.get("autostart")) || truthyParam(URL_PARAMS.get("parcours")),
+    mode,
+    popPercent: Number.isFinite(pop) ? pop : null,
+    scorePercent: Number.isFinite(score) ? score : null,
+    yearMin: Number.isFinite(yearMin) ? yearMin : null,
+    yearMax: Number.isFinite(yearMax) ? yearMax : null,
+    rounds: Number.isFinite(rounds) ? rounds : null,
+    types,
+    songKinds: songs,
+  };
 }
+
+function readGlobalCfg() {
+  return readCfgFromUrl() || readCfgFromLocalStorage();
+}
+const GLOBAL_CFG = readGlobalCfg();
+
+// ✅ autostart “pending” tant que dataset pas chargé
+let AUTO_START_PENDING = false;
 
 // =======================
 // GLOBAL STATE
@@ -298,7 +264,6 @@ function round1(x) {
 // BASIC UI
 // =======================
 document.getElementById("back-to-menu")?.addEventListener("click", () => {
-  // Parcours: possibilité de retour dédié
   window.location.href = RETURN_URL || "../index.html";
 });
 
@@ -381,7 +346,7 @@ function updateVolumeVisibility() {
 }
 
 // =======================
-// THEME STRIP (auto-create if missing)
+// THEME STRIP
 // =======================
 function ensureThemeStrip() {
   let el = document.getElementById("content-theme");
@@ -561,12 +526,14 @@ function ensureDefaultSongs() {
 }
 
 // =======================
-// APPLY GLOBAL CFG TO UI (NEW)
+// APPLY PARCOURS CFG -> DOM (FIX)
 // =======================
-function applyConfigToUI(cfg) {
+function norm(s) { return (s || "").toString().trim().toLowerCase(); }
+
+function applyCfgToUI(cfg) {
   if (!cfg) return;
 
-  // Mode
+  // mode
   if (cfg.mode === "anime" || cfg.mode === "songs") {
     mode = cfg.mode;
     syncModeButtons();
@@ -577,48 +544,50 @@ function applyConfigToUI(cfg) {
   const scoreEl = document.getElementById("scorePercent");
   const yMinEl = document.getElementById("yearMin");
   const yMaxEl = document.getElementById("yearMax");
+  const roundsEl = document.getElementById("roundCount");
 
-  if (popEl && Number.isFinite(+cfg.popPercent)) popEl.value = String(clamp(+cfg.popPercent, 5, 100));
-  if (scoreEl && Number.isFinite(+cfg.scorePercent)) scoreEl.value = String(clamp(+cfg.scorePercent, 5, 100));
+  if (popEl && Number.isFinite(+cfg.popPercent)) popEl.value = String(clampInt(+cfg.popPercent, 5, 100));
+  if (scoreEl && Number.isFinite(+cfg.scorePercent)) scoreEl.value = String(clampInt(+cfg.scorePercent, 5, 100));
   if (yMinEl && Number.isFinite(+cfg.yearMin)) yMinEl.value = String(+cfg.yearMin);
   if (yMaxEl && Number.isFinite(+cfg.yearMax)) yMaxEl.value = String(+cfg.yearMax);
+  if (roundsEl && Number.isFinite(+cfg.rounds)) roundsEl.value = String(clampInt(+cfg.rounds, 1, 100));
 
-  // types
-  const types = (Array.isArray(cfg.types) ? cfg.types : []).map((x) => String(x).trim());
+  // types (case-insensitive)
+  const wantedTypes = (Array.isArray(cfg.types) ? cfg.types : []).map(x => norm(x));
   const typePills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
-  if (typePills.length && types.length) {
+  if (typePills.length && wantedTypes.length) {
     typePills.forEach((b) => {
-      const t = String(b.dataset.type || "").trim();
-      const on = types.some((x) => x.toLowerCase() === t.toLowerCase());
+      const t = norm(b.dataset.type || "");
+      const on = wantedTypes.includes(t);
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", on ? "true" : "false");
     });
   }
   ensureDefaultTypes();
 
-  // songs kinds: accepte ["opening","ending","insert"] ou ["OP","ED","IN"]
-  const songKindsRaw = (Array.isArray(cfg.songKinds) ? cfg.songKinds : []).map((x) => String(x).trim().toLowerCase());
-  const normalizeSongKind = (k) => {
-    if (k === "op" || k === "opening" || k === "openings") return "opening";
-    if (k === "ed" || k === "ending" || k === "endings") return "ending";
-    if (k === "in" || k === "insert" || k === "inserts") return "insert";
+  // songs (opening/ending/insert) via codes OP/ED/IN or words
+  const mapSong = (x) => {
+    const s = norm(x);
+    if (s === "op" || s === "opening" || s === "openings") return "opening";
+    if (s === "ed" || s === "ending" || s === "endings") return "ending";
+    if (s === "in" || s === "insert" || s === "inserts") return "insert";
     return null;
   };
-  const songKinds = songKindsRaw.map(normalizeSongKind).filter(Boolean);
-
+  const wantedSongs = (Array.isArray(cfg.songKinds) ? cfg.songKinds : []).map(mapSong).filter(Boolean);
   const songPills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
-  if (songPills.length && songKinds.length) {
+  if (songPills.length && wantedSongs.length) {
     songPills.forEach((b) => {
-      const s = String(b.dataset.song || "").trim().toLowerCase();
-      const on = songKinds.includes(s);
+      const s = norm(b.dataset.song || "");
+      const on = wantedSongs.includes(s);
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", on ? "true" : "false");
     });
   }
   ensureDefaultSongs();
 
-  // clamp + refresh labels
+  // clamp years + refresh labels
   clampYearSliders();
+  readOptions(); // met à jour labels
 }
 
 // =======================
@@ -650,20 +619,13 @@ function readOptions() {
   if (yMinVal) yMinVal.textContent = String(yMin);
   if (yMaxVal) yMaxVal.textContent = String(yMax);
 
-  let types = new Set(
+  const types = new Set(
     [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type)
   );
-  // fallback si UI absente
-  if (!types.size) types = new Set(["TV", "Movie"]);
 
   const songKinds = new Set(
     [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song)
   );
-  // fallback si UI absente
-  const hasSongUI = document.querySelectorAll("#songPills .pill").length > 0;
-  const incOP = hasSongUI ? songKinds.has("opening") : true;
-  const incED = hasSongUI ? songKinds.has("ending") : false;
-  const incIN = hasSongUI ? songKinds.has("insert") : false;
 
   return {
     pop,
@@ -671,9 +633,9 @@ function readOptions() {
     yMin,
     yMax,
     types,
-    incOP,
-    incED,
-    incIN,
+    incOP: songKinds.has("opening"),
+    incED: songKinds.has("ending"),
+    incIN: songKinds.has("insert"),
   };
 }
 
@@ -720,7 +682,6 @@ function buildSongsWithMeta(titles, o) {
           .replace(/\s+/g, " ")
           .trim(),
 
-        // meta anime (pour score/pop/filtrage)
         _members: t._members,
         _score: t._score,
         _year: t._year,
@@ -728,7 +689,6 @@ function buildSongsWithMeta(titles, o) {
         _studio: t._studio || "",
         tags: Array.isArray(t._tags) ? t._tags : [],
 
-        // meta song
         artistsArr,
         songSeason: seasonStr,
         songYear,
@@ -767,8 +727,6 @@ function filterSongs(data, o) {
 // =======================
 // THEME CONTENU (pool 64)
 // =======================
-function norm(s) { return (s || "").toString().trim().toLowerCase(); }
-
 function includesStudio(studio, needle) {
   const s = norm(studio);
   const n = norm(needle);
@@ -864,7 +822,6 @@ function pickContentTheme64(basePool, modeLocal) {
 
   const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR"]; // 6
   const criteriaSongs = ["FREE", "SONG_SEASON", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST"]; // 7
-
   const criteria = (modeLocal === "songs") ? criteriaSongs : criteriaAnime;
 
   const getYear = (it) => it?._year || it?.year || 0;
@@ -997,9 +954,6 @@ function refreshPreview() {
 // UI EVENTS
 // =======================
 function wireCustomizationUI() {
-  // si pas de custom panel (parcours), on skip
-  if (!document.getElementById("custom-panel")) return;
-
   document.querySelectorAll("#custom-panel input").forEach((e) => {
     e.addEventListener("input", refreshPreview);
   });
@@ -1046,7 +1000,85 @@ function wireCustomizationUI() {
 }
 
 // =======================
-// LOAD DATA
+// START GAME (avec thème contenu 64) — ✅ guard dataset loaded
+// =======================
+function startGame() {
+  if (!ALL_TITLES.length) {
+    // dataset pas prêt -> on retente après chargement
+    AUTO_START_PENDING = true;
+    return;
+  }
+
+  resetTournament();
+
+  const o = readOptions();
+
+  if (mode === "anime") {
+    const titles = filterTitles(ALL_TITLES, o);
+    const minTitlesNeeded = Math.max(MIN_REQUIRED_TITLES, TOTAL_MATCH_ITEMS);
+
+    if (titles.length < minTitlesNeeded) {
+      // en parcours: pas d'alert spam, on reste sur menu
+      if (!IS_PARCOURS) alert(`Pas assez de titres (${titles.length}/${minTitlesNeeded}).`);
+      refreshPreview();
+      showCustomization();
+      return;
+    }
+
+    CURRENT_BASE_POOL = titles;
+
+    const theme = pickContentTheme64(titles, "anime");
+    CURRENT_CONTENT_THEME = { crit: theme.crit, label: theme.label, poolSize: theme.pool.length };
+
+    const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
+    if (picked.length < TOTAL_MATCH_ITEMS) {
+      if (!IS_PARCOURS) alert("Impossible de sélectionner 32 items uniques.");
+      showCustomization();
+      return;
+    }
+
+    items = picked.map((t) => ({
+      _key: t._key,
+      image: t.image,
+      title: t._title,
+    }));
+  } else {
+    const songs = filterSongs(ALL_TITLES, o);
+    const minSongsNeeded = Math.max(MIN_REQUIRED_SONGS, TOTAL_MATCH_ITEMS);
+
+    if (songs.length < minSongsNeeded) {
+      if (!IS_PARCOURS) alert(`Pas assez de songs (${songs.length}/${minSongsNeeded}).`);
+      refreshPreview();
+      showCustomization();
+      return;
+    }
+
+    CURRENT_BASE_POOL = songs;
+
+    const theme = pickContentTheme64(songs, "songs");
+    CURRENT_CONTENT_THEME = { crit: theme.crit, label: theme.label, poolSize: theme.pool.length };
+
+    const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
+    if (picked.length < TOTAL_MATCH_ITEMS) {
+      if (!IS_PARCOURS) alert("Impossible de sélectionner 32 items uniques.");
+      showCustomization();
+      return;
+    }
+
+    items = picked.map((s) => ({
+      _key: s._key,
+      video: s.video,
+      label: s.label,
+    }));
+  }
+
+  showGame();
+  updateThemeStrip();
+  initTournament();
+}
+
+// =======================
+// LOAD DATA (✅ autostart après fetch)
 // =======================
 fetch(DATA_URL)
   .then((r) => r.json())
@@ -1076,94 +1108,33 @@ fetch(DATA_URL)
     syncModeButtons();
     wireCustomizationUI();
 
-    // ✅ applique config globale (parcours)
-    applyConfigToUI(GLOBAL_CFG);
+    // ✅ applique config parcours APRÈS defaults (override)
+    applyCfgToUI(GLOBAL_CFG);
+
     refreshPreview();
 
-    // ✅ parcours: démarre direct si demandé
-    const shouldAutoStart = !!(GLOBAL_CFG?.autostart) || truthyParam(URL_PARAMS.get("autostart")) || (IS_PARCOURS && truthyParam(URL_PARAMS.get("parcours")));
+    const shouldAutoStart =
+      IS_PARCOURS ||
+      truthyParam(URL_PARAMS.get("autostart")) ||
+      truthyParam(URL_PARAMS.get("parcours")) ||
+      !!GLOBAL_CFG?.autostart;
+
     if (shouldAutoStart) {
-      // cache le panel si présent
-      const custom = document.getElementById("custom-panel");
-      if (custom) custom.style.display = "none";
+      // ✅ auto-start sans afficher le menu tournoi
+      // (si insuffisant on retombe sur menu via startGame)
+      showCustomization(); // état propre (sans game)
       startGame();
-    } else {
-      showCustomization();
+      AUTO_START_PENDING = false;
+      return;
     }
 
+    showCustomization();
     updateVolumeVisibility();
     updateThemeStrip();
   })
   .catch((e) => {
     alert("Erreur chargement dataset: " + e.message);
   });
-
-// =======================
-// START GAME (avec thème contenu 64)
-// =======================
-function startGame() {
-  if (!ALL_TITLES.length) return;
-
-  resetTournament();
-
-  const o = readOptions();
-
-  if (mode === "anime") {
-    const titles = filterTitles(ALL_TITLES, o);
-    const minTitlesNeeded = Math.max(MIN_REQUIRED_TITLES, TOTAL_MATCH_ITEMS);
-
-    if (titles.length < minTitlesNeeded) {
-      alert(`Pas assez de titres (${titles.length}/${minTitlesNeeded}).`);
-      return;
-    }
-
-    CURRENT_BASE_POOL = titles;
-
-    const theme = pickContentTheme64(titles, "anime");
-    CURRENT_CONTENT_THEME = { crit: theme.crit, label: theme.label, poolSize: theme.pool.length };
-
-    const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
-    if (picked.length < TOTAL_MATCH_ITEMS) {
-      alert("Impossible de sélectionner 32 items uniques.");
-      return;
-    }
-
-    items = picked.map((t) => ({
-      _key: t._key,
-      image: t.image,
-      title: t._title,
-    }));
-  } else {
-    const songs = filterSongs(ALL_TITLES, o);
-    const minSongsNeeded = Math.max(MIN_REQUIRED_SONGS, TOTAL_MATCH_ITEMS);
-
-    if (songs.length < minSongsNeeded) {
-      alert(`Pas assez de songs (${songs.length}/${minSongsNeeded}).`);
-      return;
-    }
-
-    CURRENT_BASE_POOL = songs;
-
-    const theme = pickContentTheme64(songs, "songs");
-    CURRENT_CONTENT_THEME = { crit: theme.crit, label: theme.label, poolSize: theme.pool.length };
-
-    const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
-    if (picked.length < TOTAL_MATCH_ITEMS) {
-      alert("Impossible de sélectionner 32 items uniques.");
-      return;
-    }
-
-    items = picked.map((s) => ({
-      _key: s._key,
-      video: s.video,
-      label: s.label,
-    }));
-  }
-
-  showGame();
-  updateThemeStrip();
-  initTournament();
-}
 
 // =======================
 // TOURNAMENT CORE
@@ -1286,7 +1257,7 @@ function cleanupCurrentMedia() {
 }
 
 // =======================
-// VIDEO LOAD (no waiting/stalled as fail) + token
+// VIDEO LOAD
 // =======================
 function waitEventOrTimeout(target, events, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -1337,7 +1308,6 @@ function getOrCreateStatusEl(video) {
   return st;
 }
 
-// snippet limiter (songs): start 45s, stop after 20s
 function installSnippetLimiter(video, startSec, endSec, session) {
   if (!video) return;
 
@@ -1409,7 +1379,6 @@ async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, s
 
       if (session !== LOAD_SESSION) return false;
 
-      // ✅ Buffering = normal
       const onWaiting = () => { if (status) status.textContent = "⏳ Buffering…"; };
       const onPlaying = () => { if (status) status.textContent = "✅ Lecture"; };
       video.addEventListener("waiting", onWaiting);
@@ -1475,7 +1444,7 @@ async function renderMatch() {
   cleanupCurrentMedia();
   box.innerHTML = "";
 
-  const session = ++LOAD_SESSION; // ✅ nouveau token à chaque match
+  const session = ++LOAD_SESSION;
 
   const indices = [currentMatch.a, currentMatch.b];
   const cardEls = [];
@@ -1561,7 +1530,7 @@ function vote(winner) {
 // FIN + CLASSEMENT
 // =======================
 function finishTournament() {
-  LOAD_SESSION++; // stop chargements en cours
+  LOAD_SESSION++;
   cleanupCurrentMedia();
 
   const alive = getAliveAll();
@@ -1572,19 +1541,6 @@ function finishTournament() {
   ranking.push(...eliminationOrder.slice().reverse());
 
   renderClassement(ranking);
-
-  // ✅ Hook parcours
-  const winnerLabel =
-    winner === null ? null :
-    (mode === "anime" ? (items[winner]?.title || null) : (items[winner]?.label || null));
-
-  notifyParcoursFinished({
-    game: "anime_tournament",
-    mode,
-    theme: CURRENT_CONTENT_THEME || null,
-    winner: winnerLabel,
-    ranking: ranking.map((idx) => (mode === "anime" ? (items[idx]?.title || "") : (items[idx]?.label || ""))),
-  });
 
   const replay = document.getElementById("next-match-btn");
   if (replay) {
@@ -1667,7 +1623,7 @@ function renderClassement(rankingIdx) {
 // RESET
 // =======================
 function resetTournament() {
-  LOAD_SESSION++; // stop chargements en cours
+  LOAD_SESSION++;
   cleanupCurrentMedia();
 
   const duel = document.getElementById("duel-container");
