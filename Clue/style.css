@@ -388,6 +388,17 @@ body::before{
 }
 .clue-step{ font-weight: 1000; opacity: .9; }
 
+/* ✅ TIMER badge */
+.timer-badge{
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(255,255,255,0.18);
+}
+.timer-badge.danger{
+  background: rgba(253,101,76,0.18);
+  border-color: rgba(253,101,76,0.45);
+  box-shadow: 0 0 0 3px rgba(253,101,76,0.08);
+}
+
 /* ✅ 6 cases visibles (2 colonnes dès le début) */
 .reveal-grid{
   width: 100%;
