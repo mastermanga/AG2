@@ -1,4 +1,6 @@
-// ========== THEME (DARK/LIGHT) ==========
+// =====================
+// THEME (DARK/LIGHT)
+// =====================
 document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
   const isLight = document.body.classList.contains("light");
@@ -9,12 +11,62 @@ window.addEventListener("DOMContentLoaded", () => {
   if (savedTheme === "light") document.body.classList.add("light");
 });
 
-// ========== RETOUR MENU ==========
-document.getElementById("back-to-menu").addEventListener("click", function() {
+// =====================
+// RETOUR MENU
+// =====================
+document.getElementById("back-to-menu").addEventListener("click", function () {
   window.location.href = "../index.html";
 });
 
-// ========== DOMS ==========
+// =====================
+// TOOLTIP AIDE
+// =====================
+document.addEventListener("click", (e) => {
+  const icon = e.target.closest(".info-icon");
+  if (!icon) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  const wrap = icon.closest(".info-wrap");
+  if (wrap) wrap.classList.toggle("open");
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".info-wrap")) {
+    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
+  }
+});
+
+// =====================
+// CONSTANTES / STORAGE
+// =====================
+const PARCOURS_CFG_KEY = "AG_parcours_filters";
+const PARCOURS_STEPS_KEY = "parcoursSteps";
+const PARCOURS_INPROGRESS_KEY = "parcoursInProgress";
+const PARCOURS_INDEX_KEY = "parcoursIndex";
+
+// =====================
+// DOMS (custom panel)
+// =====================
+const customPanel = document.getElementById("parcours-custom-panel");
+const container = document.getElementById("container");
+
+const popEl = document.getElementById("popPercent");
+const scoreEl = document.getElementById("scorePercent");
+const yearMinEl = document.getElementById("yearMin");
+const yearMaxEl = document.getElementById("yearMax");
+const popValEl = document.getElementById("popPercentVal");
+const scoreValEl = document.getElementById("scorePercentVal");
+const yearMinValEl = document.getElementById("yearMinVal");
+const yearMaxValEl = document.getElementById("yearMaxVal");
+const songsRow = document.getElementById("songsRow");
+const previewCountEl = document.getElementById("previewCount");
+const applyFiltersBtn = document.getElementById("applyFiltersBtn");
+const roundCountEl = document.getElementById("roundCount");
+
+// =====================
+// DOMS (builder/recap/parcours)
+// =====================
 const stepsList = document.getElementById("steps-list");
 const gameType = document.getElementById("gameType");
 const modeOption = document.getElementById("modeOption");
@@ -32,51 +84,378 @@ const parcoursIframe = document.getElementById("parcours-iframe");
 const parcoursScore = document.getElementById("parcours-score");
 const parcoursFinish = document.getElementById("parcours-finish");
 
-// Ajout loader (HTML dans JS, ou bien ajoute le DIV dans ton HTML !)
-let parcoursLoader = document.getElementById('parcours-loader');
+// Loader iframe
+let parcoursLoader = document.getElementById("parcours-loader");
 if (!parcoursLoader) {
-  parcoursLoader = document.createElement('div');
-  parcoursLoader.id = 'parcours-loader';
+  parcoursLoader = document.createElement("div");
+  parcoursLoader.id = "parcours-loader";
   parcoursLoader.textContent = "Chargement du jeu…";
   parcoursLoader.style.cssText = "display:none;text-align:center;margin:1.3rem;font-size:1.3rem;";
   parcoursContainer && parcoursContainer.insertBefore(parcoursLoader, parcoursIframe);
 }
 
-let parcoursSteps = [];
-let parcoursScores = []; // Pour stocker les scores en live
+// =====================
+// MAPPING JEUX
+// =====================
+const BASE = "https://mastermanga.github.io/AG/";
+const GAME_PATHS = {
+  anidle: "Anidle/index.html",
+  openingquizz: "OpeningQuizz/index.html",
+  characterquizz: "CharacterQuizz/index.html",
+  animetournament: "AnimeTournament/index.html",
+  blindranking: "BlindRanking/index.html",
 
-// ========== AFFICHER/DISSIMULER LE MODE (anime/opening) ==========
+  keeponext: "KeepOrNext/index.html",
+  leftorright: "LeftOrRight/index.html",
+  higherorlower: "HigherOrLower/index.html",
+  toppick: "TopPick/index.html",
+  threevthree: "3v3/index.html",
+  fakeortruth: "FakeOrTruth/index.html",
+  clue: "Clue/index.html",
+  intrus: "Intrus/index.html",
+  fusion: "Fusion/index.html",
+  pixelart: "PixelArt/index.html",
+};
+
+function gameNameLabel(type) {
+  const map = {
+    anidle: "Anidle",
+    openingquizz: "Opening Quizz",
+    characterquizz: "Character Quizz",
+    animetournament: "Anime Tournament",
+    blindranking: "Blind Ranking",
+
+    keeponext: "Keep Or Next",
+    leftorright: "Left Or Right",
+    higherorlower: "Higher Or Lower",
+    toppick: "Top Pick",
+    threevthree: "3 v 3",
+    fakeortruth: "Fake Or Truth",
+    clue: "Clue",
+    intrus: "Intrus",
+    fusion: "Fusion",
+    pixelart: "Pixel Art",
+  };
+  return map[type] || type;
+}
+
+// Jeux qui gèrent (souvent) un paramètre mode=anime|songs
+const MODE_CAPABLE = new Set(["animetournament", "blindranking", "toppick", "threevthree"]);
+
+// =====================
+// PARCOURS STATE
+// =====================
+let parcoursSteps = [];
+let parcoursScores = [];
+
+// =====================
+// CUSTOM PANEL LOGIC
+// =====================
+const MIN_REQUIRED = 64; // même esprit que tes jeux, sécurité
+
+function clampYearSliders() {
+  let a = parseInt(yearMinEl.value, 10);
+  let b = parseInt(yearMaxEl.value, 10);
+  if (a > b) {
+    [a, b] = [b, a];
+    yearMinEl.value = a;
+    yearMaxEl.value = b;
+  }
+}
+
+function setMode(mode) {
+  document.querySelectorAll("#modePills .pill").forEach((b) => {
+    const active = b.dataset.mode === mode;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  songsRow.style.display = mode === "songs" ? "flex" : "none";
+}
+
+function getMode() {
+  const active = document.querySelector("#modePills .pill.active");
+  return active?.dataset?.mode || "anime";
+}
+
+function getActiveTypes() {
+  return [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
+}
+function getActiveSongs() {
+  return [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
+}
+
+function collectParcoursConfig() {
+  return {
+    mode: getMode(),
+    popPercent: parseInt(popEl.value, 10),
+    scorePercent: parseInt(scoreEl.value, 10),
+    yearMin: parseInt(yearMinEl.value, 10),
+    yearMax: parseInt(yearMaxEl.value, 10),
+    types: getActiveTypes(),
+    songs: getActiveSongs(),
+    defaultRounds: Math.max(1, Math.min(100, parseInt(roundCountEl.value || "1", 10))),
+  };
+}
+
+function loadParcoursConfig() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_CFG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function applyConfigToUI(cfg) {
+  if (!cfg) return;
+
+  if (typeof cfg.popPercent === "number") popEl.value = String(cfg.popPercent);
+  if (typeof cfg.scorePercent === "number") scoreEl.value = String(cfg.scorePercent);
+  if (typeof cfg.yearMin === "number") yearMinEl.value = String(cfg.yearMin);
+  if (typeof cfg.yearMax === "number") yearMaxEl.value = String(cfg.yearMax);
+  if (typeof cfg.defaultRounds === "number") roundCountEl.value = String(cfg.defaultRounds);
+
+  setMode(cfg.mode === "songs" ? "songs" : "anime");
+
+  // Types pills
+  const types = Array.isArray(cfg.types) ? cfg.types : [];
+  document.querySelectorAll("#typePills .pill").forEach((b) => {
+    const active = types.includes(b.dataset.type);
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+
+  // Songs pills
+  const songs = Array.isArray(cfg.songs) ? cfg.songs : [];
+  document.querySelectorAll("#songPills .pill").forEach((b) => {
+    const active = songs.includes(b.dataset.song);
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+
+  syncLabels();
+  // valeur par défaut dans le builder
+  stepCount.value = String(cfg.defaultRounds || 1);
+}
+
+function syncLabels() {
+  clampYearSliders();
+  popValEl.textContent = popEl.value;
+  scoreValEl.textContent = scoreEl.value;
+  yearMinValEl.textContent = yearMinEl.value;
+  yearMaxValEl.textContent = yearMaxEl.value;
+}
+
+// ====== Data minimal pour preview (comme dans tes jeux) ======
+function normalizeAnimeList(json) {
+  if (Array.isArray(json)) return json;
+  if (json && Array.isArray(json.animes)) return json.animes;
+  return [];
+}
+function safeNum(x) {
+  const n = +x;
+  return Number.isFinite(n) ? n : 0;
+}
+function getDisplayTitle(a) {
+  return a.title_english || a.title_mal_default || a.title_original || a.title || "Titre inconnu";
+}
+function getYear(a) {
+  const s = ((a && a.season) ? String(a.season) : "").trim();
+  const m = s.match(/(\d{4})/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+function getYearFromSeasonStr(seasonStr, fallback = 0) {
+  const s = (seasonStr ? String(seasonStr) : "").trim();
+  const m = s.match(/(\d{4})/);
+  return m ? parseInt(m[1], 10) : (fallback || 0);
+}
+function extractSongsFromAnime(anime) {
+  const out = [];
+  const song = anime.song || {};
+  const buckets = [
+    { key: "openings", type: "OP" },
+    { key: "endings", type: "ED" },
+    { key: "inserts", type: "IN" },
+  ];
+
+  for (const b of buckets) {
+    const arr = Array.isArray(song[b.key]) ? song[b.key] : [];
+    for (const it of arr) {
+      const url = it.video || it.url || "";
+      if (!url || typeof url !== "string" || url.length < 6) continue;
+
+      const songYear = getYearFromSeasonStr(it.season, anime._year);
+      out.push({
+        songType: b.type,
+        url,
+        animeType: anime._type,
+        animeYear: anime._year,
+        animeMembers: anime._members,
+        animeScore: anime._score,
+        _key: `${b.type}|${it.number || ""}|${it.name || ""}|${url}|${anime.mal_id || ""}`,
+      });
+    }
+  }
+  return out;
+}
+
+let allAnimes = [];
+let allSongs = [];
+
+function applyFiltersPreview(cfg) {
+  const popPercent = cfg.popPercent;
+  const scorePercent = cfg.scorePercent;
+  const yearMin = cfg.yearMin;
+  const yearMax = cfg.yearMax;
+  const types = cfg.types;
+
+  if (!types.length) return { animeCount: 0, songCount: 0 };
+
+  // anime pool
+  let poolA = allAnimes.filter(
+    (a) => a._year >= yearMin && a._year <= yearMax && types.includes(a._type)
+  );
+  poolA.sort((a, b) => b._members - a._members);
+  poolA = poolA.slice(0, Math.ceil(poolA.length * (popPercent / 100)));
+  poolA.sort((a, b) => b._score - a._score);
+  poolA = poolA.slice(0, Math.ceil(poolA.length * (scorePercent / 100)));
+
+  // songs pool
+  const allowedSongs = cfg.songs;
+  let poolS = allSongs.filter(
+    (s) =>
+      s.animeYear >= yearMin &&
+      s.animeYear <= yearMax &&
+      types.includes(s.animeType) &&
+      allowedSongs.includes(s.songType)
+  );
+  poolS.sort((a, b) => b.animeMembers - a.animeMembers);
+  poolS = poolS.slice(0, Math.ceil(poolS.length * (popPercent / 100)));
+  poolS.sort((a, b) => b.animeScore - a.animeScore);
+  poolS = poolS.slice(0, Math.ceil(poolS.length * (scorePercent / 100)));
+
+  return { animeCount: poolA.length, songCount: poolS.length };
+}
+
+function updatePreview() {
+  if (!allAnimes.length) {
+    previewCountEl.textContent = "⏳ Chargement de la base…";
+    previewCountEl.classList.add("bad");
+    previewCountEl.classList.remove("good");
+    applyFiltersBtn.disabled = true;
+    applyFiltersBtn.classList.add("disabled");
+    return;
+  }
+
+  const cfg = collectParcoursConfig();
+  const { animeCount, songCount } = applyFiltersPreview(cfg);
+
+  const mode = cfg.mode;
+  const count = mode === "songs" ? songCount : animeCount;
+  const label = mode === "songs" ? "Songs" : "Titres";
+  const ok = count >= MIN_REQUIRED;
+
+  previewCountEl.textContent = ok
+    ? `📚 ${label} disponibles : ${count} (OK)`
+    : `📚 ${label} disponibles : ${count} (Min ${MIN_REQUIRED})`;
+
+  previewCountEl.classList.toggle("good", ok);
+  previewCountEl.classList.toggle("bad", !ok);
+
+  applyFiltersBtn.disabled = !ok;
+  applyFiltersBtn.classList.toggle("disabled", !ok);
+}
+
+// init UI (pills + sliders)
+function initCustomPanel() {
+  // mode pills
+  document.querySelectorAll("#modePills .pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setMode(btn.dataset.mode);
+      updatePreview();
+    });
+  });
+
+  // type pills
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      updatePreview();
+    });
+  });
+
+  // song pills
+  document.querySelectorAll("#songPills .pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+      updatePreview();
+    });
+  });
+
+  // sliders
+  const onInput = () => {
+    syncLabels();
+    updatePreview();
+  };
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", onInput));
+  roundCountEl.addEventListener("input", () => {
+    stepCount.value = String(Math.max(1, Math.min(100, parseInt(roundCountEl.value || "1", 10))));
+  });
+
+  // apply settings
+  applyFiltersBtn.addEventListener("click", () => {
+    const cfg = collectParcoursConfig();
+    localStorage.setItem(PARCOURS_CFG_KEY, JSON.stringify(cfg));
+    // show builder
+    customPanel.style.display = "none";
+    container.style.display = "flex";
+    // default stepCount
+    stepCount.value = String(cfg.defaultRounds || 1);
+  });
+
+  // restore cfg if exists
+  const saved = loadParcoursConfig();
+  if (saved) applyConfigToUI(saved);
+
+  syncLabels();
+  setMode(getMode());
+}
+
+// =====================
+// BUILDER: MODE OPTION (auto/anime/songs)
+// =====================
 gameType.addEventListener("change", () => {
-  if (["animetournament", "blindranking"].includes(gameType.value)) {
+  if (MODE_CAPABLE.has(gameType.value)) {
     modeOption.style.display = "";
     modeOption.innerHTML = `
+      <option value="auto">Auto (réglages)</option>
       <option value="anime">Anime</option>
-      <option value="opening">Opening</option>
+      <option value="songs">Songs</option>
     `;
   } else {
-    // characterquizz et les autres jeux → MASQUE le select
     modeOption.style.display = "none";
     modeOption.innerHTML = "";
   }
 });
 
-// ========== AJOUTER UNE ETAPE ==========
-// Décompose chaque ajout >1 en étapes unitaires pour que le parcours fonctionne bien
+// =====================
+// AJOUT ETAPES
+// =====================
 addStepBtn.addEventListener("click", () => {
   const type = gameType.value;
-  const mode = modeOption.style.display === "none" ? null : modeOption.value;
   const count = parseInt(stepCount.value, 10);
+  if (!type || !Number.isFinite(count) || count < 1) return;
 
-  if (!type || count < 1) return;
+  const mode = modeOption.style.display === "none" ? null : modeOption.value;
 
-  for (let i = 0; i < count; i++) {
-    parcoursSteps.push({ type, mode, count: 1 });
-  }
+  // IMPORTANT: on garde count (pas de découpage)
+  parcoursSteps.push({ type, mode, count });
   renderSteps();
   startParcoursBtn.style.display = parcoursSteps.length > 0 ? "block" : "none";
 });
 
-// Affiche la liste des étapes en regroupant visuellement les mêmes
 function renderSteps() {
   stepsList.innerHTML = "";
   if (parcoursSteps.length === 0) {
@@ -84,79 +463,52 @@ function renderSteps() {
     startParcoursBtn.style.display = "none";
     return;
   }
-  // Regroupement d’affichage des étapes similaires consécutives
-  let grouped = [];
-  for (let i = 0; i < parcoursSteps.length; i++) {
-    const step = parcoursSteps[i];
-    if (
-      grouped.length > 0 &&
-      grouped[grouped.length - 1].type === step.type &&
-      grouped[grouped.length - 1].mode === step.mode
-    ) {
-      grouped[grouped.length - 1].count += 1;
-      grouped[grouped.length - 1].indices.push(i);
-    } else {
-      grouped.push({
-        ...step,
-        count: 1,
-        indices: [i]
-      });
-    }
-  }
 
-  grouped.forEach((group, idx) => {
-    let txt = "";
-    if (["anidle", "openingquizz", "characterquizz"].includes(group.type)) {
-      txt = `${gameNameLabel(group.type)} × ${group.count}`;
-    } else {
-      txt = `${gameNameLabel(group.type)} (${group.mode === "opening" ? "Opening" : "Anime"})`;
-      if (group.count > 1) txt += ` × ${group.count}`;
+  parcoursSteps.forEach((step, idx) => {
+    let txt = `${gameNameLabel(step.type)}`;
+    if (MODE_CAPABLE.has(step.type) && step.mode) {
+      const m = step.mode === "songs" ? "Songs" : (step.mode === "anime" ? "Anime" : "Auto");
+      txt += ` (${m})`;
     }
+    txt += ` × ${step.count}`;
+
     const div = document.createElement("div");
     div.className = "step-line";
     div.innerHTML = `
       <span class="step-badge">${txt}</span>
       <span class="step-controls">
-        <button class="upBtn toggle-btn" ${grouped.length === 1 || idx === 0 ? "disabled" : ""}>⬆️</button>
-        <button class="downBtn toggle-btn" ${grouped.length === 1 || idx === grouped.length-1 ? "disabled" : ""}>⬇️</button>
+        <button class="upBtn toggle-btn" ${idx === 0 ? "disabled" : ""}>⬆️</button>
+        <button class="downBtn toggle-btn" ${idx === parcoursSteps.length - 1 ? "disabled" : ""}>⬇️</button>
         <button class="removeBtn toggle-btn">🗑️</button>
       </span>
     `;
-    div.querySelector(".upBtn").onclick = () => { moveStep(group.indices[0], -1); };
-    div.querySelector(".downBtn").onclick = () => { moveStep(group.indices[0], 1); };
-    div.querySelector(".removeBtn").onclick = () => {
-      // supprime toutes les étapes du groupe (d’un coup)
-      for (let j = group.indices.length - 1; j >= 0; j--) removeStep(group.indices[j]);
-    };
+
+    div.querySelector(".upBtn").onclick = () => moveStep(idx, -1);
+    div.querySelector(".downBtn").onclick = () => moveStep(idx, 1);
+    div.querySelector(".removeBtn").onclick = () => removeStep(idx);
+
     stepsList.appendChild(div);
   });
 }
 
-function gameNameLabel(type) {
-  switch(type) {
-    case "anidle": return "Anidle";
-    case "openingquizz": return "Opening Quizz";
-    case "characterquizz": return "Character Quizz";
-    case "animetournament": return "AnimeTournament";
-    case "blindranking": return "BlindRanking";
-    default: return "";
-  }
-}
-
 function moveStep(idx, dir) {
-  if ((dir === -1 && idx === 0) || (dir === 1 && idx === parcoursSteps.length-1)) return;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= parcoursSteps.length) return;
   const temp = parcoursSteps[idx];
   parcoursSteps.splice(idx, 1);
-  parcoursSteps.splice(idx + dir, 0, temp);
+  parcoursSteps.splice(newIdx, 0, temp);
   renderSteps();
 }
 
 function removeStep(idx) {
   parcoursSteps.splice(idx, 1);
   renderSteps();
+  startParcoursBtn.style.display = parcoursSteps.length > 0 ? "block" : "none";
 }
 
-// ========== BOUTON LANCER LE PARCOURS ==========
+// =====================
+// RECAP
+// =====================
 startParcoursBtn.addEventListener("click", () => {
   if (parcoursSteps.length === 0) return;
   showRecap();
@@ -166,58 +518,44 @@ function showRecap() {
   document.getElementById("parcours-builder").style.display = "none";
   recapSection.style.display = "block";
   recapList.innerHTML = "";
-  // Regroupe pour l’affichage du recap (même logique que renderSteps)
-  let grouped = [];
-  for (let i = 0; i < parcoursSteps.length; i++) {
-    const step = parcoursSteps[i];
-    if (
-      grouped.length > 0 &&
-      grouped[grouped.length - 1].type === step.type &&
-      grouped[grouped.length - 1].mode === step.mode
-    ) {
-      grouped[grouped.length - 1].count += 1;
-    } else {
-      grouped.push({
-        ...step,
-        count: 1
-      });
-    }
-  }
-  grouped.forEach((group, i) => {
-    let txt = "";
-    if (["anidle", "openingquizz", "characterquizz"].includes(group.type)) {
-      txt = `${gameNameLabel(group.type)} × ${group.count}`;
-    } else {
-      txt = `${gameNameLabel(group.type)} (${group.mode === "opening" ? "Opening" : "Anime"})`;
-      if (group.count > 1) txt += ` × ${group.count}`;
+
+  parcoursSteps.forEach((step, i) => {
+    let txt = `${gameNameLabel(step.type)} × ${step.count}`;
+    if (MODE_CAPABLE.has(step.type) && step.mode) {
+      const m = step.mode === "songs" ? "Songs" : (step.mode === "anime" ? "Anime" : "Auto");
+      txt = `${gameNameLabel(step.type)} (${m}) × ${step.count}`;
     }
     const li = document.createElement("li");
-    li.textContent = `${i+1}. ${txt}`;
+    li.textContent = `${i + 1}. ${txt}`;
     recapList.appendChild(li);
   });
 }
 
-// ========== BOUTON EDITER ==========
 editParcoursBtn.addEventListener("click", () => {
   document.getElementById("parcours-builder").style.display = "";
   recapSection.style.display = "none";
 });
 
-// ========== CONFIRMER LE PARCOURS ==========
+// =====================
+// CONFIRMATION & LANCEMENT
+// =====================
 launchConfirmedBtn.addEventListener("click", () => {
-  // Sauvegarde la liste dans localStorage
-  localStorage.setItem("parcoursSteps", JSON.stringify(parcoursSteps));
-  localStorage.setItem("parcoursInProgress", "1");
-  localStorage.setItem("parcoursIndex", "0");
+  localStorage.setItem(PARCOURS_STEPS_KEY, JSON.stringify(parcoursSteps));
+  localStorage.setItem(PARCOURS_INPROGRESS_KEY, "1");
+  localStorage.setItem(PARCOURS_INDEX_KEY, "0");
   parcoursScores = [];
   startIframeParcours();
 });
 
-// ========== MODE IFRAME ==========
+// =====================
+// IFRAME FLOW
+// =====================
 function startIframeParcours() {
-  document.getElementById("parcours-builder").style.display = "none";
+  // hide builder/recap
+  container.style.display = "none";
   recapSection.style.display = "none";
-  document.body.classList.add('parcours-fullscreen');
+  document.body.classList.add("parcours-fullscreen");
+
   parcoursContainer.style.display = "flex";
   parcoursContainer.classList.add("active");
   parcoursScore.style.display = "none";
@@ -226,129 +564,164 @@ function startIframeParcours() {
   launchIframeStep(0);
 }
 
+function resolveStepMode(step) {
+  const cfg = loadParcoursConfig() || { mode: "anime" };
+  if (!MODE_CAPABLE.has(step.type)) return null;
+  if (!step.mode || step.mode === "auto") return cfg.mode || "anime";
+  return step.mode;
+}
+
 function launchIframeStep(idx) {
-  const steps = JSON.parse(localStorage.getItem("parcoursSteps") || "[]");
+  const steps = JSON.parse(localStorage.getItem(PARCOURS_STEPS_KEY) || "[]");
   if (!steps.length || idx >= steps.length) {
     showFinalRecap();
     return;
   }
-  localStorage.setItem("parcoursInProgress", "1");
-  localStorage.setItem("parcoursIndex", String(idx));
+
+  localStorage.setItem(PARCOURS_INPROGRESS_KEY, "1");
+  localStorage.setItem(PARCOURS_INDEX_KEY, String(idx));
+
   const step = steps[idx];
-  let url = "";
-  const base = "https://mastermanga.github.io/AG/";
-  if (step.type === "anidle") {
-    url = `${base}Anidle/index.html?parcours=1&count=${step.count}`;
-  } else if (step.type === "openingquizz") {
-    url = `${base}OpeningQuizz/index.html?parcours=1&count=${step.count}`;
-  } else if (step.type === "characterquizz") {
-    url = `${base}CharacterQuizz/index.html?parcours=1&count=${step.count}`;
-  } else if (step.type === "animetournament") {
-    url = `${base}AnimeTournament/index.html?parcours=1&mode=${step.mode || "anime"}&count=${step.count}`;
-  } else if (step.type === "blindranking") {
-    url = `${base}BlindRanking/index.html?parcours=1&mode=${step.mode || "anime"}&count=${step.count}`;
-  } else {
-    url = base + "index.html";
-  }
+  const path = GAME_PATHS[step.type] || "index.html";
+  const urlBase = BASE + path;
+
+  const params = new URLSearchParams();
+  params.set("parcours", "1");
+  params.set("count", String(step.count || 1));
+
+  const m = resolveStepMode(step);
+  if (m) params.set("mode", m); // anime|songs
+
+  const url = `${urlBase}?${params.toString()}`;
+
   parcoursIframe.style.display = "none";
   parcoursIframe.classList.remove("active");
   parcoursLoader.style.display = "block";
+
   parcoursIframe.onload = () => {
     parcoursLoader.style.display = "none";
     parcoursIframe.style.display = "block";
     parcoursIframe.classList.add("active");
   };
+
   parcoursIframe.src = url;
 }
 
-// Pour les jeux : doivent appeler parent.postMessage({parcoursScore: ...}, "*")
+// Les jeux doivent faire : parent.postMessage({parcoursScore:{label,score,total}}, "*")
 window.addEventListener("message", (e) => {
-  if (e.data && e.data.parcoursScore) {
-    parcoursScores.push(e.data.parcoursScore);
-    const idx = parseInt(localStorage.getItem("parcoursIndex") || "0", 10) + 1;
-    const steps = JSON.parse(localStorage.getItem("parcoursSteps") || "[]");
-    if (idx < steps.length) {
-      launchIframeStep(idx);
-    } else {
-      showFinalRecap();
-    }
+  const payload = e?.data?.parcoursScore;
+  if (!payload) return;
+
+  parcoursScores.push(payload);
+
+  const idx = parseInt(localStorage.getItem(PARCOURS_INDEX_KEY) || "0", 10) + 1;
+  const steps = JSON.parse(localStorage.getItem(PARCOURS_STEPS_KEY) || "[]");
+
+  if (idx < steps.length) {
+    launchIframeStep(idx);
+  } else {
+    showFinalRecap();
   }
 });
 
-// ========== AFFICHAGE FINAL ==========
+// =====================
+// FINAL RECAP + CLEANUP
+// =====================
 function showFinalRecap() {
-  document.getElementById("container").style.display = "none";
+  // cleanup inProgress (important)
+  localStorage.removeItem(PARCOURS_INPROGRESS_KEY);
+  localStorage.removeItem(PARCOURS_INDEX_KEY);
+
   parcoursIframe.style.display = "none";
   parcoursIframe.classList.remove("active");
   parcoursLoader.style.display = "none";
-  document.body.classList.remove('parcours-fullscreen');
+
+  document.body.classList.remove("parcours-fullscreen");
   parcoursContainer.style.display = "flex";
   parcoursContainer.classList.add("active");
   parcoursScore.style.display = "block";
   parcoursFinish.style.display = "block";
 
   let html = "<h2>Récapitulatif du Parcours</h2><ul>";
-  
-  // Regroupement par jeu
+
   const grouped = {};
   let totalScore = 0;
   let maxScore = 0;
-  parcoursScores.forEach(res => {
-    // On regroupe tout sauf les BlindRanking qui semblent être des cas à part
-    const label = (res.label && res.label.startsWith("Blind Ranking")) ? res.label : (res.label || "Autre");
+
+  parcoursScores.forEach((res) => {
+    const label = res.label || "Autre";
     if (!grouped[label]) grouped[label] = { score: 0, total: 0 };
     grouped[label].score += (typeof res.score === "number" ? res.score : 0);
     grouped[label].total += (typeof res.total === "number" ? res.total : 0);
     totalScore += (typeof res.score === "number" ? res.score : 0);
     maxScore += (typeof res.total === "number" ? res.total : 0);
   });
-  
-  // Affichage groupé
+
   for (const label in grouped) {
-    html += `<li>${label} : <b>${grouped[label].score} / ${grouped[label].total}</b></li>`;
+    html += `<li>${label} : <b>${grouped[label].score} / ${grouped[label].total}</b></li>`;
   }
   html += "</ul>";
-  html += `<div style="font-size:2rem;margin-top:13px;"><b>Score total : ${totalScore} / ${maxScore} </b></div>`;
-  parcoursScore.innerHTML = html;
+  html += `<div style="font-size:2rem;margin-top:13px;"><b>Score total : ${totalScore} / ${maxScore}</b></div>`;
 
+  parcoursScore.innerHTML = html;
   parcoursFinish.innerHTML = `<button onclick="window.location.href='../index.html'" class="toggle-btn">Retour menu</button>`;
 }
 
-// Pour pouvoir être appelé depuis l’iframe :
-window.launchNextParcoursStep = function() {
-  // Les jeux doivent poster le score avec :
-  // parent.postMessage({parcoursScore: {label:..., score:..., total:...}}, "*");
-  // Ici, le passage est fait à la réception du message postMessage (voir listener plus haut)
-};
-
-// Restauration parcours en cours si reload
+// =====================
+// RESTORE (si reload pendant parcours)
+// =====================
 window.addEventListener("DOMContentLoaded", () => {
-  if (localStorage.getItem("parcoursInProgress")) {
-    if (confirm("Un Mode Parcours est en cours, continuer ?")) {
+  if (localStorage.getItem(PARCOURS_INPROGRESS_KEY)) {
+    if (confirm("Un Mode Parcours est en cours, continuer ?")) {
+      // on masque settings/builder et on relance direct
+      customPanel.style.display = "none";
+      container.style.display = "none";
       startIframeParcours();
     } else {
-      localStorage.removeItem("parcoursInProgress");
-      localStorage.removeItem("parcoursSteps");
-      localStorage.removeItem("parcoursIndex");
-      localStorage.removeItem("parcoursCurrent");
+      localStorage.removeItem(PARCOURS_INPROGRESS_KEY);
+      localStorage.removeItem(PARCOURS_STEPS_KEY);
+      localStorage.removeItem(PARCOURS_INDEX_KEY);
     }
   }
 });
 
-// ========== TOOLTIP AIDE (icône info) ==========
-document.addEventListener("click", (e) => {
-  const icon = e.target.closest(".info-icon");
-  if (!icon) return;
+// =====================
+// BOOT
+// =====================
+fetch("../data/licenses_only.json")
+  .then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status} - ${r.statusText}`);
+    return r.json();
+  })
+  .then((json) => {
+    const raw = normalizeAnimeList(json);
 
-  e.preventDefault();
-  e.stopPropagation();
+    allAnimes = (Array.isArray(raw) ? raw : []).map((a) => {
+      const title = getDisplayTitle(a);
+      return {
+        ...a,
+        _title: title,
+        _year: getYear(a),
+        _members: safeNum(a.members),
+        _score: safeNum(a.score),
+        _type: a.type || "Unknown",
+      };
+    });
 
-  const wrap = icon.closest(".info-wrap");
-  if (wrap) wrap.classList.toggle("open");
-});
+    allSongs = [];
+    for (const a of allAnimes) allSongs.push(...extractSongsFromAnime(a));
 
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach(w => w.classList.remove("open"));
-  }
-});
+    initCustomPanel();
+    updatePreview();
+
+    // au départ: settings visibles, builder caché
+    customPanel.style.display = "block";
+    container.style.display = "none";
+  })
+  .catch((e) => {
+    previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
+    previewCountEl.classList.add("bad");
+    applyFiltersBtn.disabled = true;
+    applyFiltersBtn.classList.add("disabled");
+    console.error(e);
+  });
