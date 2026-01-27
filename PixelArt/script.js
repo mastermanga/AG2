@@ -574,7 +574,7 @@ function buildEffectOverlay() {
 
   if (currentEffect.id === "grid") {
     const v = 16;
-    const h = 12;
+    const h = 16;
 
     overlayGridV.style.display = "grid";
     overlayGridV.style.gridTemplateColumns = `repeat(${v}, 1fr)`;
@@ -700,7 +700,7 @@ function applyStage(resetTimer = true) {
 
   // Grid V/H
   if (id === "grid") {
-    const vShow = gridCounts?.v?.[stage] ?? [3, 5, 7][stage];
+    const vShow = gridCounts?.v?.[stage] ?? [2, 4, 6][stage];
     const hShow = gridCounts?.h?.[stage] ?? [2, 4, 6][stage];
 
     const vStrips = overlayGridV.querySelectorAll(".strip");
