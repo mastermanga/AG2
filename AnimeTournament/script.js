@@ -16,10 +16,10 @@
 const DATA_URL = "../data/licenses_only.json";
 const TOTAL_MATCH_ITEMS = 32;
 
-const MIN_REQUIRED_TITLES = 64;
-const MIN_REQUIRED_SONGS = 64;
+const MIN_REQUIRED_TITLES = 32;
+const MIN_REQUIRED_SONGS = 32;
 
-const THEME_POOL_SIZE = 64;
+const THEME_POOL_SIZE = 32;
 
 // Songs snippet
 const SONG_START_SEC = 45;
