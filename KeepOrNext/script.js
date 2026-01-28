@@ -1,5 +1,11 @@
 /**********************
- * Keep or Next (Anime / Songs)
+ * Keep or Next (Anime / Songs) — script.js (COMPLET MODIFIÉ)
+ * ✅ Fix pool Songs (mapping pills opening/ending/insert -> OP/ED/IN)
+ * ✅ Mode Parcours: auto-start (skip personnalisation du mini-jeu)
+ * ✅ Sécurité: au moins 1 type actif + (si songs) au moins 1 song-type actif
+ * ✅ Volume persistant (localStorage) + appliqué aux 2 players
+ * ✅ Nettoyages handlers/tokens un peu plus stricts (anti-bugs mobile)
+ *
  * - Default tours = 1
  * - Cartes + slot media plus grands
  * - Droite cachée = même taille (slot fixe) + 💤 centré
@@ -12,11 +18,11 @@
  **********************/
 
 // ====== MENU & THEME ======
-document.getElementById("back-to-menu").addEventListener("click", () => {
+document.getElementById("back-to-menu")?.addEventListener("click", () => {
   window.location.href = "../index.html";
 });
 
-document.getElementById("themeToggle").addEventListener("click", () => {
+document.getElementById("themeToggle")?.addEventListener("click", () => {
   document.body.classList.toggle("light");
   localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
@@ -53,6 +59,10 @@ const CLIP_START_S = 45;
 const CLIP_DURATION_S = 20;
 const CLIP_EPS = 0.05;
 
+// ✅ Volume persistence
+const VOLUME_KEY_MAIN = "keepnext_volume";
+const VOLUME_KEY_FALLBACK = "tournament_volume"; // si tu veux partager avec Tournament
+
 function normalizeAnimeList(json) {
   if (Array.isArray(json)) return json;
   if (json && Array.isArray(json.animes)) return json.animes;
@@ -79,8 +89,13 @@ function getYear(a) {
 function clampYearSliders() {
   const minEl = document.getElementById("yearMin");
   const maxEl = document.getElementById("yearMax");
+  if (!minEl || !maxEl) return;
+
   let a = parseInt(minEl.value, 10);
   let b = parseInt(maxEl.value, 10);
+  if (!Number.isFinite(a)) a = 0;
+  if (!Number.isFinite(b)) b = 0;
+
   if (a > b) {
     [a, b] = [b, a];
     minEl.value = a;
@@ -106,6 +121,7 @@ function safeNum(x) {
   return Number.isFinite(n) ? n : 0;
 }
 
+// ====== SONG TYPE / LABEL ======
 function songTypeLabel(t) {
   if (t === "OP") return "OP";
   if (t === "ED") return "ED";
@@ -124,6 +140,21 @@ function formatItemLabel(it) {
   if (!it) return "";
   if (it.kind === "song") return formatSongTitle(it);
   return it.title || "";
+}
+
+// ✅ mapping pills -> dataset songType
+function mapSongPillToCode(v) {
+  const s = String(v || "").trim().toLowerCase();
+  if (s === "opening" || s === "op") return "OP";
+  if (s === "ending" || s === "ed") return "ED";
+  if (s === "insert" || s === "in") return "IN";
+  // au cas où ton HTML met déjà OP/ED/IN
+  if (s === "op" || s === "opening") return "OP";
+  if (s === "ed" || s === "ending") return "ED";
+  if (s === "in" || s === "insert") return "IN";
+  // valeur brute
+  const raw = String(v || "").trim();
+  return raw;
 }
 
 function extractSongsFromAnime(anime) {
@@ -211,6 +242,20 @@ const volumeVal = document.getElementById("volumeVal");
 const resultDiv = document.getElementById("result");
 const nextBtn = document.getElementById("nextBtn");
 
+// ====== PARCOURS (compat) ======
+const urlParams = new URLSearchParams(window.location.search);
+const isParcours = urlParams.get("parcours") === "1";
+const parcoursCount = parseInt(urlParams.get("count") || "1", 10);
+const forcedMode = urlParams.get("mode"); // "anime" | "songs" éventuel
+
+// (optionnel) si ton global passe aussi les filtres dans l’URL
+const qpPop = urlParams.get("pop");
+const qpScore = urlParams.get("score");
+const qpYearMin = urlParams.get("ymin") || urlParams.get("yearMin");
+const qpYearMax = urlParams.get("ymax") || urlParams.get("yearMax");
+const qpTypes = urlParams.get("types"); // ex "TV,Movie"
+const qpSongs = urlParams.get("songs"); // ex "opening,ending" ou "OP,ED"
+
 // ====== DATA ======
 let allAnimes = [];
 let allSongs = [];
@@ -240,25 +285,79 @@ let wallTimerRight = null;
 
 // ====== UI SHOW/HIDE ======
 function showCustomization() {
-  customPanel.style.display = "block";
-  gamePanel.style.display = "none";
+  if (customPanel) customPanel.style.display = "block";
+  if (gamePanel) gamePanel.style.display = "none";
 }
 function showGame() {
-  customPanel.style.display = "none";
-  gamePanel.style.display = "block";
+  if (customPanel) customPanel.style.display = "none";
+  if (gamePanel) gamePanel.style.display = "block";
 }
 
-// ====== VOLUME ======
+// ====== DEFAULT PILLS (sécurité) ======
+function ensureDefaultTypes() {
+  const pills = Array.from(document.querySelectorAll("#typePills .pill"));
+  if (!pills.length) return;
+
+  const active = pills.filter((b) => b.classList.contains("active"));
+  if (active.length > 0) return;
+
+  pills.forEach((b) => {
+    const t = b.dataset.type;
+    const on = (t === "TV" || t === "Movie");
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+
+function ensureDefaultSongs() {
+  const pills = Array.from(document.querySelectorAll("#songPills .pill"));
+  if (!pills.length) return;
+
+  const active = pills.filter((b) => b.classList.contains("active"));
+  if (active.length > 0) return;
+
+  pills.forEach((b) => {
+    const s = (b.dataset.song || "").toLowerCase();
+    const on = (s === "opening" || s === "op");
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+
+// ====== VOLUME (persistant) ======
+function loadSavedVolumePercent() {
+  const raw =
+    localStorage.getItem(VOLUME_KEY_MAIN) ??
+    localStorage.getItem(VOLUME_KEY_FALLBACK) ??
+    "30";
+  const p = parseInt(raw, 10);
+  return Number.isFinite(p) ? Math.max(0, Math.min(100, p)) : 30;
+}
+
+function saveVolumePercent(p) {
+  const v = String(Math.max(0, Math.min(100, p)));
+  localStorage.setItem(VOLUME_KEY_MAIN, v);
+  // si tu veux partager aussi avec Tournament:
+  localStorage.setItem(VOLUME_KEY_FALLBACK, String(Math.max(0, Math.min(1, (parseInt(v, 10) || 30) / 100))));
+}
+
 function applyVolume() {
-  const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "30", 10)));
+  const v = Math.max(0, Math.min(100, parseInt(volumeSlider?.value || "30", 10)));
   [leftPlayer, rightPlayer].forEach((p) => {
     if (!p) return;
-    p.muted = false;
-    p.volume = v / 100;
+    try {
+      p.muted = false;
+      p.volume = v / 100;
+    } catch {}
   });
   if (volumeVal) volumeVal.textContent = `${v}%`;
 }
-if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
+if (volumeSlider) {
+  volumeSlider.addEventListener("input", () => {
+    applyVolume();
+    saveVolumePercent(parseInt(volumeSlider.value || "30", 10));
+  });
+}
 
 // ====== MEDIA LOADER ======
 function hardResetMedia(player) {
@@ -273,7 +372,7 @@ function withCacheBuster(url) {
   return frag ? busted + "#" + frag : busted;
 }
 
-// ✅ Loader générique (comme TopPick) : retries + anti-stall + callback onReady
+// ✅ Loader générique : retries + anti-stall + callback onReady
 function loadMediaWithRetries(player, url, localRound, localMedia, { onReady } = {}) {
   let attemptIndex = 0;
   let stallTimer = null;
@@ -305,7 +404,7 @@ function loadMediaWithRetries(player, url, localRound, localMedia, { onReady } =
     if (!isStillValid() || done) return;
     done = true;
     cleanup();
-    onReady?.();
+    if (typeof onReady === "function") onReady();
   };
 
   const triggerRetry = () => {
@@ -366,7 +465,7 @@ function clearWallTimerFor(player) {
   }
 }
 
-// ✅ Clip “comme TopPick” : currentTime=start puis play, stop après 20s DE VIDEO.
+// ✅ Clip: seek start puis play, stop après 20s DE VIDEO.
 function playClip(player, localRound, localMedia, { autoplay = true } = {}) {
   const tokenNow = () => (player === leftPlayer ? mediaTokenLeft : mediaTokenRight);
   const isStillValid = () => (localRound === roundToken && localMedia === tokenNow());
@@ -374,6 +473,7 @@ function playClip(player, localRound, localMedia, { autoplay = true } = {}) {
   // clean anciens handlers
   player.ontimeupdate = null;
   player.onended = null;
+  player.onplay = null;
 
   clearWallTimerFor(player);
 
@@ -409,7 +509,6 @@ function playClip(player, localRound, localMedia, { autoplay = true } = {}) {
   };
   player.onended = () => stopSnippet();
 
-  // ✅ tentative seek + re-seek (si le navigateur “retombe” à 0)
   const trySeek = () => {
     if (!isStillValid()) return;
     try { player.currentTime = start; } catch {}
@@ -425,13 +524,12 @@ function playClip(player, localRound, localMedia, { autoplay = true } = {}) {
     if (p && typeof p.catch === "function") p.catch(() => {});
   }
 
-  // 3) re-seek rapide si ça reste proche de 0 (comme une “récupération”)
+  // 3) re-seek rapide si ça reste proche de 0
   let tries = 0;
   const seeker = setInterval(() => {
     if (!isStillValid()) { clearInterval(seeker); return; }
     const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
 
-    // si on est bien vers start, ok
     if (Math.abs(ct - start) < 0.8) { clearInterval(seeker); return; }
 
     tries++;
@@ -440,7 +538,7 @@ function playClip(player, localRound, localMedia, { autoplay = true } = {}) {
     if (tries >= 15) { clearInterval(seeker); }
   }, 120);
 
-  // si user clique play plus tard, on force le seek avant que ça parte à 0
+  // si user clique play plus tard
   player.onplay = () => {
     if (!isStillValid()) return;
     const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
@@ -465,11 +563,79 @@ function stopAllMedia() {
 
   try { leftPlayer.pause(); } catch {}
   try { rightPlayer.pause(); } catch {}
+
   leftPlayer.removeAttribute("src"); leftPlayer.load();
   rightPlayer.removeAttribute("src"); rightPlayer.load();
 }
 
 // ====== UI INIT ======
+function updateModeVisibility() {
+  if (songsRow) songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
+  if (volumeRow) volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
+  applyVolume();
+}
+
+function updateModePillsFromState() {
+  document.querySelectorAll("#modePills .pill").forEach((b) => {
+    const active = b.dataset.mode === currentMode;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  updateModeVisibility();
+}
+
+function applyParcoursParamsToUIIfAny() {
+  // mode
+  if (forcedMode === "anime" || forcedMode === "songs") {
+    currentMode = forcedMode;
+    updateModePillsFromState();
+  }
+
+  // sliders (si fournis)
+  if (qpPop && popEl) popEl.value = String(clampInt(parseInt(qpPop, 10), 1, 100));
+  if (qpScore && scoreEl) scoreEl.value = String(clampInt(parseInt(qpScore, 10), 1, 100));
+  if (qpYearMin && yearMinEl) yearMinEl.value = String(parseInt(qpYearMin, 10) || yearMinEl.value);
+  if (qpYearMax && yearMaxEl) yearMaxEl.value = String(parseInt(qpYearMax, 10) || yearMaxEl.value);
+
+  // types (si fournis)
+  if (qpTypes) {
+    const wanted = new Set(qpTypes.split(",").map(s => s.trim()).filter(Boolean));
+    const pills = Array.from(document.querySelectorAll("#typePills .pill"));
+    if (pills.length) {
+      pills.forEach((b) => {
+        const t = b.dataset.type;
+        const on = wanted.has(t);
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    }
+  }
+
+  // songs (si fournis)
+  if (qpSongs) {
+    const wantedRaw = new Set(qpSongs.split(",").map(s => s.trim()).filter(Boolean));
+    const wanted = new Set(Array.from(wantedRaw).map(mapSongPillToCode)); // normalise
+
+    const pills = Array.from(document.querySelectorAll("#songPills .pill"));
+    if (pills.length) {
+      pills.forEach((b) => {
+        const code = mapSongPillToCode(b.dataset.song);
+        const on = wanted.has(code) || wantedRaw.has(b.dataset.song);
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    }
+  }
+
+  // volume init (si pas déjà)
+  if (volumeSlider) {
+    const pv = loadSavedVolumePercent();
+    volumeSlider.value = String(pv);
+    if (volumeVal) volumeVal.textContent = `${pv}%`;
+  }
+  applyVolume();
+}
+
 function initCustomUI() {
   // Mode pills
   document.querySelectorAll("#modePills .pill").forEach((btn) => {
@@ -486,40 +652,58 @@ function initCustomUI() {
     });
   });
 
-  // Type pills
-  document.querySelectorAll("#typePills .pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-      updatePreview();
-    });
+  // Type pills (au moins 1)
+  document.getElementById("typePills")?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".pill");
+    if (!btn) return;
+
+    // si on essaie d’éteindre le dernier -> refuse
+    if (btn.classList.contains("active")) {
+      const actives = Array.from(document.querySelectorAll("#typePills .pill.active"));
+      if (actives.length === 1) return;
+    }
+
+    btn.classList.toggle("active");
+    btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+    ensureDefaultTypes();
+    updatePreview();
   });
 
-  // Song pills
-  document.querySelectorAll("#songPills .pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      btn.classList.toggle("active");
-      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-      updatePreview();
-    });
+  // Song pills (au moins 1)
+  document.getElementById("songPills")?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".pill");
+    if (!btn) return;
+
+    if (btn.classList.contains("active")) {
+      const actives = Array.from(document.querySelectorAll("#songPills .pill.active"));
+      if (actives.length === 1) return;
+    }
+
+    btn.classList.toggle("active");
+    btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
+    ensureDefaultSongs();
+    updatePreview();
   });
 
   // Sliders
   function syncLabels() {
     clampYearSliders();
-    popValEl.textContent = popEl.value;
-    scoreValEl.textContent = scoreEl.value;
-    yearMinValEl.textContent = yearMinEl.value;
-    yearMaxValEl.textContent = yearMaxEl.value;
+    if (popValEl) popValEl.textContent = popEl.value;
+    if (scoreValEl) scoreValEl.textContent = scoreEl.value;
+    if (yearMinValEl) yearMinValEl.textContent = yearMinEl.value;
+    if (yearMaxValEl) yearMaxValEl.textContent = yearMaxEl.value;
     updatePreview();
   }
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
-  turnCountEl.addEventListener("input", updatePreview);
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el?.addEventListener("input", syncLabels));
+  turnCountEl?.addEventListener("input", updatePreview);
 
   // Apply
-  applyBtn.addEventListener("click", () => {
+  applyBtn?.addEventListener("click", () => {
+    ensureDefaultTypes();
+    if (currentMode === "songs") ensureDefaultSongs();
+
     filteredPool = applyFilters();
-    totalTurns = clampInt(parseInt(turnCountEl.value || "1", 10), 1, 100);
+    totalTurns = clampInt(parseInt(turnCountEl?.value || "1", 10), 1, 100);
 
     const minNeeded = Math.max(2, MIN_REQUIRED);
     if (filteredPool.length < minNeeded) return;
@@ -528,27 +712,38 @@ function initCustomUI() {
     startGame();
   });
 
-  keepBtn.addEventListener("click", () => handleChoice("keep"));
-  nextChoiceBtn.addEventListener("click", () => handleChoice("next"));
+  keepBtn?.addEventListener("click", () => handleChoice("keep"));
+  nextChoiceBtn?.addEventListener("click", () => handleChoice("next"));
+
+  // init volume slider from storage
+  if (volumeSlider) {
+    const pv = loadSavedVolumePercent();
+    volumeSlider.value = String(pv);
+    if (volumeVal) volumeVal.textContent = `${pv}%`;
+  }
+
+  ensureDefaultTypes();
+  ensureDefaultSongs();
 
   updateModeVisibility();
   syncLabels();
 }
 
-function updateModeVisibility() {
-  songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
-  volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
-  applyVolume();
-}
-
 // ====== FILTERS ======
 function applyFilters() {
-  const popPercent = parseInt(popEl.value, 10);
-  const scorePercent = parseInt(scoreEl.value, 10);
-  const yearMin = parseInt(yearMinEl.value, 10);
-  const yearMax = parseInt(yearMaxEl.value, 10);
+  clampYearSliders();
+  ensureDefaultTypes();
+  if (currentMode === "songs") ensureDefaultSongs();
 
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
+  const popPercent = parseInt(popEl?.value || "30", 10);
+  const scorePercent = parseInt(scoreEl?.value || "100", 10);
+  const yearMin = parseInt(yearMinEl?.value || "1950", 10);
+  const yearMax = parseInt(yearMaxEl?.value || "2026", 10);
+
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")]
+    .map((b) => b.dataset.type)
+    .filter(Boolean);
+
   if (allowedTypes.length === 0) return [];
 
   if (currentMode === "anime") {
@@ -570,14 +765,19 @@ function applyFilters() {
     }));
   }
 
-  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
-  if (allowedSongs.length === 0) return [];
+  // songs mode
+  const allowedSongPills = [...document.querySelectorAll("#songPills .pill.active")]
+    .map((b) => b.dataset.song)
+    .filter(Boolean);
 
+  if (allowedSongPills.length === 0) return [];
+
+  const allowedSongCodes = new Set(allowedSongPills.map(mapSongPillToCode)); // ✅ FIX
   let pool = allSongs.filter((s) =>
     s.animeYear >= yearMin &&
     s.animeYear <= yearMax &&
     allowedTypes.includes(s.animeType) &&
-    allowedSongs.includes(s.songType)
+    allowedSongCodes.has(String(s.songType || "").trim())
   );
 
   pool.sort((a, b) => b.animeMembers - a.animeMembers);
@@ -602,11 +802,15 @@ function applyFilters() {
 // ====== PREVIEW ======
 function updatePreview() {
   if (!allAnimes.length) {
-    previewCountEl.textContent = "⏳ Chargement de la base…";
-    previewCountEl.classList.add("bad");
-    previewCountEl.classList.remove("good");
-    applyBtn.disabled = true;
-    applyBtn.classList.add("disabled");
+    if (previewCountEl) {
+      previewCountEl.textContent = "⏳ Chargement de la base…";
+      previewCountEl.classList.add("bad");
+      previewCountEl.classList.remove("good");
+    }
+    if (applyBtn) {
+      applyBtn.disabled = true;
+      applyBtn.classList.add("disabled");
+    }
     return;
   }
 
@@ -615,15 +819,19 @@ function updatePreview() {
   const ok = pool.length >= minNeeded;
 
   const label = (currentMode === "songs") ? "Songs" : "Titres";
-  previewCountEl.textContent = ok
-    ? `📚 ${label} disponibles : ${pool.length} (OK)`
-    : `📚 ${label} disponibles : ${pool.length} (Min ${minNeeded})`;
+  if (previewCountEl) {
+    previewCountEl.textContent = ok
+      ? `📚 ${label} disponibles : ${pool.length} (OK)`
+      : `📚 ${label} disponibles : ${pool.length} (Min ${minNeeded})`;
 
-  previewCountEl.classList.toggle("good", ok);
-  previewCountEl.classList.toggle("bad", !ok);
+    previewCountEl.classList.toggle("good", ok);
+    previewCountEl.classList.toggle("bad", !ok);
+  }
 
-  applyBtn.disabled = !ok;
-  applyBtn.classList.toggle("disabled", !ok);
+  if (applyBtn) {
+    applyBtn.disabled = !ok;
+    applyBtn.classList.toggle("disabled", !ok);
+  }
 }
 
 // ====== BAG ======
@@ -656,8 +864,8 @@ function drawPair() {
 
 // ====== GAME ======
 function clearChoiceEffects() {
-  leftCard.classList.remove("chosen", "rejected");
-  rightCard.classList.remove("chosen", "rejected");
+  leftCard?.classList.remove("chosen", "rejected");
+  rightCard?.classList.remove("chosen", "rejected");
 }
 
 function resetGameUI() {
@@ -667,11 +875,11 @@ function resetGameUI() {
 
   clearChoiceEffects();
 
-  resultDiv.textContent = "";
-  nextBtn.style.display = "none";
+  if (resultDiv) resultDiv.textContent = "";
+  if (nextBtn) nextBtn.style.display = "none";
 
-  keepBtn.disabled = false;
-  nextChoiceBtn.disabled = false;
+  if (keepBtn) keepBtn.disabled = false;
+  if (nextChoiceBtn) nextChoiceBtn.disabled = false;
 
   stopAllMedia();
   hideRightCard();
@@ -681,15 +889,23 @@ function startGame() {
   roundToken++;
   resetGameUI();
 
+  // ✅ parcours force count
+  if (isParcours) {
+    totalTurns = clampInt(parcoursCount, 1, 100);
+  }
+
   const minNeeded = Math.max(2, MIN_REQUIRED);
   if (!filteredPool || filteredPool.length < minNeeded) {
-    resultDiv.textContent = "❌ Pas assez d’items avec ces filtres.";
-    nextBtn.style.display = "block";
-    nextBtn.textContent = "Retour réglages";
-    nextBtn.onclick = () => {
-      showCustomization();
-      updatePreview();
-    };
+    if (resultDiv) resultDiv.textContent = "❌ Pas assez d’items avec ces filtres.";
+    if (nextBtn) {
+      nextBtn.style.display = "block";
+      nextBtn.textContent = "Retour réglages";
+      nextBtn.onclick = () => {
+        stopAllMedia();
+        showCustomization();
+        updatePreview();
+      };
+    }
     return;
   }
 
@@ -710,18 +926,31 @@ function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
   const pZone = isLeft ? leftPlayerZone : rightPlayerZone;
   const player = isLeft ? leftPlayer : rightPlayer;
 
+  // (sécurité)
+  if (!item) {
+    nameEl.textContent = "";
+    nameEl.style.display = "none";
+    img.style.display = "none";
+    pZone.style.display = "none";
+    try { player.pause(); } catch {}
+    player.poster = "";
+    player.removeAttribute("src");
+    player.load();
+    return;
+  }
+
   nameEl.textContent = revealed ? formatItemLabel(item) : "";
   nameEl.style.display = revealed ? "block" : "none";
 
   if (isSongs) {
-    // ✅ (1) jamais d'image avant la vidéo en Songs
+    // jamais d'image avant la vidéo en Songs
     img.style.display = "none";
     img.removeAttribute("src");
 
     pZone.style.display = revealed ? "block" : "none";
 
     if (revealed && item?.url) {
-      // ✅ (1) pas de poster non plus
+      // pas de poster non plus
       player.poster = "";
 
       applyVolume();
@@ -735,6 +964,10 @@ function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
 
       // reset + load
       try { player.pause(); } catch {}
+      player.ontimeupdate = null;
+      player.onended = null;
+      player.onplay = null;
+
       player.removeAttribute("src");
       player.load();
 
@@ -742,30 +975,36 @@ function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
 
       loadMediaWithRetries(player, item.url, localRound, localMedia, {
         onReady: () => {
-          // ✅ seek+play “comme TopPick”
           if (localRound !== roundToken) return;
           const tokenNow = isLeft ? mediaTokenLeft : mediaTokenRight;
           if (localMedia !== tokenNow) return;
 
           applyVolume();
           player.muted = false;
+
+          // seek+play snippet
           playClip(player, localRound, localMedia, { autoplay });
         }
       });
     } else {
       try { player.pause(); } catch {}
+      player.ontimeupdate = null;
+      player.onended = null;
+      player.onplay = null;
+
       player.poster = "";
       player.removeAttribute("src");
       player.load();
       clearWallTimerFor(player);
-      player.ontimeupdate = null;
-      player.onended = null;
-      player.onplay = null;
     }
   } else {
     // mode anime (image)
     pZone.style.display = "none";
     try { player.pause(); } catch {}
+    player.ontimeupdate = null;
+    player.onended = null;
+    player.onplay = null;
+
     player.poster = "";
     player.removeAttribute("src");
     player.load();
@@ -781,10 +1020,10 @@ function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
 }
 
 function hideRightCard() {
-  sleepOverlay.style.display = "flex";
-  rightImg.style.display = "none";
-  rightName.style.display = "none";
-  rightPlayerZone.style.display = "none";
+  if (sleepOverlay) sleepOverlay.style.display = "flex";
+  if (rightImg) rightImg.style.display = "none";
+  if (rightName) rightName.style.display = "none";
+  if (rightPlayerZone) rightPlayerZone.style.display = "none";
 
   mediaTokenRight++;
 
@@ -801,71 +1040,74 @@ function hideRightCard() {
 }
 
 function revealRightCard(item) {
-  sleepOverlay.style.display = "none";
+  if (sleepOverlay) sleepOverlay.style.display = "none";
   setCardContent("right", item, { revealed: true, autoplay: true });
 }
 
 function renderTurn() {
   clearChoiceEffects();
 
-  roundLabel.textContent = `Tour ${currentTurn} / ${totalTurns}`;
-  resultDiv.textContent = "";
-  nextBtn.style.display = "none";
+  if (roundLabel) roundLabel.textContent = `Tour ${currentTurn} / ${totalTurns}`;
+  if (resultDiv) resultDiv.textContent = "";
+  if (nextBtn) nextBtn.style.display = "none";
 
-  keepBtn.disabled = false;
-  nextChoiceBtn.disabled = false;
+  if (keepBtn) keepBtn.disabled = false;
+  if (nextChoiceBtn) nextChoiceBtn.disabled = false;
 
   setCardContent("left", leftItem, { revealed: true, autoplay: true });
   hideRightCard();
 
-  volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
+  if (volumeRow) volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
   applyVolume();
 }
 
 function handleChoice(choice) {
   if (!leftItem || !rightItem) return;
 
-  keepBtn.disabled = true;
-  nextChoiceBtn.disabled = true;
+  if (keepBtn) keepBtn.disabled = true;
+  if (nextChoiceBtn) nextChoiceBtn.disabled = true;
 
   // éviter double audio au reveal
   try { leftPlayer.pause(); } catch {}
+  leftPlayer.onplay = null;
 
   // effet visuel choix
   if (choice === "keep") {
-    leftCard.classList.add("chosen");
-    rightCard.classList.add("rejected");
-    resultDiv.textContent = "✅ KEEP";
+    leftCard?.classList.add("chosen");
+    rightCard?.classList.add("rejected");
+    if (resultDiv) resultDiv.textContent = "✅ KEEP";
   } else {
-    rightCard.classList.add("chosen");
-    leftCard.classList.add("rejected");
-    resultDiv.textContent = "➡️ NEXT";
+    rightCard?.classList.add("chosen");
+    leftCard?.classList.add("rejected");
+    if (resultDiv) resultDiv.textContent = "➡️ NEXT";
   }
 
   revealRightCard(rightItem);
 
   const isLast = currentTurn >= totalTurns;
 
-  nextBtn.style.display = "block";
-  if (!isLast) {
-    nextBtn.textContent = "Tour suivant";
-    nextBtn.onclick = () => {
-      stopAllMedia();
+  if (nextBtn) {
+    nextBtn.style.display = "block";
+    if (!isLast) {
+      nextBtn.textContent = "Tour suivant";
+      nextBtn.onclick = () => {
+        stopAllMedia();
 
-      const p = drawPair();
-      leftItem = p.a;
-      rightItem = p.b;
+        const p = drawPair();
+        leftItem = p.a;
+        rightItem = p.b;
 
-      currentTurn++;
-      renderTurn();
-    };
-  } else {
-    nextBtn.textContent = "Retour réglages";
-    nextBtn.onclick = () => {
-      stopAllMedia();
-      showCustomization();
-      updatePreview();
-    };
+        currentTurn++;
+        renderTurn();
+      };
+    } else {
+      nextBtn.textContent = "Retour réglages";
+      nextBtn.onclick = () => {
+        stopAllMedia();
+        showCustomization();
+        updatePreview();
+      };
+    }
   }
 }
 
@@ -894,15 +1136,48 @@ fetch("../data/licenses_only.json")
     for (const a of allAnimes) allSongs.push(...extractSongsFromAnime(a));
 
     initCustomUI();
+
+    // ✅ applique params parcours si présents (mode/count + éventuellement filtres)
+    if (isParcours) {
+      applyParcoursParamsToUIIfAny();
+      // force mode pills cohérents
+      updateModePillsFromState();
+    }
+
     updatePreview();
-    showCustomization();
+
+    // ✅ Parcours: auto-start (skip personnalisation du mini-jeu)
+    if (isParcours) {
+      ensureDefaultTypes();
+      if (currentMode === "songs") ensureDefaultSongs();
+
+      filteredPool = applyFilters();
+      const minNeeded = Math.max(2, MIN_REQUIRED);
+
+      totalTurns = clampInt(parcoursCount, 1, 100);
+
+      if (filteredPool.length >= minNeeded) {
+        showGame();
+        startGame();
+      } else {
+        // si vraiment pas assez, on retombe sur l’écran réglages pour voir le problème
+        showCustomization();
+        updatePreview();
+      }
+    } else {
+      showCustomization();
+    }
 
     applyVolume();
   })
   .catch((e) => {
-    previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
-    previewCountEl.classList.add("bad");
-    applyBtn.disabled = true;
-    applyBtn.classList.add("disabled");
+    if (previewCountEl) {
+      previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
+      previewCountEl.classList.add("bad");
+    }
+    if (applyBtn) {
+      applyBtn.disabled = true;
+      applyBtn.classList.add("disabled");
+    }
     console.error(e);
   });
