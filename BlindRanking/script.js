@@ -1,212 +1,36 @@
 /**********************
- * Blind Ranking (Anime / Songs) — script.js (COMPLET + MODIFS PARCOURS)
- * - Thème contenu: pool 10 + affichage "🎯 Thème contenu : ..."
+ * Blind Ranking (Anime / Songs)
+ * - Thème contenu: pool 64 + affichage "🎯 Thème contenu : ..."
  * - Songs: extrait 45s -> 20s
  * - Grille ranking: JAMAIS de vidéo (uniquement image cover)
  * - Loader anti-bug media + retries: 1 + 5 retries (2/4/6/8/10s)
  *
- * ✅ MODIFS PARCOURS (comme Anime Tournament)
- * - Lecture config via URL (?from=parcours&autostart=1...) et/ou localStorage (plusieurs clés)
- * - Apply auto de la personnalisation globale (mode/pop/score/years/types/songs/rounds)
- * - Autostart si demandé -> menu perso caché
- * - Back-to-menu et fin parcours: redirige vers return=...
- * - Hook fin mini-jeu: dispatch CustomEvent + postMessage (ag2:minigame:finished)
+ * ✅ MAJ PARCOURS:
+ * - Si ?parcours=1 => on NE MONTRE PAS le menu de personnalisation du mini-jeu
+ * - On tente de récupérer les réglages "globaux parcours" via:
+ *    1) localStorage (parcours_settings / ag2_parcours_settings / parcoursFilters)
+ *    2) sinon URL params: pop, score, ymin, ymax, types, songs, mode
+ * - On applique ces réglages aux inputs/pills du mini-jeu puis on auto-start
  **********************/
 
-// =======================
-// PARCOURS SUPPORT (NEW)
-// =======================
-const URL_PARAMS = new URLSearchParams(window.location.search);
-
-function truthyParam(v) {
-  if (v == null) return false;
-  const s = String(v).trim().toLowerCase();
-  return s === "1" || s === "true" || s === "yes" || s === "y" || s === "on";
-}
-
-function detectParcours() {
-  const from = (URL_PARAMS.get("from") || "").trim().toLowerCase();
-  if (from === "parcours") return true;
-  if (truthyParam(URL_PARAMS.get("parcours"))) return true;
-
-  const keys = [
-    "AG2_PARCOURS_ACTIVE",
-    "ag2_parcours_active",
-    "parcours_active",
-    "AG2_PARCOURS",
-  ];
-  for (const k of keys) {
-    const v = localStorage.getItem(k);
-    if (truthyParam(v)) return true;
-  }
-  return false;
-}
-
-const IS_PARCOURS = detectParcours();
-
-function getReturnUrl() {
-  const u = URL_PARAMS.get("return");
-  if (u) {
-    try { return decodeURIComponent(u); } catch { return u; }
-  }
-  const keys = ["AG2_PARCOURS_RETURN", "ag2_parcours_return", "parcours_return"];
-  for (const k of keys) {
-    const v = localStorage.getItem(k);
-    if (v && String(v).trim()) return v;
-  }
-  return "../index.html";
-}
-const RETURN_URL = getReturnUrl();
-
-function parseCsvParam(p) {
-  if (!p) return [];
-  return String(p).split(",").map(x => x.trim()).filter(Boolean);
-}
-function safeJsonParse(s) {
-  try { return JSON.parse(s); } catch { return null; }
-}
-
-function normalizeConfigObject(raw) {
-  if (!raw || typeof raw !== "object") return null;
-
-  const modeParam = String(raw.mode || raw.gameMode || raw.blindRankingMode || "").trim().toLowerCase();
-  const mode =
-    modeParam === "songs" || modeParam === "song" || modeParam === "musique" ? "songs" :
-    modeParam === "anime" || modeParam === "animes" ? "anime" :
-    null;
-
-  const popPercent = Number.isFinite(+raw.popPercent) ? +raw.popPercent : (Number.isFinite(+raw.pop) ? +raw.pop : null);
-  const scorePercent = Number.isFinite(+raw.scorePercent) ? +raw.scorePercent : (Number.isFinite(+raw.score) ? +raw.score : null);
-  const yearMin = Number.isFinite(+raw.yearMin) ? +raw.yearMin : (Number.isFinite(+raw.yMin) ? +raw.yMin : null);
-  const yearMax = Number.isFinite(+raw.yearMax) ? +raw.yearMax : (Number.isFinite(+raw.yMax) ? +raw.yMax : null);
-
-  const types = Array.isArray(raw.types) ? raw.types : (Array.isArray(raw.allowedTypes) ? raw.allowedTypes : []);
-  const songKinds = Array.isArray(raw.songKinds) ? raw.songKinds : (Array.isArray(raw.allowedSongs) ? raw.allowedSongs : []);
-
-  const rounds = Number.isFinite(+raw.rounds) ? +raw.rounds :
-    (Number.isFinite(+raw.count) ? +raw.count :
-      (Number.isFinite(+raw.roundCount) ? +raw.roundCount : null));
-
-  return {
-    source: "localStorage",
-    autostart: !!raw.autostart || !!raw.parcours,
-    mode,
-    popPercent,
-    scorePercent,
-    yearMin,
-    yearMax,
-    types: types.map(String),
-    songKinds: songKinds.map(String),
-    rounds,
-  };
-}
-
-function readConfigFromLocalStorage() {
-  const keys = [
-    "AG2_PERSONALISATION",
-    "AG2_PERSONNALISATION",
-    "AG2_GLOBAL_PERSONALISATION",
-    "AG2_PARCOURS_PERSONALISATION",
-    "parcoursPersonalisation",
-    "parcours_personalisation",
-    "AG2_PARCOURS_CONFIG",
-    "parcoursConfig",
-  ];
-  for (const k of keys) {
-    const v = localStorage.getItem(k);
-    if (!v) continue;
-    const raw = safeJsonParse(v);
-    const cfg = normalizeConfigObject(raw);
-    if (cfg) return cfg;
-  }
-  return null;
-}
-
-function readConfigFromUrl() {
-  // compat: ?parcours=1&count=...&mode=anime|songs
-  const modeParam = (URL_PARAMS.get("mode") || URL_PARAMS.get("blindMode") || "").trim().toLowerCase();
-  const mode =
-    modeParam === "songs" || modeParam === "song" || modeParam === "musique" ? "songs" :
-    modeParam === "anime" || modeParam === "animes" ? "anime" :
-    null;
-
-  const pop = parseInt(URL_PARAMS.get("pop") || URL_PARAMS.get("popPercent") || "", 10);
-  const score = parseInt(URL_PARAMS.get("score") || URL_PARAMS.get("scorePercent") || "", 10);
-  const yearMin = parseInt(URL_PARAMS.get("yearMin") || URL_PARAMS.get("ymin") || "", 10);
-  const yearMax = parseInt(URL_PARAMS.get("yearMax") || URL_PARAMS.get("ymax") || "", 10);
-  const rounds = parseInt(URL_PARAMS.get("count") || URL_PARAMS.get("rounds") || URL_PARAMS.get("roundCount") || "", 10);
-
-  const types = parseCsvParam(URL_PARAMS.get("types"));
-  const songs = parseCsvParam(URL_PARAMS.get("songs") || URL_PARAMS.get("songKinds"));
-
-  const hasSomething =
-    mode !== null ||
-    Number.isFinite(pop) ||
-    Number.isFinite(score) ||
-    Number.isFinite(yearMin) ||
-    Number.isFinite(yearMax) ||
-    Number.isFinite(rounds) ||
-    types.length ||
-    songs.length ||
-    truthyParam(URL_PARAMS.get("autostart")) ||
-    truthyParam(URL_PARAMS.get("parcours"));
-
-  if (!hasSomething) return null;
-
-  return {
-    source: "url",
-    autostart:
-      truthyParam(URL_PARAMS.get("autostart")) ||
-      truthyParam(URL_PARAMS.get("parcours")) ||
-      (IS_PARCOURS && truthyParam(URL_PARAMS.get("autostart"))),
-    mode,
-    popPercent: Number.isFinite(pop) ? pop : null,
-    scorePercent: Number.isFinite(score) ? score : null,
-    yearMin: Number.isFinite(yearMin) ? yearMin : null,
-    yearMax: Number.isFinite(yearMax) ? yearMax : null,
-    types,
-    songKinds: songs,
-    rounds: Number.isFinite(rounds) ? rounds : null,
-  };
-}
-
-function readGlobalConfig() {
-  const urlCfg = readConfigFromUrl();
-  if (urlCfg) return urlCfg;
-  const lsCfg = readConfigFromLocalStorage();
-  if (lsCfg) return lsCfg;
-  return null;
-}
-const GLOBAL_CFG = readGlobalConfig();
-
-function notifyParcoursFinished(detail) {
-  try {
-    window.dispatchEvent(new CustomEvent("ag2:minigame:finished", { detail }));
-  } catch {}
-  try {
-    window.parent?.postMessage({ type: "ag2:minigame:finished", detail }, "*");
-  } catch {}
-}
-
-// =======================
-// MENU & THEME
-// =======================
-document.getElementById("back-to-menu")?.addEventListener("click", () => {
-  window.location.href = RETURN_URL || "../index.html";
+// ====== MENU & THEME ======
+document.getElementById("back-to-menu").addEventListener("click", () => {
+  window.location.href = "../index.html";
 });
 
-document.getElementById("themeToggle")?.addEventListener("click", () => {
+document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
-  localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
+  localStorage.setItem(
+    "theme",
+    document.body.classList.contains("light") ? "light" : "dark"
+  );
 });
 
 window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
 });
 
-// =======================
-// TOOLTIP
-// =======================
+// ====== TOOLTIP ======
 document.addEventListener("click", (e) => {
   const icon = e.target.closest(".info-icon");
   if (!icon) return;
@@ -217,16 +41,13 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach(w => w.classList.remove("open"));
+    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
   }
 });
 
-// =======================
-// HELPERS
-// =======================
-// ✅ CHANGEMENT: min requis + pool thème = 10
-const MIN_REQUIRED = 10;
-const THEME_POOL_SIZE = 10;
+// ====== HELPERS ======
+const MIN_REQUIRED = 64;
+const THEME_POOL_SIZE = 64;
 
 // Songs snippet
 const SONG_START_SEC = 45;
@@ -254,7 +75,7 @@ function getDisplayTitle(a) {
 }
 
 function getYear(a) {
-  const s = ((a && a.season) ? String(a.season) : "").trim();
+  const s = ((a && a.season) ? String(a.season) : "").trim(); // ex "spring 2013"
   const m = s.match(/(\d{4})/);
   return m ? parseInt(m[1], 10) : 0;
 }
@@ -267,13 +88,8 @@ function getYearFromSeasonStr(seasonStr, fallback = 0) {
 function clampYearSliders() {
   const minEl = document.getElementById("yearMin");
   const maxEl = document.getElementById("yearMax");
-  if (!minEl || !maxEl) return;
-
   let a = parseInt(minEl.value, 10);
   let b = parseInt(maxEl.value, 10);
-  if (!Number.isFinite(a)) a = 0;
-  if (!Number.isFinite(b)) b = 0;
-
   if (a > b) {
     [a, b] = [b, a];
     minEl.value = a;
@@ -293,16 +109,20 @@ function clampInt(n, a, b) {
   n = Number.isFinite(n) ? n : a;
   return Math.max(a, Math.min(b, n));
 }
+
 function safeNum(x) {
   const n = +x;
   return Number.isFinite(n) ? n : 0;
 }
+
 function round1(x) {
   return Math.round((Number.isFinite(x) ? x : 0) * 10) / 10;
 }
+
 function norm(s) {
   return (s || "").toString().trim().toLowerCase();
 }
+
 function includesStudio(studio, needle) {
   const s = norm(studio);
   const n = norm(needle);
@@ -310,14 +130,13 @@ function includesStudio(studio, needle) {
   return s.includes(n);
 }
 
-// =======================
-// SONG LABEL
-// =======================
+// ====== SONG LABEL ======
 function songTypeLabel(t) {
   if (t === "OP") return "OP";
   if (t === "ED") return "ED";
   return "IN";
 }
+
 function formatSongTitle(s) {
   const type = songTypeLabel(s.songType);
   const num = s.songNumber ? ` ${s.songNumber}` : "";
@@ -325,6 +144,7 @@ function formatSongTitle(s) {
   const art = s.songArtists ? ` — ${s.songArtists}` : "";
   return `${s.animeTitle || "Anime"} ${type}${num}${name}${art}`;
 }
+
 function formatItemLabel(it) {
   if (!it) return "";
   if (it.kind === "song") return formatSongTitle(it);
@@ -339,6 +159,7 @@ function extractSongsFromAnime(anime) {
     { key: "endings", type: "ED" },
     { key: "inserts", type: "IN" },
   ];
+
   for (const b of buckets) {
     const arr = Array.isArray(song[b.key]) ? song[b.key] : [];
     for (const it of arr) {
@@ -353,7 +174,8 @@ function extractSongsFromAnime(anime) {
 
       out.push({
         kind: "song",
-        songType: b.type,
+
+        songType: b.type, // OP/ED/IN
         songName: it.name || "",
         songNumber: safeNum(it.number) || 1,
         songArtists: artists || "",
@@ -361,6 +183,7 @@ function extractSongsFromAnime(anime) {
         songSeason,
         songYear,
 
+        // anime meta (pour thèmes)
         animeMalId: anime.mal_id ?? null,
         animeTitle: anime._title,
         animeTitleLower: anime._titleLower,
@@ -372,6 +195,7 @@ function extractSongsFromAnime(anime) {
         animeStudio: anime._studio || "",
         animeTags: Array.isArray(anime._tags) ? anime._tags : [],
 
+        // media
         url,
         _key: `${b.type}|${it.number || ""}|${it.name || ""}|${url}|${anime.mal_id || ""}`,
       });
@@ -380,9 +204,7 @@ function extractSongsFromAnime(anime) {
   return out;
 }
 
-// =======================
-// DOM
-// =======================
+// ====== DOM ======
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
 
@@ -418,35 +240,30 @@ const nextBtn = document.getElementById("nextBtn");
 const roundLabel = document.getElementById("roundLabel");
 const themeLabel = document.getElementById("themeLabel");
 
-// =======================
-// DATA
-// =======================
+// ====== URL (PARCOURS) compat ======
+const urlParams = new URLSearchParams(window.location.search);
+const isParcours = urlParams.get("parcours") === "1";
+const parcoursCount = parseInt(urlParams.get("count") || "1", 10);
+const forcedMode = urlParams.get("mode"); // "anime" | "songs" éventuel
+
+// ====== DATA ======
 let allAnimes = [];
 let allSongs = [];
 
-// =======================
-// SETTINGS
-// =======================
+// ====== SETTINGS ======
 let currentMode = "anime"; // anime | songs
 let filteredPool = [];
 
-// =======================
-// THEME CONTENU
-// =======================
-let currentTheme = null; // { crit, label, pool: [10] }
+// ====== THEME CONTENU ======
+let currentTheme = null; // { crit, label, pool: [64] }
 
-// =======================
-// GAME STATE
-// =======================
+// ====== GAME STATE ======
 let totalRounds = 1;
 let currentRound = 1;
 
 let selectedItems = [];
 let currentIndex = 0;
 let rankings = new Array(10).fill(null);
-
-// recap multi-round (utile pour parcours)
-let roundsRecap = [];
 
 // tokens anti-bug media
 let roundToken = 0;
@@ -455,33 +272,27 @@ let mediaToken = 0;
 // snippet cleanup
 let snippetCleanup = null;
 
-// =======================
-// UI SHOW/HIDE
-// =======================
+// ====== UI SHOW/HIDE ======
 function showCustomization() {
-  if (customPanel) customPanel.style.display = "block";
-  if (gamePanel) gamePanel.style.display = "none";
+  customPanel.style.display = "block";
+  gamePanel.style.display = "none";
 }
 function showGame() {
-  if (customPanel) customPanel.style.display = "none";
-  if (gamePanel) gamePanel.style.display = "block";
+  customPanel.style.display = "none";
+  gamePanel.style.display = "block";
 }
 
-// =======================
-// VOLUME
-// =======================
+// ====== VOLUME ======
 function applyVolume() {
-  if (!songPlayer || !volumeSlider) return;
-  const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "30", 10)));
+  if (!songPlayer) return;
+  const v = Math.max(0, Math.min(100, parseInt(volumeSlider?.value || "30", 10)));
   songPlayer.muted = false;
   songPlayer.volume = v / 100;
   if (volumeVal) volumeVal.textContent = `${v}%`;
 }
 if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
 
-// =======================
-// THEME UI
-// =======================
+// ====== THEME UI ======
 function updateThemeLabel() {
   if (!themeLabel) return;
   if (!currentTheme || !currentTheme.label) {
@@ -493,157 +304,17 @@ function updateThemeLabel() {
   themeLabel.textContent = `🎯 Thème contenu : ${currentTheme.label}`;
 }
 
-// =======================
-// DEFAULTS (pills)
-// =======================
-function ensureDefaultTypes() {
-  const pills = Array.from(document.querySelectorAll("#typePills .pill"));
-  if (!pills.length) return;
-  const active = pills.filter(b => b.classList.contains("active"));
-  if (active.length) return;
-
-  let did = false;
-  pills.forEach(b => {
-    const t = (b.dataset.type || "").toUpperCase();
-    const on = (t === "TV" || t === "MOVIE");
-    if (on) did = true;
-    b.classList.toggle("active", on);
-    b.setAttribute("aria-pressed", on ? "true" : "false");
-  });
-
-  if (!did) {
-    pills[0].classList.add("active");
-    pills[0].setAttribute("aria-pressed", "true");
-  }
-}
-
-function ensureDefaultSongs() {
-  const pills = Array.from(document.querySelectorAll("#songPills .pill"));
-  if (!pills.length) return;
-  const active = pills.filter(b => b.classList.contains("active"));
-  if (active.length) return;
-
-  let did = false;
-  pills.forEach(b => {
-    const s = norm(b.dataset.song || "");
-    const on = (s === "op" || s === "opening");
-    if (on) did = true;
-    b.classList.toggle("active", on);
-    b.setAttribute("aria-pressed", on ? "true" : "false");
-  });
-
-  if (!did) {
-    pills[0].classList.add("active");
-    pills[0].setAttribute("aria-pressed", "true");
-  }
-}
-
-function ensureDefaultModePill() {
-  const pills = Array.from(document.querySelectorAll("#modePills .pill"));
-  if (!pills.length) return;
-  const active = pills.find(b => b.classList.contains("active"));
-  if (active) return;
-
-  const animeBtn = pills.find(b => (b.dataset.mode || "") === "anime");
-  const btn = animeBtn || pills[0];
-
-  pills.forEach(b => {
-    b.classList.toggle("active", b === btn);
-    b.setAttribute("aria-pressed", b === btn ? "true" : "false");
-  });
-  currentMode = (btn.dataset.mode || "anime");
-}
-
-function updateModePillsFromState() {
-  document.querySelectorAll("#modePills .pill").forEach(b => {
-    const active = b.dataset.mode === currentMode;
-    b.classList.toggle("active", active);
-    b.setAttribute("aria-pressed", active ? "true" : "false");
-  });
-  updateModeVisibility();
-}
-
-function updateModeVisibility() {
-  if (songsRow) songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
-}
-
-// =======================
-// APPLY GLOBAL CFG TO UI
-// =======================
-function normalizeSongKindToCode(k) {
-  const s = norm(k);
-  if (s === "op" || s === "opening" || s === "openings") return "OP";
-  if (s === "ed" || s === "ending" || s === "endings") return "ED";
-  if (s === "in" || s === "insert" || s === "inserts") return "IN";
-  const up = (k || "").toString().trim().toUpperCase();
-  if (up === "OP" || up === "ED" || up === "IN") return up;
-  return null;
-}
-
-function applyConfigToUI(cfg) {
-  if (!cfg) return;
-
-  if (cfg.mode === "anime" || cfg.mode === "songs") {
-    currentMode = cfg.mode;
-    updateModePillsFromState();
-  }
-
-  if (popEl && Number.isFinite(+cfg.popPercent)) popEl.value = String(clampInt(+cfg.popPercent, 5, 100));
-  if (scoreEl && Number.isFinite(+cfg.scorePercent)) scoreEl.value = String(clampInt(+cfg.scorePercent, 5, 100));
-  if (yearMinEl && Number.isFinite(+cfg.yearMin)) yearMinEl.value = String(+cfg.yearMin);
-  if (yearMaxEl && Number.isFinite(+cfg.yearMax)) yearMaxEl.value = String(+cfg.yearMax);
-
-  if (roundCountEl && Number.isFinite(+cfg.rounds)) {
-    roundCountEl.value = String(clampInt(+cfg.rounds, 1, 100));
-  }
-
-  const wantedTypes = (Array.isArray(cfg.types) ? cfg.types : []).map(x => String(x).trim().toLowerCase());
-  const typePills = Array.from(document.querySelectorAll("#typePills .pill"));
-  if (typePills.length && wantedTypes.length) {
-    typePills.forEach(b => {
-      const t = String(b.dataset.type || "").trim().toLowerCase();
-      const on = wantedTypes.includes(t);
-      b.classList.toggle("active", on);
-      b.setAttribute("aria-pressed", on ? "true" : "false");
-    });
-  }
-  ensureDefaultTypes();
-
-  const wantedSongCodes = (Array.isArray(cfg.songKinds) ? cfg.songKinds : [])
-    .map(normalizeSongKindToCode)
-    .filter(Boolean);
-
-  const songPills = Array.from(document.querySelectorAll("#songPills .pill"));
-  if (songPills.length && wantedSongCodes.length) {
-    songPills.forEach(b => {
-      const pillCode = normalizeSongKindToCode(b.dataset.song || "") || String(b.dataset.song || "").trim().toUpperCase();
-      const on = wantedSongCodes.includes(pillCode);
-      b.classList.toggle("active", on);
-      b.setAttribute("aria-pressed", on ? "true" : "false");
-    });
-  }
-  ensureDefaultSongs();
-
-  clampYearSliders();
-
-  if (popValEl && popEl) popValEl.textContent = popEl.value;
-  if (scoreValEl && scoreEl) scoreValEl.textContent = scoreEl.value;
-  if (yearMinValEl && yearMinEl) yearMinValEl.textContent = yearMinEl.value;
-  if (yearMaxValEl && yearMaxEl) yearMaxValEl.textContent = yearMaxEl.value;
-
-  updateModeVisibility();
-}
-
-// =======================
-// THEME LOGIC (pool 10)
-// =======================
+// ====== THEME LOGIC (pool 64) ======
 function nearbyPool(pool, getNum, target, want = THEME_POOL_SIZE) {
   const arr = [...pool].sort((a, b) => getNum(a) - getNum(b));
   let best = 0, bestD = Infinity;
 
   for (let i = 0; i < arr.length; i++) {
     const d = Math.abs(getNum(arr[i]) - target);
-    if (d < bestD) { bestD = d; best = i; }
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
   }
 
   let L = best, R = best;
@@ -651,7 +322,6 @@ function nearbyPool(pool, getNum, target, want = THEME_POOL_SIZE) {
     if (L > 0) L--;
     if ((R - L + 1) < want && R < arr.length - 1) R++;
   }
-
   return arr.slice(L, R + 1);
 }
 
@@ -670,7 +340,7 @@ function pickUniqueN(pool, n) {
 
 function popularityTopPercent(pool, seed, getPop) {
   const sorted = [...pool].sort((a, b) => getPop(b) - getPop(a));
-  const idx = sorted.findIndex(x => (x?._key && seed?._key && x._key === seed._key));
+  const idx = sorted.findIndex((x) => (x?._key && seed?._key && x._key === seed._key));
   const rank = (idx >= 0) ? (idx + 1) : 1;
   const raw = Math.ceil((rank / Math.max(1, sorted.length)) * 100);
   const pct = Math.max(5, Math.min(100, Math.round(raw / 5) * 5));
@@ -680,10 +350,10 @@ function popularityTopPercent(pool, seed, getPop) {
 function hasTag(it, tag) {
   const t = norm(tag);
   const tags = Array.isArray(it._tags) ? it._tags : (Array.isArray(it.animeTags) ? it.animeTags : []);
-  return tags.some(x => norm(x) === t);
+  return tags.some((x) => norm(x) === t);
 }
 
-// STUDIO: pool “agrandi” en cumulant des studios jusqu'à 10
+// STUDIO: pool “agrandi” en cumulant des studios jusqu'à 64
 function buildStudioPool64(basePool, getStudioFn, minSize = THEME_POOL_SIZE) {
   const usedStudios = new Set();
   const mapByKey = new Map();
@@ -721,8 +391,8 @@ function pickContentTheme64(basePool, modeLocal) {
     return { crit: "FREE", label: "Libre", pool: pickUniqueN(basePool || [], THEME_POOL_SIZE) };
   }
 
-  const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR"];
-  const criteriaSongs = ["FREE", "SONG_SEASON", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST"];
+  const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR"]; // 6
+  const criteriaSongs = ["FREE", "SONG_SEASON", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST"]; // 7
   const criteria = (modeLocal === "songs") ? criteriaSongs : criteriaAnime;
 
   const getYear = (it) => it?._year || it?.year || 0;
@@ -748,7 +418,7 @@ function pickContentTheme64(basePool, modeLocal) {
     if (crit === "YEAR") {
       const y = getYear(seed);
       if (!y) continue;
-      const pool = basePool.filter(it => getYear(it) === y);
+      const pool = basePool.filter((it) => getYear(it) === y);
       if (pool.length < THEME_POOL_SIZE) continue;
       return { crit, label: `Année : ${y}`, pool: pickUniqueN(pool, THEME_POOL_SIZE) };
     }
@@ -756,7 +426,7 @@ function pickContentTheme64(basePool, modeLocal) {
     if (crit === "SONG_SEASON" && modeLocal === "songs") {
       const season = getSongSeason(seed);
       if (!season) continue;
-      const pool = basePool.filter(it => norm(getSongSeason(it)) === norm(season));
+      const pool = basePool.filter((it) => norm(getSongSeason(it)) === norm(season));
       if (pool.length < THEME_POOL_SIZE) continue;
       return { crit, label: `Saison song : ${season}`, pool: pickUniqueN(pool, THEME_POOL_SIZE) };
     }
@@ -774,7 +444,7 @@ function pickContentTheme64(basePool, modeLocal) {
       const t = tags[Math.floor(Math.random() * tags.length)];
       if (!t) continue;
 
-      const pool = basePool.filter(it => hasTag(it, t));
+      const pool = basePool.filter((it) => hasTag(it, t));
       if (pool.length < THEME_POOL_SIZE) continue;
       return { crit, label: `Tag : ${t}`, pool: pickUniqueN(pool, THEME_POOL_SIZE) };
     }
@@ -808,7 +478,7 @@ function pickContentTheme64(basePool, modeLocal) {
       const a = arts[Math.floor(Math.random() * arts.length)];
       if (!a) continue;
 
-      const pool = basePool.filter(it => getArtistsArr(it).some(x => norm(x) === norm(a)));
+      const pool = basePool.filter((it) => getArtistsArr(it).some((x) => norm(x) === norm(a)));
       if (pool.length < THEME_POOL_SIZE) continue;
       return { crit, label: `Artiste : ${a}`, pool: pickUniqueN(pool, THEME_POOL_SIZE) };
     }
@@ -817,9 +487,7 @@ function pickContentTheme64(basePool, modeLocal) {
   return { crit: "FREE", label: "Libre", pool: pickUniqueN(basePool, THEME_POOL_SIZE) };
 }
 
-// =======================
-// MEDIA LOADER (retries + anti-stall)
-// =======================
+// ====== MEDIA LOADER (retries + anti-stall) ======
 function clearSnippetLimiter() {
   if (snippetCleanup) {
     try { snippetCleanup(); } catch {}
@@ -831,12 +499,18 @@ function installSnippetLimiter(video, startSec, endSec, localRound, localMedia) 
   clearSnippetLimiter();
 
   let armed = false;
+
   const isStillValid = () => localRound === roundToken && localMedia === mediaToken;
+
   const safeSeek = (t) => { try { video.currentTime = t; } catch {} };
 
   const onPlay = () => {
     if (!isStillValid()) return;
-    if (video.currentTime >= endSec - 0.1 || video.currentTime < startSec - 0.25 || video.currentTime > endSec + 0.25) {
+    if (
+      video.currentTime >= endSec - 0.1 ||
+      video.currentTime < startSec - 0.25 ||
+      video.currentTime > endSec + 0.25
+    ) {
       safeSeek(startSec);
     }
     armed = true;
@@ -866,11 +540,13 @@ function computeSnippetBounds(videoDuration) {
   if (!dur || dur <= 1) {
     return { start: SONG_START_SEC, end: SONG_START_SEC + SONG_PLAY_SEC };
   }
+
   if (dur >= SONG_START_SEC + 1) {
     const start = SONG_START_SEC;
     const end = Math.min(start + SONG_PLAY_SEC, Math.max(0, dur - 0.05));
     return { start, end };
   }
+
   const start = Math.max(0, dur - SONG_PLAY_SEC - 0.25);
   const end = Math.min(start + SONG_PLAY_SEC, Math.max(0, dur - 0.05));
   return { start, end };
@@ -878,7 +554,6 @@ function computeSnippetBounds(videoDuration) {
 
 function hardResetMedia() {
   clearSnippetLimiter();
-  if (!songPlayer) return;
   try { songPlayer.pause(); } catch {}
   songPlayer.removeAttribute("src");
   songPlayer.load();
@@ -890,8 +565,6 @@ function withCacheBuster(url) {
 }
 
 function loadMediaWithRetries(url, localRound, localMedia, { autoplay = true, snippet = false } = {}) {
-  if (!songPlayer) return () => {};
-
   let attemptIndex = 0;
   let stallTimer = null;
   let done = false;
@@ -922,6 +595,7 @@ function loadMediaWithRetries(url, localRound, localMedia, { autoplay = true, sn
   const markReady = () => {
     if (!isStillValid() || done) return;
     done = true;
+
     cleanupLoader();
 
     if (snippet) {
@@ -970,12 +644,18 @@ function loadMediaWithRetries(url, localRound, localMedia, { autoplay = true, sn
 
     songPlayer.onloadedmetadata = () => { if (!isStillValid() || done) return; markReady(); };
     songPlayer.oncanplay = () => { if (!isStillValid() || done) return; markReady(); };
+
     songPlayer.onwaiting = () => { if (!isStillValid() || done) return; startStallTimer(); };
     songPlayer.onstalled = () => { if (!isStillValid() || done) return; startStallTimer(); };
+
     songPlayer.onplaying = () => {
       if (!isStillValid() || done) return;
-      if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+      if (stallTimer) {
+        clearTimeout(stallTimer);
+        stallTimer = null;
+      }
     };
+
     songPlayer.onerror = () => { if (!isStillValid() || done) return; triggerRetry(); };
 
     startStallTimer();
@@ -986,81 +666,200 @@ function loadMediaWithRetries(url, localRound, localMedia, { autoplay = true, sn
   return cleanupLoader;
 }
 
-// =======================
-// UI INIT
-// =======================
-function initCustomUI() {
-  ensureDefaultModePill();
-  ensureDefaultTypes();
-  ensureDefaultSongs();
+// ====== PARCOURS SETTINGS (read + apply) ======
+function parseCsv(v) {
+  if (!v) return [];
+  return String(v)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function normalizeSongKindToCode(x) {
+  const v = norm(x);
+  if (!v) return null;
+  if (v === "op" || v === "opening" || v === "openings") return "OP";
+  if (v === "ed" || v === "ending" || v === "endings") return "ED";
+  if (v === "in" || v === "insert" || v === "inserts") return "IN";
+  // si déjà OP/ED/IN
+  if (v === "op".toLowerCase() || v === "ed".toLowerCase() || v === "in".toLowerCase()) return v.toUpperCase();
+  if (v === "op" || v === "ed" || v === "in") return v.toUpperCase();
+  if (v === "OP".toLowerCase()) return "OP";
+  if (v === "ED".toLowerCase()) return "ED";
+  if (v === "IN".toLowerCase()) return "IN";
+  if (v === "op".toLowerCase()) return "OP";
+  if (v === "ed".toLowerCase()) return "ED";
+  if (v === "in".toLowerCase()) return "IN";
+  // fallback: tente OP/ED/IN direct
+  const up = String(x).trim().toUpperCase();
+  if (up === "OP" || up === "ED" || up === "IN") return up;
+  return null;
+}
+
+function readParcoursSettings() {
+  // 1) localStorage (plusieurs clés possibles)
+  const keys = ["parcours_settings", "ag2_parcours_settings", "parcoursFilters"];
+  for (const k of keys) {
+    const raw = localStorage.getItem(k);
+    if (!raw) continue;
+    try {
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj === "object") return obj;
+    } catch {}
+  }
+
+  // 2) URL params
+  const pop = parseInt(urlParams.get("pop") || "", 10);
+  const score = parseInt(urlParams.get("score") || "", 10);
+  const ymin = parseInt(urlParams.get("ymin") || urlParams.get("yearMin") || "", 10);
+  const ymax = parseInt(urlParams.get("ymax") || urlParams.get("yearMax") || "", 10);
+
+  const types = parseCsv(urlParams.get("types"));
+  const songs = parseCsv(urlParams.get("songs")).map(normalizeSongKindToCode).filter(Boolean);
+
+  const modeParam = urlParams.get("mode");
+  const m = (modeParam === "songs" || modeParam === "anime") ? modeParam : undefined;
+
+  return {
+    popPercent: Number.isFinite(pop) ? pop : undefined,
+    scorePercent: Number.isFinite(score) ? score : undefined,
+    yearMin: Number.isFinite(ymin) ? ymin : undefined,
+    yearMax: Number.isFinite(ymax) ? ymax : undefined,
+    types: types.length ? types : undefined,
+    songs: songs.length ? songs : undefined, // OP/ED/IN
+    mode: m,
+  };
+}
+
+function setActivePills(selector, activeValues, dataAttr) {
+  const pills = Array.from(document.querySelectorAll(selector));
+  if (!pills.length) return;
+
+  const set = new Set((activeValues || []).map((x) => String(x)));
+
+  // si pas de valeurs, on touche pas
+  if (!set.size) return;
+
+  pills.forEach((p) => {
+    const v = p.dataset[dataAttr];
+    const on = set.has(v);
+    p.classList.toggle("active", on);
+    p.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+
+  // sécurité: au moins 1 actif
+  const any = pills.some((p) => p.classList.contains("active"));
+  if (!any) {
+    pills[0].classList.add("active");
+    pills[0].setAttribute("aria-pressed", "true");
+  }
+}
+
+function applyParcoursSettingsToUI(ps) {
+  if (!ps || typeof ps !== "object") return;
+
+  // mode: priorité forcedMode URL, sinon ps.mode
+  const m = (forcedMode === "anime" || forcedMode === "songs")
+    ? forcedMode
+    : ((ps.mode === "anime" || ps.mode === "songs") ? ps.mode : null);
+
+  if (m) currentMode = m;
+
+  // sliders
+  if (popEl && Number.isFinite(+ps.popPercent)) popEl.value = String(clampInt(+ps.popPercent, 1, 100));
+  if (scoreEl && Number.isFinite(+ps.scorePercent)) scoreEl.value = String(clampInt(+ps.scorePercent, 1, 100));
+  if (yearMinEl && Number.isFinite(+ps.yearMin)) yearMinEl.value = String(+ps.yearMin);
+  if (yearMaxEl && Number.isFinite(+ps.yearMax)) yearMaxEl.value = String(+ps.yearMax);
+
+  clampYearSliders();
+
+  // pills (types)
+  if (Array.isArray(ps.types) && ps.types.length) {
+    setActivePills("#typePills .pill", ps.types, "type");
+  }
+
+  // pills (songs) — ici on veut OP/ED/IN
+  if (Array.isArray(ps.songs) && ps.songs.length) {
+    setActivePills("#songPills .pill", ps.songs, "song");
+  }
 
   // mode pills
-  document.querySelectorAll("#modePills .pill").forEach(btn => {
+  updateModePillsFromState();
+
+  // labels
+  if (popValEl) popValEl.textContent = popEl?.value || "";
+  if (scoreValEl) scoreValEl.textContent = scoreEl?.value || "";
+  if (yearMinValEl) yearMinValEl.textContent = yearMinEl?.value || "";
+  if (yearMaxValEl) yearMaxValEl.textContent = yearMaxEl?.value || "";
+}
+
+// ====== UI INIT ======
+function initCustomUI() {
+  // Pills mode
+  document.querySelectorAll("#modePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("#modePills .pill").forEach(b => {
+      document.querySelectorAll("#modePills .pill").forEach((b) => {
         b.classList.remove("active");
         b.setAttribute("aria-pressed", "false");
       });
       btn.classList.add("active");
       btn.setAttribute("aria-pressed", "true");
-      currentMode = btn.dataset.mode;
+      currentMode = btn.dataset.mode; // anime | songs
       updateModeVisibility();
       updatePreview();
     });
   });
 
-  // type pills
-  document.querySelectorAll("#typePills .pill").forEach(btn => {
+  // Type pills
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-      ensureDefaultTypes();
       updatePreview();
     });
   });
 
-  // song pills
-  document.querySelectorAll("#songPills .pill").forEach(btn => {
+  // Song pills
+  document.querySelectorAll("#songPills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
-      ensureDefaultSongs();
       updatePreview();
     });
   });
 
+  // Sliders sync
   function syncLabels() {
     clampYearSliders();
-    if (popValEl && popEl) popValEl.textContent = popEl.value;
-    if (scoreValEl && scoreEl) scoreValEl.textContent = scoreEl.value;
-    if (yearMinValEl && yearMinEl) yearMinValEl.textContent = yearMinEl.value;
-    if (yearMaxValEl && yearMaxEl) yearMaxValEl.textContent = yearMaxEl.value;
+    if (popValEl) popValEl.textContent = popEl.value;
+    if (scoreValEl) scoreValEl.textContent = scoreEl.value;
+    if (yearMinValEl) yearMinValEl.textContent = yearMinEl.value;
+    if (yearMaxValEl) yearMaxValEl.textContent = yearMaxEl.value;
     updatePreview();
   }
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el?.addEventListener("input", syncLabels));
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
 
-  applyBtn?.addEventListener("click", () => {
+  // Apply
+  applyBtn.addEventListener("click", () => {
     filteredPool = applyFilters();
     const minNeeded = Math.max(10, MIN_REQUIRED);
     if (filteredPool.length < minNeeded) return;
 
-    const cfgRounds = Number.isFinite(+GLOBAL_CFG?.rounds) ? +GLOBAL_CFG.rounds : null;
-    const urlRounds = parseInt(URL_PARAMS.get("count") || "", 10);
-    const forcedRounds = Number.isFinite(urlRounds) ? urlRounds : cfgRounds;
+    totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
+    currentRound = 1;
 
-    if (IS_PARCOURS && Number.isFinite(forcedRounds)) {
-      totalRounds = clampInt(forcedRounds, 1, 100);
-    } else {
-      totalRounds = clampInt(parseInt(roundCountEl?.value || "1", 10), 1, 100);
+    if (isParcours) {
+      totalRounds = clampInt(parcoursCount, 1, 100);
+      if (forcedMode === "anime" || forcedMode === "songs") currentMode = forcedMode;
+      updateModePillsFromState();
     }
 
-    currentRound = 1;
-    roundsRecap = [];
     showGame();
     startRound();
   });
 
-  [...rankButtonsWrap.querySelectorAll("button[data-rank]")].forEach(btn => {
+  // Rank buttons events
+  [...rankButtonsWrap.querySelectorAll("button[data-rank]")].forEach((btn) => {
     btn.addEventListener("click", () => {
       const r = parseInt(btn.dataset.rank, 10);
       assignRank(r);
@@ -1071,23 +870,31 @@ function initCustomUI() {
   syncLabels();
 }
 
-// =======================
-// FILTERS
-// =======================
+function updateModePillsFromState() {
+  document.querySelectorAll("#modePills .pill").forEach((b) => {
+    const active = b.dataset.mode === currentMode;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  updateModeVisibility();
+}
+
+function updateModeVisibility() {
+  if (songsRow) songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
+}
+
+// ====== FILTERS ======
 function applyFilters() {
-  ensureDefaultTypes();
-  ensureDefaultSongs();
+  const popPercent = parseInt(popEl.value, 10);
+  const scorePercent = parseInt(scoreEl.value, 10);
+  const yearMin = parseInt(yearMinEl.value, 10);
+  const yearMax = parseInt(yearMaxEl.value, 10);
 
-  const popPercent = parseInt(popEl?.value || "30", 10);
-  const scorePercent = parseInt(scoreEl?.value || "100", 10);
-  const yearMin = parseInt(yearMinEl?.value || "1950", 10);
-  const yearMax = parseInt(yearMaxEl?.value || "2026", 10);
-
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map(b => b.dataset.type);
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
   if (currentMode === "anime") {
-    let pool = allAnimes.filter(a =>
+    let pool = allAnimes.filter((a) =>
       a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type)
     );
 
@@ -1097,12 +904,13 @@ function applyFilters() {
     pool.sort((a, b) => b._score - a._score);
     pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-    return pool.map(a => ({
+    return pool.map((a) => ({
       kind: "anime",
       _key: `anime|${a.mal_id}`,
       title: a._title,
       image: a.image || "",
 
+      // meta thème
       _year: a._year,
       _members: a._members,
       _score: a._score,
@@ -1112,12 +920,11 @@ function applyFilters() {
     }));
   }
 
-  const allowedSongsRaw = [...document.querySelectorAll("#songPills .pill.active")].map(b => b.dataset.song);
-  if (allowedSongsRaw.length === 0) return [];
+  // songs mode
+  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
+  if (allowedSongs.length === 0) return [];
 
-  const allowedSongs = allowedSongsRaw.map(normalizeSongKindToCode).filter(Boolean);
-
-  let pool = allSongs.filter(s =>
+  let pool = allSongs.filter((s) =>
     s.animeYear >= yearMin &&
     s.animeYear <= yearMax &&
     allowedTypes.includes(s.animeType) &&
@@ -1130,7 +937,7 @@ function applyFilters() {
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  return pool.map(s => ({
+  return pool.map((s) => ({
     kind: "song",
     _key: `song|${s._key}`,
 
@@ -1147,6 +954,7 @@ function applyFilters() {
     url: s.url,
     image: s.animeImage || "",
 
+    // meta thème (basée anime)
     animeYear: s.animeYear,
     animeMembers: s.animeMembers,
     animeScore: s.animeScore,
@@ -1156,20 +964,14 @@ function applyFilters() {
   }));
 }
 
-// =======================
-// PREVIEW
-// =======================
+// ====== PREVIEW ======
 function updatePreview() {
   if (!allAnimes.length) {
-    if (previewCountEl) {
-      previewCountEl.textContent = "⏳ Chargement de la base…";
-      previewCountEl.classList.add("bad");
-      previewCountEl.classList.remove("good");
-    }
-    if (applyBtn) {
-      applyBtn.disabled = true;
-      applyBtn.classList.add("disabled");
-    }
+    previewCountEl.textContent = "⏳ Chargement de la base…";
+    previewCountEl.classList.add("bad");
+    previewCountEl.classList.remove("good");
+    applyBtn.disabled = true;
+    applyBtn.classList.add("disabled");
     return;
   }
 
@@ -1178,33 +980,27 @@ function updatePreview() {
   const ok = pool.length >= minNeeded;
 
   const label = (currentMode === "songs") ? "Songs" : "Titres";
-  if (previewCountEl) {
-    previewCountEl.textContent = ok
-      ? `📚 ${label} disponibles : ${pool.length} (OK)`
-      : `📚 ${label} disponibles : ${pool.length} (Min ${MIN_REQUIRED})`;
+  previewCountEl.textContent = ok
+    ? `📚 ${label} disponibles : ${pool.length} (OK)`
+    : `📚 ${label} disponibles : ${pool.length} (Min ${MIN_REQUIRED})`;
 
-    previewCountEl.classList.toggle("good", ok);
-    previewCountEl.classList.toggle("bad", !ok);
-  }
+  previewCountEl.classList.toggle("good", ok);
+  previewCountEl.classList.toggle("bad", !ok);
 
-  if (applyBtn) {
-    applyBtn.disabled = !ok;
-    applyBtn.classList.toggle("disabled", !ok);
-  }
+  applyBtn.disabled = !ok;
+  applyBtn.classList.toggle("disabled", !ok);
 }
 
-// =======================
-// GAME
-// =======================
+// ====== GAME ======
 function resetGameUI() {
   rankings = new Array(10).fill(null);
   currentIndex = 0;
   selectedItems = [];
 
-  [...rankButtonsWrap.querySelectorAll("button[data-rank]")].forEach(b => b.disabled = false);
+  [...rankButtonsWrap.querySelectorAll("button[data-rank]")].forEach((b) => (b.disabled = false));
 
-  if (resultDiv) resultDiv.textContent = "";
-  if (nextBtn) nextBtn.style.display = "none";
+  resultDiv.textContent = "";
+  nextBtn.style.display = "none";
 
   mediaToken++;
   hardResetMedia();
@@ -1235,48 +1031,42 @@ function startRound() {
 
   const minNeeded = Math.max(10, MIN_REQUIRED);
   if (!filteredPool || filteredPool.length < minNeeded) {
-    if (resultDiv) resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
-    if (nextBtn) {
-      nextBtn.style.display = "block";
-      nextBtn.textContent = "Retour réglages";
-      nextBtn.onclick = () => {
-        showCustomization();
-        updatePreview();
-      };
-    }
+    resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
+    nextBtn.style.display = "block";
+    nextBtn.textContent = "Retour réglages";
+    nextBtn.onclick = () => {
+      showCustomization();
+      updatePreview();
+    };
     return;
   }
 
-  // ✅ thème contenu (pool 10) -> puis on pick 10 dedans (donc exactement le thème)
+  // ✅ thème contenu (pool 64) -> puis on pick 10 dedans
   currentTheme = pickContentTheme64(filteredPool, currentMode);
   updateThemeLabel();
 
   const themePool = Array.isArray(currentTheme?.pool) ? currentTheme.pool : [];
   if (themePool.length < 10) {
-    if (resultDiv) resultDiv.textContent = "❌ Thème invalide (pool trop petit).";
-    if (nextBtn) {
-      nextBtn.style.display = "block";
-      nextBtn.textContent = "Retour réglages";
-      nextBtn.onclick = () => {
-        showCustomization();
-        updatePreview();
-      };
-    }
+    resultDiv.textContent = "❌ Thème invalide (pool trop petit).";
+    nextBtn.style.display = "block";
+    nextBtn.textContent = "Retour réglages";
+    nextBtn.onclick = () => {
+      showCustomization();
+      updatePreview();
+    };
     return;
   }
 
   selectedItems = pick10FromPool(themePool);
 
   if (selectedItems.length < 10) {
-    if (resultDiv) resultDiv.textContent = "❌ Impossible de sélectionner 10 items uniques.";
-    if (nextBtn) {
-      nextBtn.style.display = "block";
-      nextBtn.textContent = "Retour réglages";
-      nextBtn.onclick = () => {
-        showCustomization();
-        updatePreview();
-      };
-    }
+    resultDiv.textContent = "❌ Impossible de sélectionner 10 items uniques.";
+    nextBtn.style.display = "block";
+    nextBtn.textContent = "Retour réglages";
+    nextBtn.onclick = () => {
+      showCustomization();
+      updatePreview();
+    };
     return;
   }
 
@@ -1292,40 +1082,40 @@ function displayCurrentItem() {
     return;
   }
 
-  if (itemName) itemName.textContent = formatItemLabel(item);
+  itemName.textContent = formatItemLabel(item);
 
   if (currentMode === "songs") {
-    if (animeImg) animeImg.style.display = "none";
-    if (playerZone) playerZone.style.display = "block";
+    animeImg.style.display = "none";
+    playerZone.style.display = "block";
     if (volumeRow) volumeRow.style.display = "flex";
 
-    if (songPlayer) songPlayer.poster = item.image || "";
+    songPlayer.poster = item.image || "";
 
-    if (item.url && songPlayer) {
+    if (item.url) {
       mediaToken++;
       const localRound = roundToken;
       const localMedia = mediaToken;
 
       hardResetMedia();
+
       songPlayer.muted = false;
       applyVolume();
 
+      // ✅ snippet ON
       loadMediaWithRetries(item.url, localRound, localMedia, { autoplay: true, snippet: true });
     } else {
       hardResetMedia();
     }
   } else {
     if (volumeRow) volumeRow.style.display = "none";
-    if (playerZone) playerZone.style.display = "none";
+    playerZone.style.display = "none";
     hardResetMedia();
 
-    if (animeImg) {
-      if (item.image) {
-        animeImg.src = item.image;
-        animeImg.style.display = "block";
-      } else {
-        animeImg.style.display = "none";
-      }
+    if (item.image) {
+      animeImg.src = item.image;
+      animeImg.style.display = "block";
+    } else {
+      animeImg.style.display = "none";
     }
   }
 }
@@ -1349,7 +1139,6 @@ function assignRank(rank) {
 }
 
 function updateRankingList() {
-  if (!rankingList) return;
   rankingList.innerHTML = "";
 
   for (let i = 0; i < 10; i++) {
@@ -1382,21 +1171,12 @@ function updateRankingList() {
 }
 
 function finishRound() {
-  [...rankButtonsWrap.querySelectorAll("button[data-rank]")].forEach(b => b.disabled = true);
-  try { songPlayer?.pause(); } catch {}
+  [...rankButtonsWrap.querySelectorAll("button[data-rank]")].forEach((b) => (b.disabled = true));
+  try { songPlayer.pause(); } catch {}
 
-  const rankingLabels = rankings.map(it => (it ? formatItemLabel(it) : null));
-  roundsRecap.push({
-    round: currentRound,
-    mode: currentMode,
-    theme: currentTheme ? { crit: currentTheme.crit, label: currentTheme.label } : null,
-    ranking: rankingLabels,
-  });
-
-  if (resultDiv) resultDiv.textContent = "✅ Partie terminée !";
-  if (!nextBtn) return;
-
+  resultDiv.textContent = "✅ Partie terminée !";
   nextBtn.style.display = "block";
+
   const isLast = currentRound >= totalRounds;
 
   if (!isLast) {
@@ -1406,39 +1186,30 @@ function finishRound() {
       startRound();
     };
   } else {
-    notifyParcoursFinished({
-      game: "blind_ranking",
-      rounds: totalRounds,
-      recap: roundsRecap,
-    });
+    nextBtn.textContent = "Retour réglages";
+    nextBtn.onclick = () => {
+      showCustomization();
+      updatePreview();
+    };
 
-    if (IS_PARCOURS) {
-      nextBtn.textContent = "Continuer";
-      nextBtn.onclick = () => {
-        window.location.href = RETURN_URL || "../index.html";
-      };
-    } else {
-      nextBtn.textContent = "Retour réglages";
-      nextBtn.onclick = () => {
-        showCustomization();
-        updatePreview();
-      };
+    if (isParcours) {
+      try {
+        parent.postMessage({ parcoursScore: { label: "Blind Ranking", score: 0, total: 0 } }, "*");
+      } catch {}
     }
   }
 }
 
-// =======================
-// LOAD DATA
-// =======================
+// ====== LOAD DATA ======
 fetch("../data/licenses_only.json")
-  .then(r => {
+  .then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status} - ${r.statusText}`);
     return r.json();
   })
-  .then(json => {
+  .then((json) => {
     const raw = normalizeAnimeList(json);
 
-    allAnimes = (Array.isArray(raw) ? raw : []).map(a => {
+    allAnimes = (Array.isArray(raw) ? raw : []).map((a) => {
       const title = getDisplayTitle(a);
       const genres = Array.isArray(a.genres) ? a.genres : [];
       const themes = Array.isArray(a.themes) ? a.themes : [];
@@ -1459,54 +1230,44 @@ fetch("../data/licenses_only.json")
     for (const a of allAnimes) allSongs.push(...extractSongsFromAnime(a));
 
     initCustomUI();
-
-    // ✅ applique config globale (parcours)
-    applyConfigToUI(GLOBAL_CFG);
-
-    updatePreview();
     applyVolume();
 
-    const shouldAutoStart =
-      !!GLOBAL_CFG?.autostart ||
-      truthyParam(URL_PARAMS.get("autostart")) ||
-      IS_PARCOURS;
+    // ✅ PARCOURS: ne jamais afficher le menu du mini-jeu
+    if (isParcours) {
+      // 1) applique settings globaux parcours (si dispo)
+      const ps = readParcoursSettings();
+      applyParcoursSettingsToUI(ps);
 
-    if (shouldAutoStart) {
+      // 2) set rounds depuis parcours
+      totalRounds = clampInt(parcoursCount, 1, 100);
+      currentRound = 1;
+
+      // 3) calc pool avec les filtres globaux appliqués
       filteredPool = applyFilters();
       const minNeeded = Math.max(10, MIN_REQUIRED);
 
-      const urlRounds = parseInt(URL_PARAMS.get("count") || "", 10);
-      const forcedRounds =
-        Number.isFinite(urlRounds) ? urlRounds :
-        (Number.isFinite(+GLOBAL_CFG?.rounds) ? +GLOBAL_CFG.rounds : 1);
-
-      totalRounds = IS_PARCOURS
-        ? clampInt(forcedRounds, 1, 100)
-        : clampInt(parseInt(roundCountEl?.value || "1", 10), 1, 100);
-
-      currentRound = 1;
-      roundsRecap = [];
+      // 4) start direct
+      showGame();
 
       if (filteredPool.length >= minNeeded) {
-        if (customPanel) customPanel.style.display = "none";
-        showGame();
         startRound();
       } else {
+        // fallback sécurité: si settings incomplets, on revient au mode normal
         showCustomization();
         updatePreview();
+        resultDiv.textContent = "⚠️ Réglages parcours invalides (pool trop petit).";
       }
-    } else {
-      showCustomization();
+      return;
     }
+
+    // ✅ mode normal
+    updatePreview();
+    showCustomization();
   })
-  .catch(e => {
-    if (previewCountEl) {
-      previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
-      previewCountEl.classList.add("bad");
-    }
-    if (applyBtn) {
-      applyBtn.disabled = true;
-      applyBtn.classList.add("disabled");
-    }
+  .catch((e) => {
+    previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
+    previewCountEl.classList.add("bad");
+    applyBtn.disabled = true;
+    applyBtn.classList.add("disabled");
     console.error(e);
   });
