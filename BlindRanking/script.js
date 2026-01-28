@@ -1,6 +1,6 @@
 /**********************
  * Blind Ranking (Anime / Songs) — script.js (COMPLET + MODIFS PARCOURS)
- * - Thème contenu: pool 64 + affichage "🎯 Thème contenu : ..."
+ * - Thème contenu: pool 10 + affichage "🎯 Thème contenu : ..."
  * - Songs: extrait 45s -> 20s
  * - Grille ranking: JAMAIS de vidéo (uniquement image cover)
  * - Loader anti-bug media + retries: 1 + 5 retries (2/4/6/8/10s)
@@ -62,7 +62,6 @@ function parseCsvParam(p) {
   if (!p) return [];
   return String(p).split(",").map(x => x.trim()).filter(Boolean);
 }
-
 function safeJsonParse(s) {
   try { return JSON.parse(s); } catch { return null; }
 }
@@ -85,8 +84,8 @@ function normalizeConfigObject(raw) {
   const songKinds = Array.isArray(raw.songKinds) ? raw.songKinds : (Array.isArray(raw.allowedSongs) ? raw.allowedSongs : []);
 
   const rounds = Number.isFinite(+raw.rounds) ? +raw.rounds :
-                 (Number.isFinite(+raw.count) ? +raw.count :
-                 (Number.isFinite(+raw.roundCount) ? +raw.roundCount : null));
+    (Number.isFinite(+raw.count) ? +raw.count :
+      (Number.isFinite(+raw.roundCount) ? +raw.roundCount : null));
 
   return {
     source: "localStorage",
@@ -124,7 +123,7 @@ function readConfigFromLocalStorage() {
 }
 
 function readConfigFromUrl() {
-  // compat ancienne URL: ?parcours=1&count=...&mode=anime|songs
+  // compat: ?parcours=1&count=...&mode=anime|songs
   const modeParam = (URL_PARAMS.get("mode") || URL_PARAMS.get("blindMode") || "").trim().toLowerCase();
   const mode =
     modeParam === "songs" || modeParam === "song" || modeParam === "musique" ? "songs" :
@@ -135,7 +134,6 @@ function readConfigFromUrl() {
   const score = parseInt(URL_PARAMS.get("score") || URL_PARAMS.get("scorePercent") || "", 10);
   const yearMin = parseInt(URL_PARAMS.get("yearMin") || URL_PARAMS.get("ymin") || "", 10);
   const yearMax = parseInt(URL_PARAMS.get("yearMax") || URL_PARAMS.get("ymax") || "", 10);
-
   const rounds = parseInt(URL_PARAMS.get("count") || URL_PARAMS.get("rounds") || URL_PARAMS.get("roundCount") || "", 10);
 
   const types = parseCsvParam(URL_PARAMS.get("types"));
@@ -157,7 +155,10 @@ function readConfigFromUrl() {
 
   return {
     source: "url",
-    autostart: truthyParam(URL_PARAMS.get("autostart")) || truthyParam(URL_PARAMS.get("parcours")) || (IS_PARCOURS && truthyParam(URL_PARAMS.get("autostart"))),
+    autostart:
+      truthyParam(URL_PARAMS.get("autostart")) ||
+      truthyParam(URL_PARAMS.get("parcours")) ||
+      (IS_PARCOURS && truthyParam(URL_PARAMS.get("autostart"))),
     mode,
     popPercent: Number.isFinite(pop) ? pop : null,
     scorePercent: Number.isFinite(score) ? score : null,
@@ -223,8 +224,9 @@ document.addEventListener("click", (e) => {
 // =======================
 // HELPERS
 // =======================
-const MIN_REQUIRED = 64;
-const THEME_POOL_SIZE = 64;
+// ✅ CHANGEMENT: min requis + pool thème = 10
+const MIN_REQUIRED = 10;
+const THEME_POOL_SIZE = 10;
 
 // Songs snippet
 const SONG_START_SEC = 45;
@@ -252,7 +254,7 @@ function getDisplayTitle(a) {
 }
 
 function getYear(a) {
-  const s = ((a && a.season) ? String(a.season) : "").trim(); // ex "spring 2013"
+  const s = ((a && a.season) ? String(a.season) : "").trim();
   const m = s.match(/(\d{4})/);
   return m ? parseInt(m[1], 10) : 0;
 }
@@ -266,10 +268,12 @@ function clampYearSliders() {
   const minEl = document.getElementById("yearMin");
   const maxEl = document.getElementById("yearMax");
   if (!minEl || !maxEl) return;
+
   let a = parseInt(minEl.value, 10);
   let b = parseInt(maxEl.value, 10);
   if (!Number.isFinite(a)) a = 0;
   if (!Number.isFinite(b)) b = 0;
+
   if (a > b) {
     [a, b] = [b, a];
     minEl.value = a;
@@ -289,20 +293,16 @@ function clampInt(n, a, b) {
   n = Number.isFinite(n) ? n : a;
   return Math.max(a, Math.min(b, n));
 }
-
 function safeNum(x) {
   const n = +x;
   return Number.isFinite(n) ? n : 0;
 }
-
 function round1(x) {
   return Math.round((Number.isFinite(x) ? x : 0) * 10) / 10;
 }
-
 function norm(s) {
   return (s || "").toString().trim().toLowerCase();
 }
-
 function includesStudio(studio, needle) {
   const s = norm(studio);
   const n = norm(needle);
@@ -318,7 +318,6 @@ function songTypeLabel(t) {
   if (t === "ED") return "ED";
   return "IN";
 }
-
 function formatSongTitle(s) {
   const type = songTypeLabel(s.songType);
   const num = s.songNumber ? ` ${s.songNumber}` : "";
@@ -326,7 +325,6 @@ function formatSongTitle(s) {
   const art = s.songArtists ? ` — ${s.songArtists}` : "";
   return `${s.animeTitle || "Anime"} ${type}${num}${name}${art}`;
 }
-
 function formatItemLabel(it) {
   if (!it) return "";
   if (it.kind === "song") return formatSongTitle(it);
@@ -341,7 +339,6 @@ function extractSongsFromAnime(anime) {
     { key: "endings", type: "ED" },
     { key: "inserts", type: "IN" },
   ];
-
   for (const b of buckets) {
     const arr = Array.isArray(song[b.key]) ? song[b.key] : [];
     for (const it of arr) {
@@ -356,8 +353,7 @@ function extractSongsFromAnime(anime) {
 
       out.push({
         kind: "song",
-
-        songType: b.type, // OP/ED/IN
+        songType: b.type,
         songName: it.name || "",
         songNumber: safeNum(it.number) || 1,
         songArtists: artists || "",
@@ -365,7 +361,6 @@ function extractSongsFromAnime(anime) {
         songSeason,
         songYear,
 
-        // anime meta (pour thèmes)
         animeMalId: anime.mal_id ?? null,
         animeTitle: anime._title,
         animeTitleLower: anime._titleLower,
@@ -377,7 +372,6 @@ function extractSongsFromAnime(anime) {
         animeStudio: anime._studio || "",
         animeTags: Array.isArray(anime._tags) ? anime._tags : [],
 
-        // media
         url,
         _key: `${b.type}|${it.number || ""}|${it.name || ""}|${url}|${anime.mal_id || ""}`,
       });
@@ -439,7 +433,7 @@ let filteredPool = [];
 // =======================
 // THEME CONTENU
 // =======================
-let currentTheme = null; // { crit, label, pool: [64] }
+let currentTheme = null; // { crit, label, pool: [10] }
 
 // =======================
 // GAME STATE
@@ -452,7 +446,7 @@ let currentIndex = 0;
 let rankings = new Array(10).fill(null);
 
 // recap multi-round (utile pour parcours)
-let roundsRecap = []; // [{ round, mode, theme, rankingLabels }]
+let roundsRecap = [];
 
 // tokens anti-bug media
 let roundToken = 0;
@@ -500,16 +494,14 @@ function updateThemeLabel() {
 }
 
 // =======================
-// DEFAULTS (pills) (NEW)
+// DEFAULTS (pills)
 // =======================
 function ensureDefaultTypes() {
   const pills = Array.from(document.querySelectorAll("#typePills .pill"));
   if (!pills.length) return;
-
   const active = pills.filter(b => b.classList.contains("active"));
   if (active.length) return;
 
-  // essaie TV+Movie sinon 1er
   let did = false;
   pills.forEach(b => {
     const t = (b.dataset.type || "").toUpperCase();
@@ -518,6 +510,7 @@ function ensureDefaultTypes() {
     b.classList.toggle("active", on);
     b.setAttribute("aria-pressed", on ? "true" : "false");
   });
+
   if (!did) {
     pills[0].classList.add("active");
     pills[0].setAttribute("aria-pressed", "true");
@@ -527,11 +520,9 @@ function ensureDefaultTypes() {
 function ensureDefaultSongs() {
   const pills = Array.from(document.querySelectorAll("#songPills .pill"));
   if (!pills.length) return;
-
   const active = pills.filter(b => b.classList.contains("active"));
   if (active.length) return;
 
-  // essaie OP sinon 1er
   let did = false;
   pills.forEach(b => {
     const s = norm(b.dataset.song || "");
@@ -540,6 +531,7 @@ function ensureDefaultSongs() {
     b.classList.toggle("active", on);
     b.setAttribute("aria-pressed", on ? "true" : "false");
   });
+
   if (!did) {
     pills[0].classList.add("active");
     pills[0].setAttribute("aria-pressed", "true");
@@ -549,13 +541,12 @@ function ensureDefaultSongs() {
 function ensureDefaultModePill() {
   const pills = Array.from(document.querySelectorAll("#modePills .pill"));
   if (!pills.length) return;
-
   const active = pills.find(b => b.classList.contains("active"));
   if (active) return;
 
-  // anime par défaut
   const animeBtn = pills.find(b => (b.dataset.mode || "") === "anime");
   const btn = animeBtn || pills[0];
+
   pills.forEach(b => {
     b.classList.toggle("active", b === btn);
     b.setAttribute("aria-pressed", b === btn ? "true" : "false");
@@ -572,65 +563,40 @@ function updateModePillsFromState() {
   updateModeVisibility();
 }
 
+function updateModeVisibility() {
+  if (songsRow) songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
+}
+
 // =======================
-// APPLY GLOBAL CFG TO UI (NEW)
+// APPLY GLOBAL CFG TO UI
 // =======================
 function normalizeSongKindToCode(k) {
   const s = norm(k);
   if (s === "op" || s === "opening" || s === "openings") return "OP";
   if (s === "ed" || s === "ending" || s === "endings") return "ED";
   if (s === "in" || s === "insert" || s === "inserts") return "IN";
-  // si déjà OP/ED/IN
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-  if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
-
-  // catch-all: OP/ED/IN exact
   const up = (k || "").toString().trim().toUpperCase();
   if (up === "OP" || up === "ED" || up === "IN") return up;
-
   return null;
 }
 
 function applyConfigToUI(cfg) {
   if (!cfg) return;
 
-  // mode
   if (cfg.mode === "anime" || cfg.mode === "songs") {
     currentMode = cfg.mode;
     updateModePillsFromState();
   }
 
-  // sliders
   if (popEl && Number.isFinite(+cfg.popPercent)) popEl.value = String(clampInt(+cfg.popPercent, 5, 100));
   if (scoreEl && Number.isFinite(+cfg.scorePercent)) scoreEl.value = String(clampInt(+cfg.scorePercent, 5, 100));
   if (yearMinEl && Number.isFinite(+cfg.yearMin)) yearMinEl.value = String(+cfg.yearMin);
   if (yearMaxEl && Number.isFinite(+cfg.yearMax)) yearMaxEl.value = String(+cfg.yearMax);
 
-  // rounds (si champ dispo)
   if (roundCountEl && Number.isFinite(+cfg.rounds)) {
     roundCountEl.value = String(clampInt(+cfg.rounds, 1, 100));
   }
 
-  // types
   const wantedTypes = (Array.isArray(cfg.types) ? cfg.types : []).map(x => String(x).trim().toLowerCase());
   const typePills = Array.from(document.querySelectorAll("#typePills .pill"));
   if (typePills.length && wantedTypes.length) {
@@ -643,7 +609,6 @@ function applyConfigToUI(cfg) {
   }
   ensureDefaultTypes();
 
-  // song kinds
   const wantedSongCodes = (Array.isArray(cfg.songKinds) ? cfg.songKinds : [])
     .map(normalizeSongKindToCode)
     .filter(Boolean);
@@ -651,8 +616,7 @@ function applyConfigToUI(cfg) {
   const songPills = Array.from(document.querySelectorAll("#songPills .pill"));
   if (songPills.length && wantedSongCodes.length) {
     songPills.forEach(b => {
-      const sRaw = String(b.dataset.song || "");
-      const pillCode = normalizeSongKindToCode(sRaw) || sRaw.trim().toUpperCase();
+      const pillCode = normalizeSongKindToCode(b.dataset.song || "") || String(b.dataset.song || "").trim().toUpperCase();
       const on = wantedSongCodes.includes(pillCode);
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", on ? "true" : "false");
@@ -662,7 +626,6 @@ function applyConfigToUI(cfg) {
 
   clampYearSliders();
 
-  // refresh labels
   if (popValEl && popEl) popValEl.textContent = popEl.value;
   if (scoreValEl && scoreEl) scoreValEl.textContent = scoreEl.value;
   if (yearMinValEl && yearMinEl) yearMinValEl.textContent = yearMinEl.value;
@@ -672,7 +635,7 @@ function applyConfigToUI(cfg) {
 }
 
 // =======================
-// THEME LOGIC (pool 64)
+// THEME LOGIC (pool 10)
 // =======================
 function nearbyPool(pool, getNum, target, want = THEME_POOL_SIZE) {
   const arr = [...pool].sort((a, b) => getNum(a) - getNum(b));
@@ -688,6 +651,7 @@ function nearbyPool(pool, getNum, target, want = THEME_POOL_SIZE) {
     if (L > 0) L--;
     if ((R - L + 1) < want && R < arr.length - 1) R++;
   }
+
   return arr.slice(L, R + 1);
 }
 
@@ -719,7 +683,7 @@ function hasTag(it, tag) {
   return tags.some(x => norm(x) === t);
 }
 
-// STUDIO: pool “agrandi” en cumulant des studios jusqu'à 64
+// STUDIO: pool “agrandi” en cumulant des studios jusqu'à 10
 function buildStudioPool64(basePool, getStudioFn, minSize = THEME_POOL_SIZE) {
   const usedStudios = new Set();
   const mapByKey = new Map();
@@ -757,8 +721,8 @@ function pickContentTheme64(basePool, modeLocal) {
     return { crit: "FREE", label: "Libre", pool: pickUniqueN(basePool || [], THEME_POOL_SIZE) };
   }
 
-  const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR"]; // 6
-  const criteriaSongs = ["FREE", "SONG_SEASON", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST"]; // 7
+  const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR"];
+  const criteriaSongs = ["FREE", "SONG_SEASON", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST"];
   const criteria = (modeLocal === "songs") ? criteriaSongs : criteriaAnime;
 
   const getYear = (it) => it?._year || it?.year || 0;
@@ -867,7 +831,6 @@ function installSnippetLimiter(video, startSec, endSec, localRound, localMedia) 
   clearSnippetLimiter();
 
   let armed = false;
-
   const isStillValid = () => localRound === roundToken && localMedia === mediaToken;
   const safeSeek = (t) => { try { video.currentTime = t; } catch {} };
 
@@ -903,13 +866,11 @@ function computeSnippetBounds(videoDuration) {
   if (!dur || dur <= 1) {
     return { start: SONG_START_SEC, end: SONG_START_SEC + SONG_PLAY_SEC };
   }
-
   if (dur >= SONG_START_SEC + 1) {
     const start = SONG_START_SEC;
     const end = Math.min(start + SONG_PLAY_SEC, Math.max(0, dur - 0.05));
     return { start, end };
   }
-
   const start = Math.max(0, dur - SONG_PLAY_SEC - 0.25);
   const end = Math.min(start + SONG_PLAY_SEC, Math.max(0, dur - 0.05));
   return { start, end };
@@ -961,7 +922,6 @@ function loadMediaWithRetries(url, localRound, localMedia, { autoplay = true, sn
   const markReady = () => {
     if (!isStillValid() || done) return;
     done = true;
-
     cleanupLoader();
 
     if (snippet) {
@@ -1010,15 +970,12 @@ function loadMediaWithRetries(url, localRound, localMedia, { autoplay = true, sn
 
     songPlayer.onloadedmetadata = () => { if (!isStillValid() || done) return; markReady(); };
     songPlayer.oncanplay = () => { if (!isStillValid() || done) return; markReady(); };
-
     songPlayer.onwaiting = () => { if (!isStillValid() || done) return; startStallTimer(); };
     songPlayer.onstalled = () => { if (!isStillValid() || done) return; startStallTimer(); };
-
     songPlayer.onplaying = () => {
       if (!isStillValid() || done) return;
       if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
     };
-
     songPlayer.onerror = () => { if (!isStillValid() || done) return; triggerRetry(); };
 
     startStallTimer();
@@ -1032,16 +989,12 @@ function loadMediaWithRetries(url, localRound, localMedia, { autoplay = true, sn
 // =======================
 // UI INIT
 // =======================
-function updateModeVisibility() {
-  if (songsRow) songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
-}
-
 function initCustomUI() {
   ensureDefaultModePill();
   ensureDefaultTypes();
   ensureDefaultSongs();
 
-  // Pills mode
+  // mode pills
   document.querySelectorAll("#modePills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
       document.querySelectorAll("#modePills .pill").forEach(b => {
@@ -1050,13 +1003,13 @@ function initCustomUI() {
       });
       btn.classList.add("active");
       btn.setAttribute("aria-pressed", "true");
-      currentMode = btn.dataset.mode; // anime | songs
+      currentMode = btn.dataset.mode;
       updateModeVisibility();
       updatePreview();
     });
   });
 
-  // Type pills
+  // type pills
   document.querySelectorAll("#typePills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -1066,7 +1019,7 @@ function initCustomUI() {
     });
   });
 
-  // Song pills
+  // song pills
   document.querySelectorAll("#songPills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
@@ -1076,7 +1029,6 @@ function initCustomUI() {
     });
   });
 
-  // Sliders sync
   function syncLabels() {
     clampYearSliders();
     if (popValEl && popEl) popValEl.textContent = popEl.value;
@@ -1087,13 +1039,11 @@ function initCustomUI() {
   }
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el?.addEventListener("input", syncLabels));
 
-  // Apply
   applyBtn?.addEventListener("click", () => {
     filteredPool = applyFilters();
     const minNeeded = Math.max(10, MIN_REQUIRED);
     if (filteredPool.length < minNeeded) return;
 
-    // rounds
     const cfgRounds = Number.isFinite(+GLOBAL_CFG?.rounds) ? +GLOBAL_CFG.rounds : null;
     const urlRounds = parseInt(URL_PARAMS.get("count") || "", 10);
     const forcedRounds = Number.isFinite(urlRounds) ? urlRounds : cfgRounds;
@@ -1103,15 +1053,13 @@ function initCustomUI() {
     } else {
       totalRounds = clampInt(parseInt(roundCountEl?.value || "1", 10), 1, 100);
     }
+
     currentRound = 1;
     roundsRecap = [];
-
-    // si config force le mode en parcours, on respecte (déjà appliqué via applyConfigToUI)
     showGame();
     startRound();
   });
 
-  // Rank buttons events
   [...rankButtonsWrap.querySelectorAll("button[data-rank]")].forEach(btn => {
     btn.addEventListener("click", () => {
       const r = parseInt(btn.dataset.rank, 10);
@@ -1155,7 +1103,6 @@ function applyFilters() {
       title: a._title,
       image: a.image || "",
 
-      // meta thème
       _year: a._year,
       _members: a._members,
       _score: a._score,
@@ -1165,14 +1112,10 @@ function applyFilters() {
     }));
   }
 
-  // songs mode
   const allowedSongsRaw = [...document.querySelectorAll("#songPills .pill.active")].map(b => b.dataset.song);
   if (allowedSongsRaw.length === 0) return [];
 
-  // normalize en OP/ED/IN (compatible "opening/ending/insert" aussi)
-  const allowedSongs = allowedSongsRaw
-    .map(normalizeSongKindToCode)
-    .filter(Boolean);
+  const allowedSongs = allowedSongsRaw.map(normalizeSongKindToCode).filter(Boolean);
 
   let pool = allSongs.filter(s =>
     s.animeYear >= yearMin &&
@@ -1204,7 +1147,6 @@ function applyFilters() {
     url: s.url,
     image: s.animeImage || "",
 
-    // meta thème (basée anime)
     animeYear: s.animeYear,
     animeMembers: s.animeMembers,
     animeScore: s.animeScore,
@@ -1305,7 +1247,7 @@ function startRound() {
     return;
   }
 
-  // ✅ thème contenu (pool 64) -> puis on pick 10 dedans
+  // ✅ thème contenu (pool 10) -> puis on pick 10 dedans (donc exactement le thème)
   currentTheme = pickContentTheme64(filteredPool, currentMode);
   updateThemeLabel();
 
@@ -1365,11 +1307,9 @@ function displayCurrentItem() {
       const localMedia = mediaToken;
 
       hardResetMedia();
-
       songPlayer.muted = false;
       applyVolume();
 
-      // ✅ snippet ON
       loadMediaWithRetries(item.url, localRound, localMedia, { autoplay: true, snippet: true });
     } else {
       hardResetMedia();
@@ -1445,7 +1385,6 @@ function finishRound() {
   [...rankButtonsWrap.querySelectorAll("button[data-rank]")].forEach(b => b.disabled = true);
   try { songPlayer?.pause(); } catch {}
 
-  // stock recap round
   const rankingLabels = rankings.map(it => (it ? formatItemLabel(it) : null));
   roundsRecap.push({
     round: currentRound,
@@ -1456,8 +1395,8 @@ function finishRound() {
 
   if (resultDiv) resultDiv.textContent = "✅ Partie terminée !";
   if (!nextBtn) return;
-  nextBtn.style.display = "block";
 
+  nextBtn.style.display = "block";
   const isLast = currentRound >= totalRounds;
 
   if (!isLast) {
@@ -1467,7 +1406,6 @@ function finishRound() {
       startRound();
     };
   } else {
-    // ✅ Hook parcours (fin jeu)
     notifyParcoursFinished({
       game: "blind_ranking",
       rounds: totalRounds,
@@ -1534,27 +1472,26 @@ fetch("../data/licenses_only.json")
       IS_PARCOURS;
 
     if (shouldAutoStart) {
-      // démarre direct si possible
       filteredPool = applyFilters();
       const minNeeded = Math.max(10, MIN_REQUIRED);
 
-      // rounds auto (parcours)
       const urlRounds = parseInt(URL_PARAMS.get("count") || "", 10);
       const forcedRounds =
         Number.isFinite(urlRounds) ? urlRounds :
         (Number.isFinite(+GLOBAL_CFG?.rounds) ? +GLOBAL_CFG.rounds : 1);
 
-      totalRounds = IS_PARCOURS ? clampInt(forcedRounds, 1, 100) : clampInt(parseInt(roundCountEl?.value || "1", 10), 1, 100);
+      totalRounds = IS_PARCOURS
+        ? clampInt(forcedRounds, 1, 100)
+        : clampInt(parseInt(roundCountEl?.value || "1", 10), 1, 100);
+
       currentRound = 1;
       roundsRecap = [];
 
       if (filteredPool.length >= minNeeded) {
-        // cache le panel si présent
         if (customPanel) customPanel.style.display = "none";
         showGame();
         startRound();
       } else {
-        // fallback -> montrer réglages
         showCustomization();
         updatePreview();
       }
