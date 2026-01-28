@@ -11,6 +11,12 @@
  * - Autostart si demandé -> menu perso caché (même en cas d’erreur pool)
  * - Back-to-menu et fin parcours: redirige vers return=...
  * - Hook fin mini-jeu: dispatch CustomEvent + postMessage (ag2:minigame:finished)
+ *
+ * ✅ MODIFS BUGFIX
+ * - Affichage des erreurs dans #result
+ * - startRound protégé + fallback thème Libre
+ * - placeholders immédiats via updateRankingList() après resetGameUI()
+ * - _tags convertis en strings (genres/themes -> .name)
  **********************/
 
 // =======================
@@ -420,6 +426,21 @@ const resultDiv = document.getElementById("result");
 const nextBtn = document.getElementById("nextBtn");
 const roundLabel = document.getElementById("roundLabel");
 const themeLabel = document.getElementById("themeLabel");
+
+// =======================
+// ✅ DEBUG: affiche erreurs dans le jeu
+// =======================
+window.addEventListener("error", (e) => {
+  console.error("JS error:", e.error || e.message);
+  if (resultDiv) resultDiv.textContent = "❌ Erreur JS : " + (e.message || "inconnue");
+  if (nextBtn) nextBtn.style.display = "block";
+});
+
+window.addEventListener("unhandledrejection", (e) => {
+  console.error("Promise rejection:", e.reason);
+  if (resultDiv) resultDiv.textContent = "❌ Promise rejetée : " + (e.reason?.message || e.reason || "inconnue");
+  if (nextBtn) nextBtn.style.display = "block";
+});
 
 // =======================
 // DATA
@@ -1218,6 +1239,7 @@ function pick10FromPool(pool) {
 function startRound() {
   roundToken++;
   resetGameUI();
+  updateRankingList(); // ✅ placeholders immédiats
 
   if (roundLabel) roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
 
@@ -1233,7 +1255,13 @@ function startRound() {
     return;
   }
 
-  currentTheme = pickContentThemeN(filteredPool, currentMode);
+  // ✅ THEME protégé + fallback
+  try {
+    currentTheme = pickContentThemeN(filteredPool, currentMode);
+  } catch (err) {
+    console.error("pickContentThemeN crash:", err);
+    currentTheme = { crit: "FREE", label: "Libre", pool: pickUniqueN(filteredPool || [], THEME_POOL_SIZE) };
+  }
   updateThemeLabel();
 
   const themePool = Array.isArray(currentTheme?.pool) ? currentTheme.pool : [];
@@ -1422,6 +1450,12 @@ fetch("../data/licenses_only.json")
       const title = getDisplayTitle(a);
       const genres = Array.isArray(a.genres) ? a.genres : [];
       const themes = Array.isArray(a.themes) ? a.themes : [];
+
+      // ✅ tags => strings (nom) uniquement
+      const tagNames = [...genres, ...themes]
+        .map(g => (typeof g === "string" ? g : g?.name))
+        .filter(Boolean);
+
       return {
         ...a,
         _title: title,
@@ -1431,7 +1465,7 @@ fetch("../data/licenses_only.json")
         _score: safeNum(a.score),
         _type: a.type || "Unknown",
         _studio: a.studio || "",
-        _tags: [...genres, ...themes],
+        _tags: tagNames,
       };
     });
 
