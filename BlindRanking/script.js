@@ -795,20 +795,34 @@ function themeScoreNear(basePool, modeLocal) {
 }
 
 function themePopNearGlobal(basePool, modeLocal) {
-  const getMalId = (it) => (modeLocal === "songs") ? (it?.animeMalId ?? null) : (it?.malId ?? it?.mal_id ?? null);
-  const getMembers = (it) => (modeLocal === "songs") ? safeNum(it?.animeMembers) : safeNum(it?._members);
+  const getMalId = (it) => (modeLocal === "songs")
+    ? (it?.animeMalId ?? null)
+    : (it?.malId ?? it?.mal_id ?? null);
+
+  const getMembers = (it) => (modeLocal === "songs")
+    ? safeNum(it?.animeMembers)
+    : safeNum(it?._members);
 
   const seed = pickRandomFrom(basePool, it => getMembers(it) > 0);
   if (!seed) return null;
 
   const malId = getMalId(seed);
-  const P = getGlobalTopPctFromAnimeId(malId, getMembers(seed)); // ✅ GLOBAL TOP%
+
+  // ✅ Top% calculé sur le GLOBAL (tous les animes)
+  const P = getGlobalTopPctFromAnimeId(malId, getMembers(seed));
+
+  // ✅ bucket de base affiché: 25–30, 40–45, etc.
+  // cas spécial: top 5 => 5–10 (car 0–5 n'existe pas)
+  const baseLo = (P <= 5) ? 5 : (P - 5);
+  const baseHi = (P <= 5) ? 10 : P;
+
   let window = 5;
   let pool = [];
 
   while (window <= 50) {
-    const lo = clampInt(P - window, 5, 100);
-    const hi = clampInt(P + window, 5, 100);
+    // ✅ expansion autour du bucket (pas autour de P)
+    const lo = clampInt(baseLo - window, 5, 100);
+    const hi = clampInt(baseHi + window, 5, 100);
 
     pool = basePool.filter(it => {
       const p = getGlobalTopPctFromAnimeId(getMalId(it), getMembers(it));
@@ -821,10 +835,12 @@ function themePopNearGlobal(basePool, modeLocal) {
 
   return {
     crit: "POP_NEAR",
-    label: `Popularité : Top ${P}% ± ${window}% (global)`,
-    pool: pickUniqueN(pool, THEME_POOL_SIZE)
+    // ✅ label au format demandé
+    label: `Popularité : Top ${baseLo}–${baseHi}% ± ${window}% (global)`,
+    pool: pickUniqueN(pool, THEME_POOL_SIZE),
   };
 }
+
 
 function themeStudioMix(basePool, modeLocal) {
   const getStudio = (it) => (modeLocal === "songs") ? (it?.animeStudio || "") : (it?._studio || "");
