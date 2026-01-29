@@ -577,3 +577,14 @@ body.light .lor-card{
   header h1{ font-size: 1.19rem; }
   .info-tip{ width: min(320px, 86vw); right: 0; }
 }
+/* ✅ Thème contenu (mini pill) */
+.mini-pill--theme{
+  margin-top: -6px;
+  opacity: 0.98;
+  border-color: rgba(38,255,128,0.22);
+  box-shadow: 0 0 14px rgba(38,255,128,0.08);
+}
+body.light .mini-pill--theme{
+  border-color: rgba(25,118,210,0.22);
+  box-shadow: 0 0 14px rgba(66,165,245,0.10);
+}
