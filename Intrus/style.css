@@ -693,3 +693,45 @@ body.light footer{ color:#888; }
   .intrus-list{ grid-template-columns: repeat(1, 1fr); }
   .info-tip{ width: min(320px, 86vw); right: 0; }
 }
+
+/* =======================================================================
+   ✅ MODIFS : n'afficher QUE "Thème : ..." dans le panneau de droite
+   (on cache règles + desc + statuts + résultat)
+   ======================================================================= */
+
+/* 1) Thème en une ligne propre (avec ellipsis si trop long) */
+#themeName.tp-theme-title{
+  display:block;
+  width:100%;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(0,0,0,0.14);
+  border: 1px solid rgba(0,188,212,0.20);
+  box-shadow: 0 0 16px rgba(0,234,255,0.10);
+  font-size: 1.08rem;
+  font-weight: 1000;
+  text-align:center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.light #themeName.tp-theme-title{
+  background: rgba(255,255,255,0.70);
+  border: 1px solid rgba(25,118,210,0.30);
+  box-shadow: 0 0 16px rgba(66,165,245,0.14);
+}
+
+/* 2) On masque tout le reste des textes du panneau */
+#themeDesc,
+#roundRules,
+#revealStatus,
+#pickStatus,
+#result{
+  display:none !important;
+}
+
+/* 3) Optionnel : réduit l'espace vertical du panel (vu qu'on a tout caché) */
+.anime-item{
+  gap: 12px;
+}
