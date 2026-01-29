@@ -56,7 +56,7 @@ const MAX_WALL_SNIPPET_MS = 60000;
 
 // ✅ Clip settings (Songs)
 const CLIP_START_S = 45;
-const CLIP_DURATION_S = 20;
+const CLIP_DURATION_S = 30;
 const CLIP_EPS = 0.05;
 
 // ✅ Volume persistence
