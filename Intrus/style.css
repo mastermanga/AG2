@@ -475,6 +475,26 @@ body.light .anime-item{ background:#e4f2fc; }
 }
 .result{ margin-top: 14px; font-weight:900; opacity:0.95; }
 
+/* ✅ NOUVEAU : bloc règles (visible dès le début) */
+.round-rules{
+  width:100%;
+  margin-top:10px;
+  padding:12px 12px;
+  border-radius:14px;
+  background: rgba(0,0,0,0.14);
+  border: 1px solid rgba(0,188,212,0.20);
+  font-weight:800;
+  line-height:1.25;
+}
+.round-rules .rules-title{
+  font-weight:1000;
+  margin-bottom:6px;
+}
+body.light .round-rules{
+  background: rgba(255,255,255,0.70);
+  border: 1px solid rgba(25,118,210,0.30);
+}
+
 /* ==== VOLUME BAR (Songs) ==== */
 .volume-row{
   width:100%;
