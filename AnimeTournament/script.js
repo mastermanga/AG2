@@ -1407,12 +1407,14 @@ async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, s
           end = Math.min(start + SONG_PLAY_SEC, Math.max(0, dur - 0.05));
         }
 
+        // ✅ mémorise le snippet sur l'élément (ICI, pas après)
+        video.dataset.snipStart = String(start);
+        video.dataset.snipEnd = String(end);
+
         try { video.currentTime = start; } catch {}
         cleanupSnippet = installSnippetLimiter(video, start, end, session);
       }
-      // ✅ mémorise le snippet sur l'élément
-      video.dataset.snipStart = String(start);
-      video.dataset.snipEnd = String(end);
+
 
       if (autoplay) {
         try {
