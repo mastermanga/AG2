@@ -24,7 +24,10 @@ document.getElementById("back-to-menu").addEventListener("click", () => {
 });
 document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
-  localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
+  localStorage.setItem(
+    "theme",
+    document.body.classList.contains("light") ? "light" : "dark"
+  );
 });
 window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
@@ -41,7 +44,7 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach(w => w.classList.remove("open"));
+    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
   }
 });
 
@@ -63,7 +66,8 @@ const MAX_WALL_SNIPPET_MS = 60000;
 const RULE = {
   key: "BEST_LINE",
   label: "Choisis la meilleure ligne",
-  desc: "Choisis la meilleure ligne (3 items).",
+  // ✅ MODIF: on enlève "(3 items)" et on n'utilise plus cette phrase dans l'UI
+  desc: "Choisis la meilleure ligne.",
   required: 1,
   mode: "keep",
 };
@@ -85,14 +89,14 @@ function getDisplayTitle(a) {
   );
 }
 function getYear(a) {
-  const s = ((a && a.season) ? String(a.season) : "").trim();
+  const s = (a && a.season ? String(a.season) : "").trim();
   const m = s.match(/(\d{4})/);
   return m ? parseInt(m[1], 10) : 0;
 }
 function getYearFromSeasonStr(seasonStr, fallback = 0) {
   const s = (seasonStr ? String(seasonStr) : "").trim();
   const m = s.match(/(\d{4})/);
-  return m ? parseInt(m[1], 10) : (fallback || 0);
+  return m ? parseInt(m[1], 10) : fallback || 0;
 }
 function clampYearSliders() {
   const minEl = document.getElementById("yearMin");
@@ -127,9 +131,9 @@ function songTypeLabel(t) {
 }
 function formatSongTitle(s) {
   const type = songTypeLabel(s.songType);
-  const num = (s.songNumber ? ` ${s.songNumber}` : "");
-  const name = (s.songName ? ` — ${s.songName}` : "");
-  const art = (s.songArtists ? ` — ${s.songArtists}` : "");
+  const num = s.songNumber ? ` ${s.songNumber}` : "";
+  const name = s.songName ? ` — ${s.songName}` : "";
+  const art = s.songArtists ? ` — ${s.songArtists}` : "";
   return `${s.animeTitle || "Anime"} ${type}${num}${name}${art}`;
 }
 function formatItemLabel(it) {
@@ -204,7 +208,7 @@ function smartFirstLetter(title) {
   if (!m) return "";
 
   const ch = m[0];
-  if (/[0-9]/.test(ch)) return "#";       // pour les titres qui commencent par un chiffre
+  if (/[0-9]/.test(ch)) return "#"; // pour les titres qui commencent par un chiffre
   return ch.toUpperCase();
 }
 
@@ -289,7 +293,7 @@ function groupSongsByAnime(pool) {
 const DUP_PHASES = [
   { p2: 0.18, p3: 0.04 },
   { p2: 0.28, p3: 0.08 },
-  { p2: 0.40, p3: 0.12 },
+  { p2: 0.4, p3: 0.12 },
   { p2: 0.55, p3: 0.18 },
 ];
 function acceptDup(nextCount, phase) {
@@ -324,7 +328,7 @@ function tryPickSongsNo4(pool, n) {
   for (const phase of DUP_PHASES) {
     let safety = 0;
     while (picked.length < n && safety++ < 900) {
-      const candidates = keys.filter(k => {
+      const candidates = keys.filter((k) => {
         const c = counts.get(k) || 0;
         const arr = by.get(k);
         return c < 3 && arr && arr.length > 0;
@@ -345,7 +349,10 @@ function tryPickSongsNo4(pool, n) {
         let it = null;
         while (arr && arr.length) {
           const cand = arr.shift();
-          if (cand && !usedKeys.has(cand._key)) { it = cand; break; }
+          if (cand && !usedKeys.has(cand._key)) {
+            it = cand;
+            break;
+          }
         }
         if (!it) continue;
 
@@ -369,14 +376,16 @@ function tryPickSongsNo4(pool, n) {
    - YEAR / SONG_YEAR / ANIME_YEAR: fenêtre ±0, ±1, ...
    - SCORE: tolérance ±0, ±0.1, ...
    - POP: bande Top A–B% (bins 5%) + élargissement
-   - STUDIO / TAG / ARTIST / ANIME / FIRST_LETTER: cumul de valeurs jusqu’à >= 6
+   - STUDIO / TAG / ARTIST / ANIME / FIRST_LETTER: cumul de valeurs jusqu'à >= 6
    - Ensuite: pick 6 dans pool
    ========================== */
-function norm(s){ return (s || "").toString().trim().toLowerCase(); }
+function norm(s) {
+  return (s || "").toString().trim().toLowerCase();
+}
 function hasTag(it, tag) {
   const t = norm(tag);
   const arr = Array.isArray(it.tags) ? it.tags : [];
-  return arr.some(x => norm(x) === t);
+  return arr.some((x) => norm(x) === t);
 }
 function includesStudio(studio, needle) {
   const s = norm(studio);
@@ -388,7 +397,7 @@ function round1(x) {
   return Math.round((Number.isFinite(x) ? x : 0) * 10) / 10;
 }
 function summarizeForLabel(arr, max = 3) {
-  const clean = (arr || []).map(x => String(x || "").trim()).filter(Boolean);
+  const clean = (arr || []).map((x) => String(x || "").trim()).filter(Boolean);
   if (clean.length <= max) return clean.join(" + ");
   return clean.slice(0, max).join(" + ") + ` + ${clean.length - max} autres`;
 }
@@ -399,7 +408,7 @@ function buildYearWindowPool(basePool, getYearFn, centerYear, minSize = 6) {
   if (!y0) return null;
 
   for (let delta = 0; delta <= 120; delta++) {
-    const pool = basePool.filter(it => {
+    const pool = basePool.filter((it) => {
       const y = +getYearFn(it) || 0;
       return y && Math.abs(y - y0) <= delta;
     });
@@ -417,7 +426,7 @@ function buildScoreWindowPool(basePool, getScoreFn, centerScore, minSize = 6) {
 
   for (let step = 0; step <= 10.0; step += 0.1) {
     const delta = Math.round(step * 10) / 10;
-    const pool = basePool.filter(it => {
+    const pool = basePool.filter((it) => {
       const sc = +getScoreFn(it) || 0;
       return sc && Math.abs(sc - sc0) <= delta;
     });
@@ -436,7 +445,8 @@ function topPercentFromValue(sortedDesc, value) {
   if (!n || !v) return 100;
 
   // nb de vals strictement > v (binary search sur desc)
-  let lo = 0, hi = n;
+  let lo = 0,
+    hi = n;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
     if (vals[mid] > v) lo = mid + 1;
@@ -465,10 +475,10 @@ function buildPopPercentBandPool(basePool, getPopFn, globalSortedDesc, seedValue
   for (let expand = 0; expand <= 100; expand += 5) {
     const s0 = Math.max(0, Math.min(95, baseStart - expand));
     const e0 = Math.max(5, Math.min(100, baseEnd + expand));
-    const lo = (s0 === 0) ? 1 : s0;
+    const lo = s0 === 0 ? 1 : s0;
     const hi = e0;
 
-    const pool = basePool.filter(it => {
+    const pool = basePool.filter((it) => {
       const p = getP(it);
       return p >= lo && p <= hi;
     });
@@ -481,7 +491,14 @@ function buildPopPercentBandPool(basePool, getPopFn, globalSortedDesc, seedValue
 }
 
 // cumul générique (même critère): on ajoute des valeurs jusqu'à atteindre minSize
-function buildCumulativePool(basePool, getValueFromItem, matchesValueFn, seedValue, minSize = 6, safetyMax = 600) {
+function buildCumulativePool(
+  basePool,
+  getValueFromItem,
+  matchesValueFn,
+  seedValue,
+  minSize = 6,
+  safetyMax = 600
+) {
   const usedValues = [];
   const usedKey = new Set();
   const mapByKey = new Map();
@@ -528,7 +545,7 @@ function buildTagCumulativePool(basePool, getTagsFn, seedTag, minSize = 6) {
   };
   const matches = (it, v, key) => {
     const tags = getTagsFn(it);
-    return Array.isArray(tags) && tags.some(x => norm(x) === key);
+    return Array.isArray(tags) && tags.some((x) => norm(x) === key);
   };
   return buildCumulativePool(basePool, getValueFromItem, matches, seedTag, minSize, 900);
 }
@@ -542,7 +559,7 @@ function buildArtistCumulativePool(basePool, getArtistsFn, seedArtist, minSize =
   };
   const matches = (it, v, key) => {
     const arr = getArtistsFn(it);
-    return Array.isArray(arr) && arr.some(x => norm(x) === key);
+    return Array.isArray(arr) && arr.some((x) => norm(x) === key);
   };
   return buildCumulativePool(basePool, getValueFromItem, matches, seedArtist, minSize, 1200);
 }
@@ -613,18 +630,29 @@ function pickRoundContentThemeElastic(basePool, mode) {
     return { label: "Libre", pool: Array.isArray(basePool) ? basePool : [], crit: "FREE" };
   }
 
-  const getAnimeYear = (it) => mode === "songs" ? (it.animeYear || 0) : (it.year || 0);
-  const getSongYear  = (it) => (it.songYear || it.animeYear || 0);
-  const getStudio    = (it) => mode === "songs" ? (it.animeStudio || "") : (it.studio || "");
-  const getScore     = (it) => mode === "songs" ? (it.animeScore || 0) : (it.score || 0);
-  const getPop       = (it) => mode === "songs" ? (it.animeMembers || 0) : (it.members || 0);
-  const getTagsArr   = (it) => Array.isArray(it.tags) ? it.tags : [];
-  const getArtistsArr = (it) => Array.isArray(it.artistsArr) ? it.artistsArr : [];
-  const getTitleForLetter = (it) => mode === "songs" ? (it.animeTitle || "") : (it.title || "");
+  const getAnimeYear = (it) => (mode === "songs" ? it.animeYear || 0 : it.year || 0);
+  const getSongYear = (it) => it.songYear || it.animeYear || 0;
+  const getStudio = (it) => (mode === "songs" ? it.animeStudio || "" : it.studio || "");
+  const getScore = (it) => (mode === "songs" ? it.animeScore || 0 : it.score || 0);
+  const getPop = (it) => (mode === "songs" ? it.animeMembers || 0 : it.members || 0);
+  const getTagsArr = (it) => (Array.isArray(it.tags) ? it.tags : []);
+  const getArtistsArr = (it) => (Array.isArray(it.artistsArr) ? it.artistsArr : []);
+  const getTitleForLetter = (it) => (mode === "songs" ? it.animeTitle || "" : it.title || "");
 
   const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "FIRST_LETTER"];
-  const criteriaSongs = ["FREE", "SONG_YEAR", "ANIME_YEAR", "ANIME", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST", "FIRST_LETTER"];
-  const criteria = (mode === "songs") ? criteriaSongs : criteriaAnime;
+  const criteriaSongs = [
+    "FREE",
+    "SONG_YEAR",
+    "ANIME_YEAR",
+    "ANIME",
+    "STUDIO",
+    "TAG",
+    "SCORE_NEAR",
+    "POP_NEAR",
+    "ARTIST",
+    "FIRST_LETTER",
+  ];
+  const criteria = mode === "songs" ? criteriaSongs : criteriaAnime;
 
   // référence globale pop (members des titres)
   const globalSortedMembersDesc = Array.isArray(GLOBAL_MEMBERS_DESC) ? GLOBAL_MEMBERS_DESC : [];
@@ -728,7 +756,8 @@ function pickRoundContentThemeElastic(basePool, mode) {
       const built = buildScoreWindowPool(basePool, getScore, sc, MIN);
       if (!built || built.pool.length < MIN) continue;
 
-      const label = built.delta === 0 ? `Score : ${round1(sc)}` : `Score : ${round1(sc)} ± ${built.delta}`;
+      const label =
+        built.delta === 0 ? `Score : ${round1(sc)}` : `Score : ${round1(sc)} ± ${built.delta}`;
       return { label, pool: built.pool, crit };
     }
 
@@ -741,9 +770,7 @@ function pickRoundContentThemeElastic(basePool, mode) {
       if (!built || built.pool.length < MIN) continue;
 
       const label =
-        (built.lo === 1 && built.hi === 5)
-          ? `Popularité : Top 1–5%`
-          : `Popularité : Top ${built.lo}–${built.hi}%`;
+        built.lo === 1 && built.hi === 5 ? `Popularité : Top 1–5%` : `Popularité : Top ${built.lo}–${built.hi}%`;
 
       return { label, pool: built.pool, crit };
     }
@@ -754,7 +781,7 @@ function pickRoundContentThemeElastic(basePool, mode) {
       if (!String(L || "").trim()) continue;
 
       // d'abord essai strict lettre unique
-      const strict = basePool.filter(it => smartFirstLetter(getTitleForLetter(it)) === L);
+      const strict = basePool.filter((it) => smartFirstLetter(getTitleForLetter(it)) === L);
       if (strict.length >= MIN) {
         return { label: `Lettre : ${L}`, pool: strict, crit };
       }
@@ -874,7 +901,9 @@ if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
 
 // ====== MEDIA LOADER (retries + anti-stall) ======
 function hardResetMedia() {
-  try { songPlayer.pause(); } catch {}
+  try {
+    songPlayer.pause();
+  } catch {}
   songPlayer.removeAttribute("src");
   songPlayer.load();
 }
@@ -888,7 +917,10 @@ function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
   let done = false;
 
   const cleanup = () => {
-    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+    if (stallTimer) {
+      clearTimeout(stallTimer);
+      stallTimer = null;
+    }
     songPlayer.onloadedmetadata = null;
     songPlayer.oncanplay = null;
     songPlayer.onplaying = null;
@@ -897,7 +929,7 @@ function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
     songPlayer.onerror = null;
   };
 
-  const isStillValid = () => (localRound === roundToken && localMedia === mediaToken);
+  const isStillValid = () => localRound === roundToken && localMedia === mediaToken;
 
   const startStallTimer = () => {
     if (stallTimer) clearTimeout(stallTimer);
@@ -920,7 +952,9 @@ function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
     attemptIndex++;
     if (attemptIndex >= RETRY_DELAYS.length) {
       done = true;
-      try { songPlayer.pause(); } catch {}
+      try {
+        songPlayer.pause();
+      } catch {}
       return;
     }
     setTimeout(() => {
@@ -933,21 +967,41 @@ function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
     if (!isStillValid() || done) return;
     const src = attemptIndex === 0 ? url : withCacheBuster(url);
 
-    try { hardResetMedia(); } catch {}
+    try {
+      hardResetMedia();
+    } catch {}
     songPlayer.preload = "metadata";
     songPlayer.muted = false;
     songPlayer.src = src;
     songPlayer.load();
 
-    songPlayer.onloadedmetadata = () => { if (!isStillValid() || done) return; markReady(); };
-    songPlayer.oncanplay = () => { if (!isStillValid() || done) return; markReady(); };
-    songPlayer.onwaiting = () => { if (!isStillValid() || done) return; startStallTimer(); };
-    songPlayer.onstalled = () => { if (!isStillValid() || done) return; startStallTimer(); };
+    songPlayer.onloadedmetadata = () => {
+      if (!isStillValid() || done) return;
+      markReady();
+    };
+    songPlayer.oncanplay = () => {
+      if (!isStillValid() || done) return;
+      markReady();
+    };
+    songPlayer.onwaiting = () => {
+      if (!isStillValid() || done) return;
+      startStallTimer();
+    };
+    songPlayer.onstalled = () => {
+      if (!isStillValid() || done) return;
+      startStallTimer();
+    };
     songPlayer.onplaying = () => {
       if (!isStillValid() || done) return;
-      if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+      if (stallTimer) {
+        clearTimeout(stallTimer);
+        stallTimer = null;
+      }
     };
-    songPlayer.onerror = () => { if (!isStillValid() || done) return; triggerRetry(); };
+    songPlayer.onerror = () => {
+      if (!isStillValid() || done) return;
+      triggerRetry();
+    };
 
     startStallTimer();
   };
@@ -959,9 +1013,9 @@ function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
 
 // ====== UI INIT ======
 function initCustomUI() {
-  document.querySelectorAll("#modePills .pill").forEach(btn => {
+  document.querySelectorAll("#modePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("#modePills .pill").forEach(b => {
+      document.querySelectorAll("#modePills .pill").forEach((b) => {
         b.classList.remove("active");
         b.setAttribute("aria-pressed", "false");
       });
@@ -973,7 +1027,7 @@ function initCustomUI() {
     });
   });
 
-  document.querySelectorAll("#typePills .pill").forEach(btn => {
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
@@ -981,7 +1035,7 @@ function initCustomUI() {
     });
   });
 
-  document.querySelectorAll("#songPills .pill").forEach(btn => {
+  document.querySelectorAll("#songPills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
@@ -997,7 +1051,7 @@ function initCustomUI() {
     yearMaxValEl.textContent = yearMaxEl.value;
     updatePreview();
   }
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncLabels));
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
 
   applyBtn.addEventListener("click", () => {
     filteredPool = applyFilters();
@@ -1027,7 +1081,7 @@ function initCustomUI() {
 }
 
 function updateModePillsFromState() {
-  document.querySelectorAll("#modePills .pill").forEach(b => {
+  document.querySelectorAll("#modePills .pill").forEach((b) => {
     const active = b.dataset.mode === currentMode;
     b.classList.toggle("active", active);
     b.setAttribute("aria-pressed", active ? "true" : "false");
@@ -1035,7 +1089,7 @@ function updateModePillsFromState() {
   updateModeVisibility();
 }
 function updateModeVisibility() {
-  songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
+  songsRow.style.display = currentMode === "songs" ? "flex" : "none";
 }
 
 // ====== FILTERS ======
@@ -1045,18 +1099,18 @@ function applyFilters() {
   const yearMin = parseInt(yearMinEl.value, 10);
   const yearMax = parseInt(yearMaxEl.value, 10);
 
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map(b => b.dataset.type);
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
   if (currentMode === "anime") {
-    let pool = allAnimes.filter(a => a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type));
+    let pool = allAnimes.filter((a) => a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type));
     pool.sort((a, b) => b._members - a._members);
     pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
     pool.sort((a, b) => b._score - a._score);
     pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-    return pool.map(a => ({
+    return pool.map((a) => ({
       kind: "anime",
       _key: `anime|${a.mal_id}`,
       title: a._title,
@@ -1069,13 +1123,15 @@ function applyFilters() {
     }));
   }
 
-  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map(b => b.dataset.song);
+  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
   if (allowedSongs.length === 0) return [];
 
-  let pool = allSongs.filter(s =>
-    s.animeYear >= yearMin && s.animeYear <= yearMax &&
-    allowedTypes.includes(s.animeType) &&
-    allowedSongs.includes(s.songType)
+  let pool = allSongs.filter(
+    (s) =>
+      s.animeYear >= yearMin &&
+      s.animeYear <= yearMax &&
+      allowedTypes.includes(s.animeType) &&
+      allowedSongs.includes(s.songType)
   );
 
   pool.sort((a, b) => b.animeMembers - a.animeMembers);
@@ -1084,7 +1140,7 @@ function applyFilters() {
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  return pool.map(s => ({
+  return pool.map((s) => ({
     kind: "song",
     _key: `song|${s._key}`,
 
@@ -1122,7 +1178,7 @@ function updatePreview() {
   const pool = applyFilters();
   const minNeeded = Math.max(6, MIN_REQUIRED);
   const ok = pool.length >= minNeeded;
-  const label = (currentMode === "songs") ? "Songs" : "Titres";
+  const label = currentMode === "songs" ? "Songs" : "Titres";
 
   previewCountEl.textContent = ok
     ? `📚 ${label} disponibles : ${pool.length} (OK)`
@@ -1136,19 +1192,27 @@ function updatePreview() {
 
 // ====== ROUND UI ======
 function clearRevealTimer() {
-  if (revealTimer) { clearInterval(revealTimer); revealTimer = null; }
+  if (revealTimer) {
+    clearInterval(revealTimer);
+    revealTimer = null;
+  }
 }
 function clearWallTimer() {
-  if (wallTimer) { clearTimeout(wallTimer); wallTimer = null; }
+  if (wallTimer) {
+    clearTimeout(wallTimer);
+    wallTimer = null;
+  }
 }
 function stopMedia() {
   mediaToken++;
-  try { songPlayer.pause(); } catch {}
+  try {
+    songPlayer.pause();
+  } catch {}
   songPlayer.removeAttribute("src");
   songPlayer.load();
 }
 function clearTeamBadges() {
-  [teamRowA, teamRowB].forEach(row => row.querySelectorAll(".tp-badge").forEach(b => b.remove()));
+  [teamRowA, teamRowB].forEach((row) => row.querySelectorAll(".tp-badge").forEach((b) => b.remove()));
 }
 
 function resetRoundUI() {
@@ -1168,17 +1232,23 @@ function resetRoundUI() {
 
   resultDiv.textContent = "";
 
+  // ✅ (inchangé ici) : on reset en caché, puis on affichera dès startRound()
   themeNameEl.style.display = "none";
   themeDescEl.style.display = "none";
+
+  // ✅ MODIF: on garde revealStatus caché pendant la révélation (pas de "Révélation en cours…")
   revealStatusEl.style.display = "none";
+  revealStatusEl.textContent = "";
+  revealStatusEl.classList.remove("good", "bad");
+
   pickStatusEl.style.display = "none";
 
   confirmBtn.disabled = true;
   confirmBtn.classList.add("disabled");
   nextBtn.style.display = "none";
 
-  playerZone.style.display = (currentMode === "songs") ? "block" : "none";
-  volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
+  playerZone.style.display = currentMode === "songs" ? "block" : "none";
+  volumeRow.style.display = currentMode === "songs" ? "flex" : "none";
   if (currentMode === "songs") applyVolume();
 }
 
@@ -1208,14 +1278,15 @@ function renderPlaceholders() {
   }
 }
 
+// ✅ MODIF: UI "image 2" tout le temps (règle + filtre), sans "(3 items)"
 function setThemeUI(contentTheme) {
   const cLabel = contentTheme?.label || "Libre";
   themeNameEl.textContent = `✅ ${RULE.label}`;
-  themeDescEl.textContent = `${RULE.desc} • 🎯 Filtre : ${cLabel}`;
+  themeDescEl.textContent = `🎯 Filtre : ${cLabel}`;
 }
 
 function updatePickStatus() {
-  const got = (selectedTeam === 0 || selectedTeam === 1) ? 1 : 0;
+  const got = selectedTeam === 0 || selectedTeam === 1 ? 1 : 0;
   pickStatusEl.textContent = `✅ Ligne choisie : ${got} / 1`;
 
   const ok = got === 1;
@@ -1230,9 +1301,11 @@ function markRevealDone() {
   revealDone = true;
   selectionEnabled = true;
 
+  // règle + filtre restent visibles
   themeNameEl.style.display = "block";
   themeDescEl.style.display = "block";
 
+  // ✅ à la fin seulement, on affiche le statut "révélation terminée"
   revealStatusEl.style.display = "block";
   revealStatusEl.classList.remove("bad");
   revealStatusEl.classList.add("good");
@@ -1267,7 +1340,7 @@ function revealCard(team, pos, item, localRound) {
 
   const img = document.createElement("img");
   img.src = item.image || "";
-  img.alt = (item.kind === "song") ? (item.animeTitle || "Cover") : (item.title || "Cover");
+  img.alt = item.kind === "song" ? item.animeTitle || "Cover" : item.title || "Cover";
   img.loading = "lazy";
   img.decoding = "async";
   li.appendChild(img);
@@ -1283,8 +1356,15 @@ function revealAnimeProgressively(localRound) {
   let i = 0;
 
   const step = () => {
-    if (localRound !== roundToken) { clearRevealTimer(); return; }
-    if (i >= order.length) { clearRevealTimer(); markRevealDone(); return; }
+    if (localRound !== roundToken) {
+      clearRevealTimer();
+      return;
+    }
+    if (i >= order.length) {
+      clearRevealTimer();
+      markRevealDone();
+      return;
+    }
 
     const { team, pos } = order[i];
     const item = team === 0 ? teamItemsA[pos] : teamItemsB[pos];
@@ -1300,7 +1380,10 @@ function revealAnimeProgressively(localRound) {
 // ====== SONG SNIPPET ======
 function playSongSnippet(item, localRound) {
   return new Promise((resolve) => {
-    if (currentMode !== "songs" || !item?.url) { resolve(); return; }
+    if (currentMode !== "songs" || !item?.url) {
+      resolve();
+      return;
+    }
 
     clearWallTimer();
     stopMedia();
@@ -1329,7 +1412,9 @@ function playSongSnippet(item, localRound) {
       clearWallTimer();
       songPlayer.removeEventListener("timeupdate", onTimeUpdate);
       songPlayer.removeEventListener("ended", onEnded);
-      try { songPlayer.pause(); } catch {}
+      try {
+        songPlayer.pause();
+      } catch {}
       cleanupLoad?.();
     };
 
@@ -1362,9 +1447,11 @@ function playSongSnippet(item, localRound) {
         songPlayer.addEventListener("timeupdate", onTimeUpdate);
         songPlayer.addEventListener("ended", onEnded);
 
-        try { songPlayer.currentTime = start; } catch {}
+        try {
+          songPlayer.currentTime = start;
+        } catch {}
         songPlayer.play?.().catch(() => {});
-      }
+      },
     });
   });
 }
@@ -1400,14 +1487,24 @@ function onTeamClick(team) {
   if (!selectionEnabled || lockedAfterValidate) return;
   if (!revealDone) return;
 
-  selectedTeam = (selectedTeam === team) ? null : team;
+  selectedTeam = selectedTeam === team ? null : team;
   refreshRowSelectionUI();
 }
 
 teamRowA.addEventListener("click", () => onTeamClick(0));
 teamRowB.addEventListener("click", () => onTeamClick(1));
-teamRowA.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTeamClick(0); } });
-teamRowB.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTeamClick(1); } });
+teamRowA.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    onTeamClick(0);
+  }
+});
+teamRowB.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    onTeamClick(1);
+  }
+});
 
 confirmBtn.addEventListener("click", () => {
   if (lockedAfterValidate) return;
@@ -1425,7 +1522,7 @@ confirmBtn.addEventListener("click", () => {
   teamRowA.classList.add("tp-row-locked");
   teamRowB.classList.add("tp-row-locked");
 
-  const chosenRow = (selectedTeam === 0) ? teamRowA : teamRowB;
+  const chosenRow = selectedTeam === 0 ? teamRowA : teamRowB;
   const badge = document.createElement("div");
   badge.className = "tp-badge";
   badge.textContent = "✅ CHOISIE";
@@ -1444,7 +1541,9 @@ confirmBtn.addEventListener("click", () => {
       showCustomization();
       updatePreview();
       if (isParcours) {
-        try { parent.postMessage({ parcoursScore: { label: "TopPick 3v3", score: 0, total: 0 } }, "*"); } catch {}
+        try {
+          parent.postMessage({ parcoursScore: { label: "TopPick 3v3", score: 0, total: 0 } }, "*");
+        } catch {}
       }
     }
   };
@@ -1460,7 +1559,10 @@ function startRound() {
     resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
     nextBtn.style.display = "inline-block";
     nextBtn.textContent = "Retour réglages";
-    nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+    nextBtn.onclick = () => {
+      showCustomization();
+      updatePreview();
+    };
     return;
   }
 
@@ -1468,9 +1570,17 @@ function startRound() {
   currentContentTheme = pickRoundContentThemeElastic(filteredPool, currentMode);
   setThemeUI(currentContentTheme);
 
-  const themePool = (currentContentTheme?.pool && currentContentTheme.pool.length >= 6)
-    ? currentContentTheme.pool
-    : filteredPool;
+  // ✅ MODIF: afficher règle + filtre DIRECTEMENT pendant la révélation
+  themeNameEl.style.display = "block";
+  themeDescEl.style.display = "block";
+
+  // ✅ MODIF: pas de "Révélation en cours…" (on laisse revealStatus caché jusqu'à la fin)
+  revealStatusEl.style.display = "none";
+  revealStatusEl.textContent = "";
+  revealStatusEl.classList.remove("good", "bad");
+
+  const themePool =
+    currentContentTheme?.pool && currentContentTheme.pool.length >= 6 ? currentContentTheme.pool : filteredPool;
 
   let picks = null;
 
@@ -1483,6 +1593,8 @@ function startRound() {
         // thème impossible à respecter proprement -> fallback UI cohérent
         currentContentTheme = { label: "Libre", pool: filteredPool, crit: "FREE_FALLBACK" };
         setThemeUI(currentContentTheme);
+        themeNameEl.style.display = "block";
+        themeDescEl.style.display = "block";
       }
     }
 
@@ -1492,7 +1604,10 @@ function startRound() {
         "👉 Conseil: élargis tes filtres (Songs/Types/Années ou Top% Popularité/Score).";
       nextBtn.style.display = "inline-block";
       nextBtn.textContent = "Retour réglages";
-      nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+      nextBtn.onclick = () => {
+        showCustomization();
+        updatePreview();
+      };
       return;
     }
   } else {
@@ -1502,6 +1617,8 @@ function startRound() {
       if (picks && picks.length >= 6) {
         currentContentTheme = { label: "Libre", pool: filteredPool, crit: "FREE_FALLBACK" };
         setThemeUI(currentContentTheme);
+        themeNameEl.style.display = "block";
+        themeDescEl.style.display = "block";
       }
     }
   }
@@ -1510,7 +1627,10 @@ function startRound() {
     resultDiv.textContent = "❌ Impossible de sélectionner 6 items uniques avec ces filtres.";
     nextBtn.style.display = "inline-block";
     nextBtn.textContent = "Retour réglages";
-    nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+    nextBtn.onclick = () => {
+      showCustomization();
+      updatePreview();
+    };
     return;
   }
 
@@ -1521,10 +1641,8 @@ function startRound() {
   roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
   renderPlaceholders();
 
-  revealStatusEl.style.display = "block";
-  revealStatusEl.classList.add("bad");
-  revealStatusEl.classList.remove("good");
-  revealStatusEl.textContent = "⏳ Révélation en cours…";
+  // ✅ MODIF: on ne met plus revealStatus "en cours"
+  // (la fin est gérée dans markRevealDone)
 
   if (currentMode === "songs") revealSongsSequence(roundToken);
   else revealAnimeProgressively(roundToken);
@@ -1532,14 +1650,14 @@ function startRound() {
 
 // ====== LOAD DATA ======
 fetch("../data/licenses_only.json")
-  .then(r => {
+  .then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status} - ${r.statusText}`);
     return r.json();
   })
-  .then(json => {
+  .then((json) => {
     const raw = normalizeAnimeList(json);
 
-    allAnimes = (Array.isArray(raw) ? raw : []).map(a => {
+    allAnimes = (Array.isArray(raw) ? raw : []).map((a) => {
       const title = getDisplayTitle(a);
       return {
         ...a,
@@ -1557,8 +1675,8 @@ fetch("../data/licenses_only.json")
 
     // ✅ ref globale pop (members titres)
     GLOBAL_MEMBERS_DESC = allAnimes
-      .map(a => +a._members || 0)
-      .filter(v => Number.isFinite(v) && v > 0)
+      .map((a) => +a._members || 0)
+      .filter((v) => Number.isFinite(v) && v > 0)
       .sort((a, b) => b - a);
 
     allSongs = [];
@@ -1580,7 +1698,7 @@ fetch("../data/licenses_only.json")
       }
     }
   })
-  .catch(e => {
+  .catch((e) => {
     previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
     previewCountEl.classList.add("bad");
     applyBtn.disabled = true;
