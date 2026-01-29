@@ -23,7 +23,7 @@ const THEME_POOL_SIZE = 32;
 
 // Songs snippet
 const SONG_START_SEC = 45;
-const SONG_PLAY_SEC = 20;
+const SONG_PLAY_SEC = 30;
 
 // retries vidéos
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
@@ -1318,6 +1318,7 @@ function installSnippetLimiter(video, startSec, endSec, session) {
   if (!video) return;
 
   let armed = false;
+  let endedOnce = false;
 
   const safeSeek = (t) => {
     try { video.currentTime = t; } catch {}
@@ -1333,9 +1334,12 @@ function installSnippetLimiter(video, startSec, endSec, session) {
 
   const onTime = () => {
     if (session !== LOAD_SESSION) return;
-    if (!armed) return;
+    if (!armed || endedOnce) return;
+
     if (video.currentTime >= endSec) {
+      endedOnce = true;
       try { video.pause(); } catch {}
+      try { video.dispatchEvent(new Event("snippetended")); } catch {}
     }
   };
 
@@ -1347,6 +1351,7 @@ function installSnippetLimiter(video, startSec, endSec, session) {
     video.removeEventListener("timeupdate", onTime);
   };
 }
+
 
 async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, snippet = false } = {}) {
   video.preload = "metadata";
@@ -1405,6 +1410,9 @@ async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, s
         try { video.currentTime = start; } catch {}
         cleanupSnippet = installSnippetLimiter(video, start, end, session);
       }
+      // ✅ mémorise le snippet sur l'élément
+      video.dataset.snipStart = String(start);
+      video.dataset.snipEnd = String(end);
 
       if (autoplay) {
         try {
@@ -1496,19 +1504,57 @@ async function renderMatch() {
 
   if (mode === "songs") {
     const left = cardEls.find((c) => c.idx === currentMatch.a);
+    const right = cardEls.find((c) => c.idx === currentMatch.b);
+
+    let rightReady = false;
+    let pendingStartRight = false;
+
+    const startRight = async () => {
+      if (session !== LOAD_SESSION) return;
+      if (!right?.video || !rightReady || !right.video.isConnected) {
+        pendingStartRight = true;
+        return;
+      }
+
+      // se cale au début du snippet avant de jouer
+      const st = parseFloat(right.video.dataset.snipStart || String(SONG_START_SEC));
+      if (Number.isFinite(st)) {
+        try { right.video.currentTime = st; } catch {}
+      }
+
+      const status = getOrCreateStatusEl(right.video);
+
+      try {
+        await right.video.play();
+        if (status) status.textContent = "✅ Lecture";
+      } catch {
+        if (status) status.textContent = "▶️ Clique sur la vidéo pour lancer";
+      }
+    };
+
+    // charge/auto-play gauche
     if (left?.video && left?.url) {
+      // quand la gauche finit son snippet => démarre la droite
+      left.video.addEventListener("snippetended", startRight, { once: true });
+      left.video.addEventListener("ended", startRight, { once: true }); // au cas où
+
       await loadVideoWithRetry(left.video, left.url, { autoplay: true, session, snippet: true });
       applyGlobalVolumeToVideo(left.video);
     }
 
-    const right = cardEls.find((c) => c.idx === currentMatch.b);
+    // charge droite (sans autoplay immédiat)
     if (right?.video && right?.url) {
-      await loadVideoWithRetry(right.video, right.url, { autoplay: false, session, snippet: true });
+      const ok = await loadVideoWithRetry(right.video, right.url, { autoplay: false, session, snippet: true });
+      rightReady = !!ok && right.video.isConnected;
       applyGlobalVolumeToVideo(right.video);
+
+      // si la gauche a déjà fini avant que la droite soit prête
+      if (pendingStartRight) startRight();
     }
 
     applyGlobalVolumeToAllVideos();
   }
+
 }
 
 // =======================
