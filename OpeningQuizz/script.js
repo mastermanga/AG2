@@ -25,7 +25,7 @@ const RETRY_DELAYS = [0, 2000, 6000]; // 3 tentatives
 const STALL_TIMEOUT_MS = 6000;        // relance si ça buffer trop longtemps
 
 // Segments
-const TRY_DURATIONS = [20, 20, null]; // 3e écoute complète
+const TRY_DURATIONS = [30, 30, null]; // 3e écoute complète
 const REFRAIN_START = 45;             // refrain ~50s
 
 // =====================
