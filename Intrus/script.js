@@ -2,14 +2,11 @@
  * Intrus (Anime / Songs)
  * - 4 items, 1 intrus
  * - Anime: A direct, puis +1 image / seconde, puis thème + choix
- * - Songs: écoute A→D (player caché), puis thème + choix
- * - Après réponse en Songs: on révèle image + label complet sur les 4 cartes
+ * - Songs: écoute A→D, puis thème + choix
  *
- * THEMES CONTENU
- * - Anime: YEAR, STUDIO, POP25, SCOREBIN
- * - Songs: LICENSE, YEAR, ARTIST, SONG_TYPE
- *
- * Thème affiché: UNIQUEMENT le nom (pas de valeur).
+ * Affichage panel droit:
+ * - Pendant reveal: "🎯 Thème : <Nom>"
+ * - Fin reveal:      "🎯 Thème : <Nom> — <Valeur>"
  **********************/
 
 // ====== MENU & THEME ======
@@ -114,6 +111,11 @@ function scoreBin(v){
   if (x <= 7.5) return 1;      // 5.1 → 7.5
   return 2;                    // 7.6 → 10.0
 }
+function scoreBinLabel(bin){
+  if (String(bin) === "0") return "0.0–5.0";
+  if (String(bin) === "1") return "5.1–7.5";
+  return "7.6–10.0";
+}
 
 // pop25 band (0..3) — 0 = top 25% (plus populaire), 3 = 76-100% (moins populaire)
 function computePopBands(items, getMembers){
@@ -126,6 +128,13 @@ function computePopBands(items, getMembers){
     bandByKey.set(arr[i]._key, band);
   }
   return bandByKey;
+}
+function popBandLabel(band){
+  const b = Number(band);
+  if (b === 0) return "Top 0–25%";
+  if (b === 1) return "Top 26–50%";
+  if (b === 2) return "Top 51–75%";
+  return "Top 76–100%";
 }
 
 // ====== SONG LABEL FORMAT ======
@@ -153,7 +162,14 @@ function extractSongsFromAnime(anime) {
     { key: "inserts", type: "IN" },
   ];
 
+  // si tu as un nom de licence dans tes données, on le prend
   const licenseId = anime.license_id || anime.mal_id || 0;
+  const licenseName =
+    anime.license_name ||
+    anime.license ||
+    anime.franchise ||
+    anime.series ||
+    "";
 
   for (const b of buckets) {
     const arr = Array.isArray(song[b.key]) ? song[b.key] : [];
@@ -183,6 +199,7 @@ function extractSongsFromAnime(anime) {
         image: anime.image || "",
 
         licenseId,
+        licenseName,
         url,
         _key: `song|${b.type}|${it.number || ""}|${it.name || ""}|${url}|${licenseId}`,
       });
@@ -214,14 +231,8 @@ const roundLabel = document.getElementById("roundLabel");
 const choiceList = document.getElementById("choice-list");
 
 const themeNameEl = document.getElementById("themeName");
-const themeDescEl = document.getElementById("themeDesc");
-const revealStatusEl = document.getElementById("revealStatus");
-const pickStatusEl = document.getElementById("pickStatus");
 const resultDiv = document.getElementById("result");
 const nextBtn = document.getElementById("nextBtn");
-
-// ✅ NOUVEAU : bloc règles
-const rulesBox = document.getElementById("roundRules");
 
 const nowPlaying = document.getElementById("nowPlaying");
 const songPlayer = document.getElementById("songPlayer");
@@ -251,6 +262,7 @@ let scoreCorrect = 0;
 let scoreTotal = 0;
 
 let currentThemeKey = null;
+let currentThemeValue = "";
 let currentIntrusIndex = 0;
 let roundItems = [];
 let selectionEnabled = false;
@@ -391,19 +403,8 @@ function resetRoundUI() {
   answered = false;
 
   resultDiv.textContent = "";
+  themeNameEl.textContent = "";
   themeNameEl.style.display = "none";
-  themeDescEl.style.display = "none";
-  pickStatusEl.style.display = "none";
-
-  // ✅ on garde les règles visibles, mais on reset le contenu (rempli juste après)
-  if (rulesBox) {
-    rulesBox.style.display = "block";
-    rulesBox.innerHTML = "";
-  }
-
-  revealStatusEl.style.display = "none";
-  revealStatusEl.classList.remove("good");
-  revealStatusEl.classList.add("bad");
 
   nextBtn.style.display = "none";
 
@@ -415,7 +416,7 @@ function updateRoundLabel() {
   roundLabel.textContent = `Round ${currentRound} / ${totalRounds} — Score ${scoreCorrect}/${scoreTotal}`;
 }
 
-// ====== THEME DISPLAY (only theme name) ======
+// ====== THEME DISPLAY ======
 const THEME_LABELS = {
   // Anime
   YEAR: "Année",
@@ -424,51 +425,28 @@ const THEME_LABELS = {
   SCOREBIN: "Score",
   // Songs
   LICENSE: "Licence",
+  YEAR_SONG: "Année",     // (optionnel si tu veux distinguer)
   ARTIST: "Artiste",
   SONG_TYPE: "Type",
 };
 
-// ✅ NOUVEAU : thème visible dès le début (sans activer le choix)
+function themeLabel(themeKey){
+  return THEME_LABELS[themeKey] || "Thème";
+}
+
+// ✅ Pendant reveal : juste le nom du thème
 function showThemeEarly(themeKey) {
-  const label = THEME_LABELS[themeKey] || "Thème";
+  const label = themeLabel(themeKey);
   themeNameEl.textContent = `🎯 Thème : ${label}`;
-  themeDescEl.textContent =
-    (currentMode === "anime")
-      ? "🖼️ Révélation en cours… (tu choisiras quand tout est révélé)."
-      : "🎧 Écoute en cours… (tu choisiras après les 4 extraits).";
-
   themeNameEl.style.display = "block";
-  themeDescEl.style.display = "block";
 }
 
-// ✅ NOUVEAU : règles visibles dès le début
-function updateRulesBox() {
-  if (!rulesBox) return;
-
-  rulesBox.innerHTML = `
-    <div class="rules-title">📌 Règles</div>
-    <div>4 choix (A–D). Un seul est l’intrus.</div>
-    <div style="margin-top:6px;">
-      ${
-        currentMode === "anime"
-          ? "📺 Mode Anime : A apparaît direct, puis +1 image/seconde. Tu choisis à la fin."
-          : "🎵 Mode Songs : tu écoutes A→D. Tu choisis après les 4 extraits."
-      }
-    </div>
-  `;
-}
-
-function showThemeOnly(themeKey) {
-  const label = THEME_LABELS[themeKey] || "Thème";
-  themeNameEl.textContent = `🎯 Thème : ${label}`;
-  themeDescEl.textContent = `Un seul choix est l’intrus.`;
+// ✅ Fin reveal : nom + valeur
+function showThemeFinal(themeKey, themeValue) {
+  const label = themeLabel(themeKey);
+  const v = (themeValue ?? "").toString().trim();
+  themeNameEl.textContent = v ? `🎯 Thème : ${label} — ${v}` : `🎯 Thème : ${label}`;
   themeNameEl.style.display = "block";
-  themeDescEl.style.display = "block";
-
-  pickStatusEl.textContent = "✅ Choisis l’intrus (bouton sous la carte).";
-  pickStatusEl.classList.remove("bad");
-  pickStatusEl.classList.add("good");
-  pickStatusEl.style.display = "block";
 }
 
 // ====== FILTERS ======
@@ -521,6 +499,7 @@ function applyFilters() {
     _key: s._key,
     url: s.url,
     licenseId: s.licenseId || 0,
+    licenseName: s.licenseName || "",
 
     songType: s.songType,
     songName: s.songName || "",
@@ -676,6 +655,7 @@ function buildRoundAnime(pool){
 
   for (let t = 0; t < MAX_TRIES; t++) {
     const themeKey = THEMES[Math.floor(Math.random() * THEMES.length)];
+    let themeValue = "";
     let triple = [];
     let intrus = null;
 
@@ -688,9 +668,11 @@ function buildRoundAnime(pool){
       if (triple.length < 3) continue;
       intrus = pickFrom(pool.filter(x => String(x.year) !== yearKey), 1, new Set(triple.map(x=>x._key)))[0];
       if (!intrus) continue;
+      themeValue = String(yearKey);
     }
 
     if (themeKey === "STUDIO") {
+      // group by normalized studio but display original studio from list
       const g = groupBy(pool.filter(x => norm(x.studio)), x => norm(x.studio));
       const candidates = [...g.entries()].filter(([k,arr]) => k && arr.length >= 3);
       if (!candidates.length) continue;
@@ -699,6 +681,7 @@ function buildRoundAnime(pool){
       if (triple.length < 3) continue;
       intrus = pickFrom(pool.filter(x => norm(x.studio) !== stKey), 1, new Set(triple.map(x=>x._key)))[0];
       if (!intrus) continue;
+      themeValue = (list.find(x => x.studio)?.studio || "").trim();
     }
 
     if (themeKey === "POP25") {
@@ -715,6 +698,7 @@ function buildRoundAnime(pool){
       if (triple.length < 3) continue;
       intrus = pickFrom(pool.filter(x => popBands.get(x._key) !== bandKey), 1, new Set(triple.map(x=>x._key)))[0];
       if (!intrus) continue;
+      themeValue = popBandLabel(bandKey);
     }
 
     if (themeKey === "SCOREBIN") {
@@ -726,6 +710,7 @@ function buildRoundAnime(pool){
       if (triple.length < 3) continue;
       intrus = pickFrom(pool.filter(x => String(scoreBin(x.score)) !== String(binKey)), 1, new Set(triple.map(x=>x._key)))[0];
       if (!intrus) continue;
+      themeValue = scoreBinLabel(binKey);
     }
 
     const items = shuffleInPlace([...triple, intrus]);
@@ -735,11 +720,11 @@ function buildRoundAnime(pool){
     const newCount = items.filter(x => !usedKeysGlobal.has(x._key)).length;
     if (usedKeysGlobal.size > 0 && newCount < 2 && pool.length > 120) continue;
 
-    return { items, intrusIndex, themeKey };
+    return { items, intrusIndex, themeKey, themeValue };
   }
 
   const items = pickFrom(pool, 4);
-  return { items, intrusIndex: Math.floor(Math.random() * 4), themeKey: "YEAR" };
+  return { items, intrusIndex: Math.floor(Math.random() * 4), themeKey: "YEAR", themeValue: "" };
 }
 
 function buildRoundSongs(pool){
@@ -749,6 +734,7 @@ function buildRoundSongs(pool){
 
   for (let t = 0; t < MAX_TRIES; t++) {
     const themeKey = THEMES[Math.floor(Math.random() * THEMES.length)];
+    let themeValue = "";
     let triple = [];
     let intrus = null;
 
@@ -761,6 +747,9 @@ function buildRoundSongs(pool){
       if (triple.length < 3) continue;
       intrus = pickFrom(pool.filter(x => String(x.licenseId) !== licKey), 1, new Set(triple.map(x=>x._key)))[0];
       if (!intrus) continue;
+
+      const maybeName = (list.find(x => (x.licenseName || "").trim())?.licenseName || "").trim();
+      themeValue = maybeName ? maybeName : `#${licKey}`;
     }
 
     if (themeKey === "YEAR") {
@@ -772,6 +761,7 @@ function buildRoundSongs(pool){
       if (triple.length < 3) continue;
       intrus = pickFrom(pool.filter(x => String(getYearVal(x)) !== yKey), 1, new Set(triple.map(x=>x._key)))[0];
       if (!intrus) continue;
+      themeValue = String(yKey);
     }
 
     if (themeKey === "SONG_TYPE") {
@@ -783,6 +773,7 @@ function buildRoundSongs(pool){
       if (triple.length < 3) continue;
       intrus = pickFrom(pool.filter(x => String(x.songType) !== typeKey), 1, new Set(triple.map(x=>x._key)))[0];
       if (!intrus) continue;
+      themeValue = songTypeLabel(typeKey);
     }
 
     if (themeKey === "ARTIST") {
@@ -799,7 +790,7 @@ function buildRoundSongs(pool){
       const candidates = [...map.entries()].filter(([,arr]) => arr.length >= 3);
       if (!candidates.length) continue;
 
-      const [artistKey, list] = candidates[Math.floor(Math.random() * candidates.length)];
+      const [artistKeyNorm, list] = candidates[Math.floor(Math.random() * candidates.length)];
       triple = pickFrom(list, 3);
       if (triple.length < 3) continue;
 
@@ -808,11 +799,16 @@ function buildRoundSongs(pool){
         pool.filter(s => {
           if (tripleKeys.has(s._key)) return false;
           const arts = Array.isArray(s.artistsArr) ? s.artistsArr : [];
-          return !arts.some(a => norm(a) === artistKey);
+          return !arts.some(a => norm(a) === artistKeyNorm);
         }),
         1
       )[0];
       if (!intrus) continue;
+
+      // retrouver l'affichage original (casse, accents)
+      const first = list[0];
+      const original = (first?.artistsArr || []).find(a => norm(a) === artistKeyNorm);
+      themeValue = (original || artistKeyNorm).toString().trim();
     }
 
     const items = shuffleInPlace([...triple, intrus]);
@@ -822,11 +818,11 @@ function buildRoundSongs(pool){
     const newCount = items.filter(x => !usedKeysGlobal.has(x._key)).length;
     if (usedKeysGlobal.size > 0 && newCount < 2 && pool.length > 220) continue;
 
-    return { items, intrusIndex, themeKey };
+    return { items, intrusIndex, themeKey, themeValue };
   }
 
   const items = pickFrom(pool, 4);
-  return { items, intrusIndex: Math.floor(Math.random() * 4), themeKey: "LICENSE" };
+  return { items, intrusIndex: Math.floor(Math.random() * 4), themeKey: "LICENSE", themeValue: "" };
 }
 
 // ====== RENDER LIST ======
@@ -925,28 +921,19 @@ function enableChoiceButtons() {
 
 // ====== REVEAL FLOW ======
 function finishRevealAndShowTheme() {
-  revealStatusEl.style.display = "block";
-  revealStatusEl.classList.remove("bad");
-  revealStatusEl.classList.add("good");
-  revealStatusEl.textContent = "✅ Tout est révélé — à toi de jouer !";
-
-  // ✅ à la fin on passe en "mode choix"
-  showThemeOnly(currentThemeKey);
+  // ✅ fin reveal : on affiche valeur + on active le choix
+  showThemeFinal(currentThemeKey, currentThemeValue);
   enableChoiceButtons();
 }
 
 function startRevealAnime(localRound) {
   let idx = 0;
-  revealStatusEl.style.display = "block";
-  revealStatusEl.classList.add("bad");
-  revealStatusEl.textContent = "🖼️ Révélation : 0 / 4";
 
   const step = () => {
     if (localRound !== roundToken) { clearRevealTimer(); return; }
     if (idx >= 4) { clearRevealTimer(); finishRevealAndShowTheme(); return; }
     revealAnimeCard(idx);
     idx++;
-    revealStatusEl.textContent = `🖼️ Révélation : ${idx} / 4`;
   };
 
   step(); // A direct
@@ -1023,12 +1010,8 @@ function playSongSnippet(item, localRound) {
 }
 
 async function startRevealSongs(localRound) {
-  revealStatusEl.style.display = "block";
-  revealStatusEl.classList.add("bad");
-
   for (let i = 0; i < 4; i++) {
     if (localRound !== roundToken) return;
-    revealStatusEl.textContent = `🎧 Écoute en cours… (Song ${LETTERS[i]})`;
     nowPlaying.textContent = `🎧 Écoute : Song ${LETTERS[i]}`;
     await playSongSnippet(roundItems[i], localRound).catch(() => {});
   }
@@ -1114,9 +1097,9 @@ function startRound() {
   roundItems = built.items;
   currentIntrusIndex = built.intrusIndex;
   currentThemeKey = built.themeKey;
+  currentThemeValue = built.themeValue || "";
 
-  // ✅ NOUVEAU : thème + règles visibles dès le début du round
-  updateRulesBox();
+  // ✅ Début round : uniquement "Thème : <Nom>" (sans valeur)
   showThemeEarly(currentThemeKey);
 
   renderInitialCards();
