@@ -1,6 +1,7 @@
 /**********************
  * TopPick 3v3 (Anime / Songs)
- * - Règle UNIQUE: choisir la meilleure ligne
+ * - ✅ 4 RÈGLES aléatoires :
+ *   - Garde 1 / Garde 3 / Supprime 1 / Supprime 3
  * - ✅ Thème “contenu” ÉLASTIQUE (aligné Tournament)
  *   - "Libre" a la même chance que les autres
  *   - YEAR / SONG_YEAR / ANIME_YEAR: fenêtre ±0, ±1, ±2...
@@ -8,7 +9,6 @@
  *   - POP: bande Top A–B% (bins 5%) + élargissement
  *   - STUDIO / TAG / ARTIST / ANIME / FIRST_LETTER: cumul de valeurs jusqu’à avoir ≥ 6
  *   - fallback "Libre" en dernier recours
- * - + FIRST_LETTER (smart)
  * - Reveal alterné : L1#1 → L2#1 → L1#2 → L2#2 → L1#3 → L2#3
  * - Anime: 1 item / 1s
  * - Songs: play auto non mute à 45s pendant 30s
@@ -59,14 +59,15 @@ const STALL_TIMEOUT_MS = 6000;
 // sécurité anti-blocage total
 const MAX_WALL_SNIPPET_MS = 60000;
 
-// ✅ RÈGLE UNIQUE
-const RULE = {
-  key: "BEST_LINE",
-  label: "Choisis la meilleure ligne",
-  desc: "Choisis la meilleure ligne (3 items).",
-  required: 1,
-  mode: "keep",
-};
+// ✅ 4 RÈGLES
+const RULES = [
+  { key: "KEEP_1",   label: "Garde 1",    required: 1, mode: "keep" },
+  { key: "KEEP_3",   label: "Garde 3",    required: 3, mode: "keep" },
+  { key: "DELETE_1", label: "Supprime 1", required: 1, mode: "delete" },
+  { key: "DELETE_3", label: "Supprime 3", required: 3, mode: "delete" },
+];
+
+let currentRule = RULES[0];
 
 // ====== HELPERS ======
 function normalizeAnimeList(json) {
@@ -150,40 +151,23 @@ function stripLeadingPunctAndSpaces(s) {
 }
 function removeLeadingArticles(s) {
   let t = normalizeQuotes(s).trim();
-
-  // on enlève la ponctuation qui traîne au début
   t = stripLeadingPunctAndSpaces(t);
 
-  // articles multi-langues + formes contractées (L', D', etc.)
   const patterns = [
-    /^the\s+/i,
-    /^a\s+/i,
-    /^an\s+/i,
-    /^le\s+/i,
-    /^la\s+/i,
-    /^les\s+/i,
-    /^un\s+/i,
-    /^une\s+/i,
-    /^des\s+/i,
-    /^l'\s*/i,
-    /^d'\s*/i,
-    /^du\s+/i,
-    /^de\s+/i,
-    /^der\s+/i,
-    /^die\s+/i,
-    /^das\s+/i,
-    /^el\s+/i,
-    /^los\s+/i,
-    /^las\s+/i,
+    /^the\s+/i, /^a\s+/i, /^an\s+/i,
+    /^le\s+/i, /^la\s+/i, /^les\s+/i,
+    /^un\s+/i, /^une\s+/i, /^des\s+/i,
+    /^l'\s*/i, /^d'\s*/i,
+    /^du\s+/i, /^de\s+/i,
+    /^der\s+/i, /^die\s+/i, /^das\s+/i,
+    /^el\s+/i, /^los\s+/i, /^las\s+/i,
   ];
 
-  // on applique en boucle (au cas où: "The 'X'", etc.)
   let changed = true;
   let safety = 0;
   while (changed && safety++ < 6) {
     changed = false;
     t = stripLeadingPunctAndSpaces(t);
-
     for (const p of patterns) {
       if (p.test(t)) {
         t = t.replace(p, "");
@@ -198,13 +182,10 @@ function removeLeadingArticles(s) {
 function smartFirstLetter(title) {
   const raw = removeLeadingArticles(title || "");
   if (!raw) return "";
-
-  // premier caractère alphanum (lettre/num)
   const m = raw.match(/[A-Za-z0-9]/);
   if (!m) return "";
-
   const ch = m[0];
-  if (/[0-9]/.test(ch)) return "#";       // pour les titres qui commencent par un chiffre
+  if (/[0-9]/.test(ch)) return "#";
   return ch.toUpperCase();
 }
 
@@ -353,7 +334,7 @@ function tryPickSongsNo4(pool, n) {
         picked.push(it);
         counts.set(k, nextC);
         progressed = true;
-        break; // 1 ajout max par tour
+        break;
       }
       if (!progressed) break;
     }
@@ -365,19 +346,8 @@ function tryPickSongsNo4(pool, n) {
 
 /* ==========================
    THEME CONTENU (ÉLASTIQUE, aligné Tournament)
-   - "Libre" a la même chance que chaque autre critère
-   - YEAR / SONG_YEAR / ANIME_YEAR: fenêtre ±0, ±1, ...
-   - SCORE: tolérance ±0, ±0.1, ...
-   - POP: bande Top A–B% (bin 5%), puis élargissement
-   - STUDIO / TAG / ARTIST / ANIME / FIRST_LETTER: cumul de valeurs jusqu’à >= 6
-   - Ensuite: pick 6 dans pool
    ========================== */
 function norm(s){ return (s || "").toString().trim().toLowerCase(); }
-function hasTag(it, tag) {
-  const t = norm(tag);
-  const arr = Array.isArray(it.tags) ? it.tags : [];
-  return arr.some(x => norm(x) === t);
-}
 function includesStudio(studio, needle) {
   const s = norm(studio);
   const n = norm(needle);
@@ -393,7 +363,6 @@ function summarizeForLabel(arr, max = 3) {
   return clean.slice(0, max).join(" + ") + ` + ${clean.length - max} autres`;
 }
 
-// YEAR-like: fenêtre 0, ±1, ±2... jusqu'à minSize
 function buildYearWindowPool(basePool, getYearFn, centerYear, minSize = 6) {
   const y0 = Number.isFinite(+centerYear) ? +centerYear : 0;
   if (!y0) return null;
@@ -403,14 +372,11 @@ function buildYearWindowPool(basePool, getYearFn, centerYear, minSize = 6) {
       const y = +getYearFn(it) || 0;
       return y && Math.abs(y - y0) <= delta;
     });
-    if (pool.length >= minSize || pool.length === basePool.length) {
-      return { pool, delta };
-    }
+    if (pool.length >= minSize || pool.length === basePool.length) return { pool, delta };
   }
   return null;
 }
 
-// SCORE-like: tolérance ±0, ±0.1, ±0.2...
 function buildScoreWindowPool(basePool, getScoreFn, centerScore, minSize = 6) {
   const sc0 = Number.isFinite(+centerScore) ? +centerScore : 0;
   if (!sc0) return null;
@@ -421,36 +387,30 @@ function buildScoreWindowPool(basePool, getScoreFn, centerScore, minSize = 6) {
       const sc = +getScoreFn(it) || 0;
       return sc && Math.abs(sc - sc0) <= delta;
     });
-    if (pool.length >= minSize || pool.length === basePool.length) {
-      return { pool, delta };
-    }
+    if (pool.length >= minSize || pool.length === basePool.length) return { pool, delta };
   }
   return null;
 }
 
-// POP: top% depuis une liste globale triée desc
 function topPercentFromValue(sortedDesc, value) {
   const vals = sortedDesc || [];
   const n = vals.length;
   const v = +value || 0;
   if (!n || !v) return 100;
 
-  // nb de vals strictement > v (binary search sur desc)
   let lo = 0, hi = n;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
     if (vals[mid] > v) lo = mid + 1;
     else hi = mid;
   }
-  const rank = lo + 1; // 1..n
+  const rank = lo + 1;
   return Math.max(1, Math.min(100, Math.ceil((rank / n) * 100)));
 }
 
-// band Top A–B% (bin 5%), puis élargissement ±5, ±10...
 function buildPopPercentBandPool(basePool, getPopFn, globalSortedDesc, seedValue, minSize = 6) {
   const seedP = topPercentFromValue(globalSortedDesc, seedValue);
-
-  const baseStart = Math.floor((seedP - 1) / 5) * 5; // 0,5,10...
+  const baseStart = Math.floor((seedP - 1) / 5) * 5;
   const baseEnd = baseStart + 5;
 
   const cache = new Map();
@@ -473,14 +433,11 @@ function buildPopPercentBandPool(basePool, getPopFn, globalSortedDesc, seedValue
       return p >= lo && p <= hi;
     });
 
-    if (pool.length >= minSize || pool.length === basePool.length) {
-      return { pool, lo, hi };
-    }
+    if (pool.length >= minSize || pool.length === basePool.length) return { pool, lo, hi };
   }
   return null;
 }
 
-// cumul générique (même critère): on ajoute des valeurs jusqu'à atteindre minSize
 function buildCumulativePool(basePool, getValueFromItem, matchesValueFn, seedValue, minSize = 6, safetyMax = 600) {
   const usedValues = [];
   const usedKey = new Set();
@@ -519,7 +476,6 @@ function buildCumulativePool(basePool, getValueFromItem, matchesValueFn, seedVal
   return { pool: out, values: usedValues };
 }
 
-// cumul TAG
 function buildTagCumulativePool(basePool, getTagsFn, seedTag, minSize = 6) {
   const getValueFromItem = (it) => {
     const tags = getTagsFn(it);
@@ -533,7 +489,6 @@ function buildTagCumulativePool(basePool, getTagsFn, seedTag, minSize = 6) {
   return buildCumulativePool(basePool, getValueFromItem, matches, seedTag, minSize, 900);
 }
 
-// cumul ARTIST (songs)
 function buildArtistCumulativePool(basePool, getArtistsFn, seedArtist, minSize = 6) {
   const getValueFromItem = (it) => {
     const arr = getArtistsFn(it);
@@ -547,14 +502,12 @@ function buildArtistCumulativePool(basePool, getArtistsFn, seedArtist, minSize =
   return buildCumulativePool(basePool, getValueFromItem, matches, seedArtist, minSize, 1200);
 }
 
-// cumul STUDIO
 function buildStudioCumulativePool(basePool, getStudioFn, seedStudio, minSize = 6) {
   const getValueFromItem = (it) => getStudioFn(it);
   const matches = (it, v) => includesStudio(getStudioFn(it), v);
   return buildCumulativePool(basePool, getValueFromItem, matches, seedStudio, minSize, 900);
 }
 
-// cumul ANIME (songs): valeur = animeKey
 function buildAnimeCumulativePool(basePool, getAnimeKeyFn, getAnimeLabelFn, seedItem, minSize = 6) {
   const usedLabels = [];
   const usedKey = new Set();
@@ -594,7 +547,6 @@ function buildAnimeCumulativePool(basePool, getAnimeKeyFn, getAnimeLabelFn, seed
   return { pool: out, labels: usedLabels };
 }
 
-// cumul FIRST_LETTER (anime + songs): valeur = lettre
 function buildLetterCumulativePool(basePool, getTitleFn, seedLetter, minSize = 6) {
   const getValueFromItem = (it) => smartFirstLetter(getTitleFn(it));
   const matches = (it, v, key) => {
@@ -604,7 +556,6 @@ function buildLetterCumulativePool(basePool, getTitleFn, seedLetter, minSize = 6
   return buildCumulativePool(basePool, getValueFromItem, matches, seedLetter, minSize, 900);
 }
 
-// ✅ pick thème contenu (élastique)
 function pickRoundContentThemeElastic(basePool, mode) {
   const MIN = 6;
   const MAX_TRIES = 200;
@@ -626,20 +577,16 @@ function pickRoundContentThemeElastic(basePool, mode) {
   const criteriaSongs = ["FREE", "SONG_YEAR", "ANIME_YEAR", "ANIME", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST", "FIRST_LETTER"];
   const criteria = (mode === "songs") ? criteriaSongs : criteriaAnime;
 
-  // référence globale pop (members des titres)
   const globalSortedMembersDesc = Array.isArray(GLOBAL_MEMBERS_DESC) ? GLOBAL_MEMBERS_DESC : [];
 
   for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
     const crit = criteria[Math.floor(Math.random() * criteria.length)];
 
-    if (crit === "FREE") {
-      return { label: "Libre", pool: basePool, crit: "FREE" };
-    }
+    if (crit === "FREE") return { label: "Libre", pool: basePool, crit: "FREE" };
 
     const seed = basePool[Math.floor(Math.random() * basePool.length)];
     if (!seed) continue;
 
-    // YEAR (anime) : fenêtre ±
     if (crit === "YEAR" && mode !== "songs") {
       const y = getAnimeYear(seed);
       const built = buildYearWindowPool(basePool, getAnimeYear, y, MIN);
@@ -648,7 +595,6 @@ function pickRoundContentThemeElastic(basePool, mode) {
       return { label, pool: built.pool, crit };
     }
 
-    // SONG_YEAR (songs)
     if (crit === "SONG_YEAR" && mode === "songs") {
       const y = getSongYear(seed);
       const built = buildYearWindowPool(basePool, getSongYear, y, MIN);
@@ -657,7 +603,6 @@ function pickRoundContentThemeElastic(basePool, mode) {
       return { label, pool: built.pool, crit };
     }
 
-    // ANIME_YEAR (songs)
     if (crit === "ANIME_YEAR" && mode === "songs") {
       const y = getAnimeYear(seed);
       const built = buildYearWindowPool(basePool, getAnimeYear, y, MIN);
@@ -666,7 +611,6 @@ function pickRoundContentThemeElastic(basePool, mode) {
       return { label, pool: built.pool, crit };
     }
 
-    // ANIME (songs): cumul d'animes
     if (crit === "ANIME" && mode === "songs") {
       const getAnimeKey = (it) => {
         if (it?.animeMalId != null && it.animeMalId !== 0) return String(it.animeMalId);
@@ -681,7 +625,6 @@ function pickRoundContentThemeElastic(basePool, mode) {
       return { label, pool: built.pool, crit };
     }
 
-    // STUDIO: cumul studios
     if (crit === "STUDIO") {
       const st = getStudio(seed);
       if (!String(st || "").trim()) continue;
@@ -692,7 +635,6 @@ function pickRoundContentThemeElastic(basePool, mode) {
       return { label, pool: built.pool, crit };
     }
 
-    // TAG: cumul tags
     if (crit === "TAG") {
       const tags = getTagsArr(seed);
       if (!tags.length) continue;
@@ -706,7 +648,6 @@ function pickRoundContentThemeElastic(basePool, mode) {
       return { label, pool: built.pool, crit };
     }
 
-    // ARTIST (songs): cumul artistes
     if (crit === "ARTIST" && mode === "songs") {
       const arts = getArtistsArr(seed).filter(Boolean);
       if (!arts.length) continue;
@@ -720,7 +661,6 @@ function pickRoundContentThemeElastic(basePool, mode) {
       return { label, pool: built.pool, crit };
     }
 
-    // SCORE_NEAR: fenêtre ±
     if (crit === "SCORE_NEAR") {
       const sc = getScore(seed);
       if (!sc) continue;
@@ -732,7 +672,6 @@ function pickRoundContentThemeElastic(basePool, mode) {
       return { label, pool: built.pool, crit };
     }
 
-    // POP_NEAR: bande Top A–B% + élargissement
     if (crit === "POP_NEAR") {
       const pop = getPop(seed);
       if (!pop) continue;
@@ -748,18 +687,13 @@ function pickRoundContentThemeElastic(basePool, mode) {
       return { label, pool: built.pool, crit };
     }
 
-    // FIRST_LETTER: cumul lettres
     if (crit === "FIRST_LETTER") {
       const L = smartFirstLetter(getTitleForLetter(seed));
       if (!String(L || "").trim()) continue;
 
-      // d'abord essai strict lettre unique
       const strict = basePool.filter(it => smartFirstLetter(getTitleForLetter(it)) === L);
-      if (strict.length >= MIN) {
-        return { label: `Lettre : ${L}`, pool: strict, crit };
-      }
+      if (strict.length >= MIN) return { label: `Lettre : ${L}`, pool: strict, crit };
 
-      // sinon cumul
       const built = buildLetterCumulativePool(basePool, getTitleForLetter, L, MIN);
       if (!built || built.pool.length < MIN) continue;
 
@@ -794,8 +728,6 @@ const roundCountEl = document.getElementById("roundCount");
 
 const roundLabel = document.getElementById("roundLabel");
 
-const teamRowA = document.getElementById("teamRowA");
-const teamRowB = document.getElementById("teamRowB");
 const teamAList = document.getElementById("teamAList");
 const teamBList = document.getElementById("teamBList");
 
@@ -825,7 +757,7 @@ const forcedMode = urlParams.get("mode"); // "anime" | "songs"
 // ====== DATA ======
 let allAnimes = [];
 let allSongs = [];
-let GLOBAL_MEMBERS_DESC = []; // ✅ ref pop globale (members titres)
+let GLOBAL_MEMBERS_DESC = [];
 
 // ====== SETTINGS ======
 let currentMode = "anime";
@@ -842,8 +774,10 @@ let teamItemsB = [];
 
 let revealDone = false;
 let selectionEnabled = false;
-let selectedTeam = null;
 let lockedAfterValidate = false;
+
+// ✅ sélection sur items
+let selectedKeys = new Set();
 
 // tokens
 let roundToken = 0;
@@ -1087,9 +1021,7 @@ function applyFilters() {
   return pool.map(s => ({
     kind: "song",
     _key: `song|${s._key}`,
-
     animeMalId: s.animeMalId || 0,
-
     animeTitle: s.animeTitle || "Anime",
     songName: s.songName || "",
     songNumber: s.songNumber || 1,
@@ -1098,7 +1030,6 @@ function applyFilters() {
     songType: s.songType,
     url: s.url,
     image: s.image || "",
-
     animeYear: s.animeYear || 0,
     songYear: s.songYear || s.animeYear || 0,
     animeStudio: s.animeStudio || "",
@@ -1147,8 +1078,15 @@ function stopMedia() {
   songPlayer.removeAttribute("src");
   songPlayer.load();
 }
-function clearTeamBadges() {
-  [teamRowA, teamRowB].forEach(row => row.querySelectorAll(".tp-badge").forEach(b => b.remove()));
+
+function clearPickBadgesAndClasses() {
+  document
+    .querySelectorAll("#teamAList .tp-badge, #teamBList .tp-badge")
+    .forEach(b => b.remove());
+
+  document
+    .querySelectorAll("#teamAList li, #teamBList li")
+    .forEach(li => li.classList.remove("tp-selected-keep", "tp-selected-delete"));
 }
 
 function resetRoundUI() {
@@ -1158,13 +1096,10 @@ function resetRoundUI() {
 
   revealDone = false;
   selectionEnabled = false;
-  selectedTeam = null;
   lockedAfterValidate = false;
 
-  clearTeamBadges();
-
-  teamRowA.classList.remove("selected-keep", "tp-row-locked");
-  teamRowB.classList.remove("selected-keep", "tp-row-locked");
+  selectedKeys = new Set();
+  clearPickBadgesAndClasses();
 
   resultDiv.textContent = "";
 
@@ -1188,6 +1123,10 @@ function makePlaceholderLi(team, pos) {
   li.dataset.team = String(team);
   li.dataset.pos = String(pos);
 
+  // clavier
+  li.tabIndex = 0;
+  li.setAttribute("role", "button");
+
   const ph = document.createElement("div");
   ph.className = "placeholder";
   li.appendChild(ph);
@@ -1208,24 +1147,22 @@ function renderPlaceholders() {
   }
 }
 
-/* ✅ MODIF ICI :
-   On force l'affichage du texte règle + thème dès qu'on appelle setThemeUI(),
-   donc dès le début du round (avant la révélation). */
+// ✅ règle + thème
 function setThemeUI(contentTheme) {
   const cLabel = contentTheme?.label || "Libre";
-  themeNameEl.textContent = `✅ ${RULE.label}`;
-  themeDescEl.textContent = `${RULE.desc} • 🎯 Filtre : ${cLabel}`;
-
-  // ✅ Afficher dès le début du round
+  themeNameEl.textContent = `✅ Règle : ${currentRule.label}`;
+  themeDescEl.textContent = `🎯 Filtre : ${cLabel}`;
   themeNameEl.style.display = "block";
   themeDescEl.style.display = "block";
 }
 
 function updatePickStatus() {
-  const got = (selectedTeam === 0 || selectedTeam === 1) ? 1 : 0;
-  pickStatusEl.textContent = `✅ Ligne choisie : ${got} / 1`;
+  const got = selectedKeys.size;
+  const need = currentRule.required;
 
-  const ok = got === 1;
+  pickStatusEl.textContent = `✅ Sélection : ${got} / ${need}`;
+
+  const ok = got === need;
   pickStatusEl.classList.toggle("good", ok);
   pickStatusEl.classList.toggle("bad", !ok);
 
@@ -1237,14 +1174,10 @@ function markRevealDone() {
   revealDone = true;
   selectionEnabled = true;
 
-  // (déjà visible dès le début via setThemeUI)
-  themeNameEl.style.display = "block";
-  themeDescEl.style.display = "block";
-
   revealStatusEl.style.display = "block";
   revealStatusEl.classList.remove("bad");
   revealStatusEl.classList.add("good");
-  revealStatusEl.textContent = "✅ Révélation terminée — choisis la meilleure ligne !";
+  revealStatusEl.textContent = "✅ Révélation terminée !";
 
   pickStatusEl.style.display = "block";
   updatePickStatus();
@@ -1393,34 +1326,65 @@ async function revealSongsSequence(localRound) {
   markRevealDone();
 }
 
-// ====== SELECTION (ligne) ======
-function refreshRowSelectionUI() {
-  teamRowA.classList.remove("selected-keep");
-  teamRowB.classList.remove("selected-keep");
+// ====== SELECTION (items) ======
+function togglePickOnLi(li) {
+  if (!selectionEnabled || lockedAfterValidate) return;
+  if (!revealDone) return;
+  if (li.dataset.revealed !== "1") return;
 
-  if (selectedTeam === 0) teamRowA.classList.add("selected-keep");
-  if (selectedTeam === 1) teamRowB.classList.add("selected-keep");
+  const key = li.dataset.key;
+  if (!key) return;
 
+  const isSelected = selectedKeys.has(key);
+  const need = currentRule.required;
+
+  if (isSelected) {
+    selectedKeys.delete(key);
+    li.classList.remove("tp-selected-keep", "tp-selected-delete");
+    li.querySelectorAll(".tp-badge").forEach(b => b.remove());
+    updatePickStatus();
+    return;
+  }
+
+  if (selectedKeys.size >= need) return;
+
+  selectedKeys.add(key);
+
+  const badge = document.createElement("div");
+  badge.className = "tp-badge";
+
+  if (currentRule.mode === "keep") {
+    li.classList.add("tp-selected-keep");
+    badge.textContent = "✅ GARDÉ";
+  } else {
+    li.classList.add("tp-selected-delete");
+    badge.textContent = "❌ SUPPRIMÉ";
+  }
+
+  li.appendChild(badge);
   updatePickStatus();
 }
 
-function onTeamClick(team) {
-  if (!selectionEnabled || lockedAfterValidate) return;
-  if (!revealDone) return;
+[teamAList, teamBList].forEach(list => {
+  list.addEventListener("click", (e) => {
+    const li = e.target.closest("li.tp-item");
+    if (li) togglePickOnLi(li);
+  });
 
-  selectedTeam = (selectedTeam === team) ? null : team;
-  refreshRowSelectionUI();
-}
+  list.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const li = e.target.closest("li.tp-item");
+    if (!li) return;
+    e.preventDefault();
+    togglePickOnLi(li);
+  });
+});
 
-teamRowA.addEventListener("click", () => onTeamClick(0));
-teamRowB.addEventListener("click", () => onTeamClick(1));
-teamRowA.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTeamClick(0); } });
-teamRowB.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTeamClick(1); } });
-
+// ====== CONFIRM ======
 confirmBtn.addEventListener("click", () => {
   if (lockedAfterValidate) return;
   if (!selectionEnabled || !revealDone) return;
-  if (!(selectedTeam === 0 || selectedTeam === 1)) return;
+  if (selectedKeys.size !== currentRule.required) return;
 
   lockedAfterValidate = true;
   confirmBtn.disabled = true;
@@ -1430,16 +1394,12 @@ confirmBtn.addEventListener("click", () => {
   clearWallTimer();
   stopMedia();
 
-  teamRowA.classList.add("tp-row-locked");
-  teamRowB.classList.add("tp-row-locked");
+  // lock visuel
+  document.querySelectorAll("#teamAList li, #teamBList li").forEach(li => li.classList.add("tp-locked"));
 
-  const chosenRow = (selectedTeam === 0) ? teamRowA : teamRowB;
-  const badge = document.createElement("div");
-  badge.className = "tp-badge";
-  badge.textContent = "✅ CHOISIE";
-  chosenRow.appendChild(badge);
-
-  resultDiv.textContent = "✅ Validé — tu as choisi la meilleure ligne.";
+  const verb = (currentRule.mode === "keep") ? "gardé" : "supprimé";
+  const n = currentRule.required;
+  resultDiv.textContent = `✅ Validé — tu as ${verb} ${n} item${n > 1 ? "s" : ""}.`;
 
   nextBtn.style.display = "inline-block";
   const isLast = currentRound >= totalRounds;
@@ -1452,7 +1412,7 @@ confirmBtn.addEventListener("click", () => {
       showCustomization();
       updatePreview();
       if (isParcours) {
-        try { parent.postMessage({ parcoursScore: { label: "TopPick 3v3", score: 0, total: 0 } }, "*"); } catch {}
+        try { parent.postMessage({ parcoursScore: { label: "TopPick", score: 0, total: 0 } }, "*"); } catch {}
       }
     }
   };
@@ -1463,6 +1423,9 @@ function startRound() {
   roundToken++;
   resetRoundUI();
 
+  // ✅ règle aléatoire à chaque round
+  currentRule = RULES[Math.floor(Math.random() * RULES.length)];
+
   const minNeeded = Math.max(6, MIN_REQUIRED);
   if (!filteredPool || filteredPool.length < minNeeded) {
     resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
@@ -1472,7 +1435,6 @@ function startRound() {
     return;
   }
 
-  // ✅ Thème contenu ÉLASTIQUE (aligné Tournament)
   currentContentTheme = pickRoundContentThemeElastic(filteredPool, currentMode);
   setThemeUI(currentContentTheme);
 
@@ -1483,12 +1445,10 @@ function startRound() {
   let picks = null;
 
   if (currentMode === "songs") {
-    // d'abord essayer de respecter le thème, puis fallback Libre si impossible avec la policy
     picks = tryPickSongsNo4(themePool, 6);
     if (!picks) {
       picks = tryPickSongsNo4(filteredPool, 6);
       if (picks) {
-        // thème impossible à respecter proprement -> fallback UI cohérent
         currentContentTheme = { label: "Libre", pool: filteredPool, crit: "FREE_FALLBACK" };
         setThemeUI(currentContentTheme);
       }
@@ -1563,7 +1523,6 @@ fetch("../data/licenses_only.json")
       };
     });
 
-    // ✅ ref globale pop (members titres)
     GLOBAL_MEMBERS_DESC = allAnimes
       .map(a => +a._members || 0)
       .filter(v => Number.isFinite(v) && v > 0)
