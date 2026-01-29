@@ -1,8 +1,14 @@
 /**********************
  * TopPick 3v3 (Anime / Songs)
  * - Règle UNIQUE: choisir la meilleure ligne
- * - Thème “contenu” auto tiré UNIFORMÉMENT (Libre inclus)
- * - + Thème FIRST_LETTER (sélecteur intelligent)
+ * - ✅ Thème “contenu” ÉLASTIQUE (aligné Tournament)
+ *   - "Libre" a la même chance que les autres
+ *   - YEAR / SONG_YEAR / ANIME_YEAR: fenêtre ±0, ±1, ±2...
+ *   - SCORE: tolérance ±0, ±0.1, ±0.2...
+ *   - POP: bande Top A–B% (bins 5%) + élargissement
+ *   - STUDIO / TAG / ARTIST / ANIME / FIRST_LETTER: cumul de valeurs jusqu’à avoir ≥ 6
+ *   - fallback "Libre" en dernier recours
+ * - + FIRST_LETTER (smart)
  * - Reveal alterné : L1#1 → L2#1 → L1#2 → L2#2 → L1#3 → L2#3
  * - Anime: 1 item / 1s
  * - Songs: play auto non mute à 45s pendant 30s
@@ -356,22 +362,15 @@ function tryPickSongsNo4(pool, n) {
 
   return null;
 }
-function pickSongsWithPolicy(poolTheme, poolGlobal, n) {
-  let res = tryPickSongsNo4(poolTheme, n);
-  if (res && res.length === n) return res;
-
-  res = tryPickSongsNo4(poolGlobal, n);
-  if (res && res.length === n) return res;
-
-  return null;
-}
 
 /* ==========================
-   AUTO “THEME CONTENU” (UNIFORME)
-   - Libre inclus comme un thème normal
-   - FIRST_LETTER inclus
-   - On choisit 1 critère au hasard (uniforme)
-   - Puis on essaie plusieurs seeds MAIS en gardant le même critère
+   THEME CONTENU (ÉLASTIQUE, aligné Tournament)
+   - "Libre" a la même chance que chaque autre critère
+   - YEAR / SONG_YEAR / ANIME_YEAR: fenêtre ±0, ±1, ...
+   - SCORE: tolérance ±0, ±0.1, ...
+   - POP: bande Top A–B% (bins 5%) + élargissement
+   - STUDIO / TAG / ARTIST / ANIME / FIRST_LETTER: cumul de valeurs jusqu’à >= 6
+   - Ensuite: pick 6 dans pool
    ========================== */
 function norm(s){ return (s || "").toString().trim().toLowerCase(); }
 function hasTag(it, tag) {
@@ -385,114 +384,390 @@ function includesStudio(studio, needle) {
   if (!s || !n) return false;
   return s.includes(n);
 }
-function nearbyPool(pool, getNum, target, want = 6) {
-  const arr = [...pool].sort((a,b) => getNum(a) - getNum(b));
-  let best = 0, bestD = Infinity;
-  for (let i = 0; i < arr.length; i++) {
-    const d = Math.abs(getNum(arr[i]) - target);
-    if (d < bestD) { bestD = d; best = i; }
-  }
-  let L = best, R = best;
-  while ((R - L + 1) < want && (L > 0 || R < arr.length - 1)) {
-    if (L > 0) L--;
-    if ((R - L + 1) < want && R < arr.length - 1) R++;
-  }
-  return arr.slice(L, R + 1);
+function round1(x) {
+  return Math.round((Number.isFinite(x) ? x : 0) * 10) / 10;
+}
+function summarizeForLabel(arr, max = 3) {
+  const clean = (arr || []).map(x => String(x || "").trim()).filter(Boolean);
+  if (clean.length <= max) return clean.join(" + ");
+  return clean.slice(0, max).join(" + ") + ` + ${clean.length - max} autres`;
 }
 
-function pickRoundContentThemeUniform(basePool, mode) {
+// YEAR-like: fenêtre 0, ±1, ±2... jusqu'à minSize
+function buildYearWindowPool(basePool, getYearFn, centerYear, minSize = 6) {
+  const y0 = Number.isFinite(+centerYear) ? +centerYear : 0;
+  if (!y0) return null;
+
+  for (let delta = 0; delta <= 120; delta++) {
+    const pool = basePool.filter(it => {
+      const y = +getYearFn(it) || 0;
+      return y && Math.abs(y - y0) <= delta;
+    });
+    if (pool.length >= minSize || pool.length === basePool.length) {
+      return { pool, delta };
+    }
+  }
+  return null;
+}
+
+// SCORE-like: tolérance ±0, ±0.1, ±0.2...
+function buildScoreWindowPool(basePool, getScoreFn, centerScore, minSize = 6) {
+  const sc0 = Number.isFinite(+centerScore) ? +centerScore : 0;
+  if (!sc0) return null;
+
+  for (let step = 0; step <= 10.0; step += 0.1) {
+    const delta = Math.round(step * 10) / 10;
+    const pool = basePool.filter(it => {
+      const sc = +getScoreFn(it) || 0;
+      return sc && Math.abs(sc - sc0) <= delta;
+    });
+    if (pool.length >= minSize || pool.length === basePool.length) {
+      return { pool, delta };
+    }
+  }
+  return null;
+}
+
+// POP: top% depuis une liste globale triée desc
+function topPercentFromValue(sortedDesc, value) {
+  const vals = sortedDesc || [];
+  const n = vals.length;
+  const v = +value || 0;
+  if (!n || !v) return 100;
+
+  // nb de vals strictement > v (binary search sur desc)
+  let lo = 0, hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (vals[mid] > v) lo = mid + 1;
+    else hi = mid;
+  }
+  const rank = lo + 1; // 1..n
+  return Math.max(1, Math.min(100, Math.ceil((rank / n) * 100)));
+}
+
+// band Top A–B% (bin 5%), puis élargissement ±5, ±10...
+function buildPopPercentBandPool(basePool, getPopFn, globalSortedDesc, seedValue, minSize = 6) {
+  const seedP = topPercentFromValue(globalSortedDesc, seedValue);
+
+  const baseStart = Math.floor((seedP - 1) / 5) * 5; // 0,5,10...
+  const baseEnd = baseStart + 5;
+
+  const cache = new Map();
+  const getP = (it) => {
+    const k = it?._key || JSON.stringify(it);
+    if (cache.has(k)) return cache.get(k);
+    const p = topPercentFromValue(globalSortedDesc, getPopFn(it));
+    cache.set(k, p);
+    return p;
+  };
+
+  for (let expand = 0; expand <= 100; expand += 5) {
+    const s0 = Math.max(0, Math.min(95, baseStart - expand));
+    const e0 = Math.max(5, Math.min(100, baseEnd + expand));
+    const lo = (s0 === 0) ? 1 : s0;
+    const hi = e0;
+
+    const pool = basePool.filter(it => {
+      const p = getP(it);
+      return p >= lo && p <= hi;
+    });
+
+    if (pool.length >= minSize || pool.length === basePool.length) {
+      return { pool, lo, hi };
+    }
+  }
+  return null;
+}
+
+// cumul générique (même critère): on ajoute des valeurs jusqu'à atteindre minSize
+function buildCumulativePool(basePool, getValueFromItem, matchesValueFn, seedValue, minSize = 6, safetyMax = 600) {
+  const usedValues = [];
+  const usedKey = new Set();
+  const mapByKey = new Map();
+
+  const addValue = (val) => {
+    const v = String(val || "").trim();
+    const key = norm(v);
+    if (!key || usedKey.has(key)) return;
+
+    usedKey.add(key);
+    usedValues.push(v);
+
+    for (const it of basePool) {
+      if (matchesValueFn(it, v, key)) {
+        const k = it._key || JSON.stringify(it);
+        if (!mapByKey.has(k)) mapByKey.set(k, it);
+      }
+    }
+  };
+
+  addValue(seedValue);
+
+  const candidates = shuffleInPlace([...basePool]);
+  let safety = 0;
+
+  while (mapByKey.size < minSize && safety < safetyMax && candidates.length) {
+    safety++;
+    const seed = candidates.pop();
+    addValue(getValueFromItem(seed));
+  }
+
+  const out = Array.from(mapByKey.values());
+  if (out.length < minSize) return null;
+
+  return { pool: out, values: usedValues };
+}
+
+// cumul TAG
+function buildTagCumulativePool(basePool, getTagsFn, seedTag, minSize = 6) {
+  const getValueFromItem = (it) => {
+    const tags = getTagsFn(it);
+    if (!Array.isArray(tags) || !tags.length) return "";
+    return tags[Math.floor(Math.random() * tags.length)];
+  };
+  const matches = (it, v, key) => {
+    const tags = getTagsFn(it);
+    return Array.isArray(tags) && tags.some(x => norm(x) === key);
+  };
+  return buildCumulativePool(basePool, getValueFromItem, matches, seedTag, minSize, 900);
+}
+
+// cumul ARTIST (songs)
+function buildArtistCumulativePool(basePool, getArtistsFn, seedArtist, minSize = 6) {
+  const getValueFromItem = (it) => {
+    const arr = getArtistsFn(it);
+    if (!Array.isArray(arr) || !arr.length) return "";
+    return arr[Math.floor(Math.random() * arr.length)];
+  };
+  const matches = (it, v, key) => {
+    const arr = getArtistsFn(it);
+    return Array.isArray(arr) && arr.some(x => norm(x) === key);
+  };
+  return buildCumulativePool(basePool, getValueFromItem, matches, seedArtist, minSize, 1200);
+}
+
+// cumul STUDIO
+function buildStudioCumulativePool(basePool, getStudioFn, seedStudio, minSize = 6) {
+  const getValueFromItem = (it) => getStudioFn(it);
+  const matches = (it, v) => includesStudio(getStudioFn(it), v);
+  return buildCumulativePool(basePool, getValueFromItem, matches, seedStudio, minSize, 900);
+}
+
+// cumul ANIME (songs): valeur = animeKey
+function buildAnimeCumulativePool(basePool, getAnimeKeyFn, getAnimeLabelFn, seedItem, minSize = 6) {
+  const usedLabels = [];
+  const usedKey = new Set();
+  const mapByKey = new Map();
+
+  const addAnime = (key, label) => {
+    const k0 = String(key || "").trim();
+    const k = norm(k0);
+    if (!k || usedKey.has(k)) return;
+
+    usedKey.add(k);
+    usedLabels.push(String(label || k0 || "Anime").trim());
+
+    for (const it of basePool) {
+      const kk = norm(String(getAnimeKeyFn(it) || "").trim());
+      if (kk && kk === k) {
+        const itKey = it._key || JSON.stringify(it);
+        if (!mapByKey.has(itKey)) mapByKey.set(itKey, it);
+      }
+    }
+  };
+
+  addAnime(getAnimeKeyFn(seedItem), getAnimeLabelFn(seedItem));
+
+  const candidates = shuffleInPlace([...basePool]);
+  let safety = 0;
+
+  while (mapByKey.size < minSize && safety < 1200 && candidates.length) {
+    safety++;
+    const s = candidates.pop();
+    addAnime(getAnimeKeyFn(s), getAnimeLabelFn(s));
+  }
+
+  const out = Array.from(mapByKey.values());
+  if (out.length < minSize) return null;
+
+  return { pool: out, labels: usedLabels };
+}
+
+// cumul FIRST_LETTER (anime + songs): valeur = lettre
+function buildLetterCumulativePool(basePool, getTitleFn, seedLetter, minSize = 6) {
+  const getValueFromItem = (it) => smartFirstLetter(getTitleFn(it));
+  const matches = (it, v, key) => {
+    const L = smartFirstLetter(getTitleFn(it));
+    return norm(L) === key;
+  };
+  return buildCumulativePool(basePool, getValueFromItem, matches, seedLetter, minSize, 900);
+}
+
+// ✅ pick thème contenu (élastique)
+function pickRoundContentThemeElastic(basePool, mode) {
   const MIN = 6;
-  const MAX_SEED_TRIES = 70;
+  const MAX_TRIES = 200;
+
+  if (!Array.isArray(basePool) || basePool.length < MIN) {
+    return { label: "Libre", pool: Array.isArray(basePool) ? basePool : [], crit: "FREE" };
+  }
 
   const getAnimeYear = (it) => mode === "songs" ? (it.animeYear || 0) : (it.year || 0);
   const getSongYear  = (it) => (it.songYear || it.animeYear || 0);
   const getStudio    = (it) => mode === "songs" ? (it.animeStudio || "") : (it.studio || "");
   const getScore     = (it) => mode === "songs" ? (it.animeScore || 0) : (it.score || 0);
   const getPop       = (it) => mode === "songs" ? (it.animeMembers || 0) : (it.members || 0);
+  const getTagsArr   = (it) => Array.isArray(it.tags) ? it.tags : [];
+  const getArtistsArr = (it) => Array.isArray(it.artistsArr) ? it.artistsArr : [];
   const getTitleForLetter = (it) => mode === "songs" ? (it.animeTitle || "") : (it.title || "");
 
-  // ✅ LISTES AVEC "FREE" + "FIRST_LETTER"
-  const criteriaAnime = ["FREE","YEAR","STUDIO","TAG","SCORE_NEAR","POP_NEAR","FIRST_LETTER"];
-  const criteriaSongs = ["FREE","YEAR","SONG_YEAR","STUDIO","TAG","SCORE_NEAR","POP_NEAR","ARTIST","FIRST_LETTER"];
-  const list = (mode === "songs") ? criteriaSongs : criteriaAnime;
+  const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "FIRST_LETTER"];
+  const criteriaSongs = ["FREE", "SONG_YEAR", "ANIME_YEAR", "ANIME", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST", "FIRST_LETTER"];
+  const criteria = (mode === "songs") ? criteriaSongs : criteriaAnime;
 
-  // ✅ Tirage uniforme
-  const chosenCrit = list[Math.floor(Math.random() * list.length)];
+  // référence globale pop (members des titres)
+  const globalSortedMembersDesc = Array.isArray(GLOBAL_MEMBERS_DESC) ? GLOBAL_MEMBERS_DESC : [];
 
-  // FREE est immédiatement valide
-  if (chosenCrit === "FREE") return { label: "Libre", pool: basePool, crit: "FREE" };
+  for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+    const crit = criteria[Math.floor(Math.random() * criteria.length)];
 
-  for (let attempt = 0; attempt < MAX_SEED_TRIES; attempt++) {
+    if (crit === "FREE") {
+      return { label: "Libre", pool: basePool, crit: "FREE" };
+    }
+
     const seed = basePool[Math.floor(Math.random() * basePool.length)];
-    if (!seed) break;
+    if (!seed) continue;
 
-    let pool = [];
-    let label = "Libre";
-
-    if (chosenCrit === "YEAR") {
+    // YEAR (anime) : fenêtre ±
+    if (crit === "YEAR" && mode !== "songs") {
       const y = getAnimeYear(seed);
-      if (!y) continue;
-      pool = basePool.filter(it => getAnimeYear(it) === y);
-      label = `Année anime : ${y}`;
+      const built = buildYearWindowPool(basePool, getAnimeYear, y, MIN);
+      if (!built || built.pool.length < MIN) continue;
+      const label = built.delta === 0 ? `Année : ${y}` : `Année : ${y} ± ${built.delta}`;
+      return { label, pool: built.pool, crit };
     }
 
-    if (chosenCrit === "SONG_YEAR" && mode === "songs") {
+    // SONG_YEAR (songs)
+    if (crit === "SONG_YEAR" && mode === "songs") {
       const y = getSongYear(seed);
-      if (!y) continue;
-      pool = basePool.filter(it => getSongYear(it) === y);
-      label = `Année song : ${y}`;
+      const built = buildYearWindowPool(basePool, getSongYear, y, MIN);
+      if (!built || built.pool.length < MIN) continue;
+      const label = built.delta === 0 ? `Année song : ${y}` : `Année song : ${y} ± ${built.delta}`;
+      return { label, pool: built.pool, crit };
     }
 
-    if (chosenCrit === "STUDIO") {
+    // ANIME_YEAR (songs)
+    if (crit === "ANIME_YEAR" && mode === "songs") {
+      const y = getAnimeYear(seed);
+      const built = buildYearWindowPool(basePool, getAnimeYear, y, MIN);
+      if (!built || built.pool.length < MIN) continue;
+      const label = built.delta === 0 ? `Année anime : ${y}` : `Année anime : ${y} ± ${built.delta}`;
+      return { label, pool: built.pool, crit };
+    }
+
+    // ANIME (songs): cumul d'animes
+    if (crit === "ANIME" && mode === "songs") {
+      const getAnimeKey = (it) => {
+        if (it?.animeMalId != null && it.animeMalId !== 0) return String(it.animeMalId);
+        const t = String(it?.animeTitle || "").trim();
+        return t ? t : "";
+      };
+      const getAnimeLabel = (it) => String(it?.animeTitle || "Anime").trim();
+
+      const built = buildAnimeCumulativePool(basePool, getAnimeKey, getAnimeLabel, seed, MIN);
+      if (!built || built.pool.length < MIN) continue;
+      const label = `Animes : ${summarizeForLabel(built.labels, 3)}`;
+      return { label, pool: built.pool, crit };
+    }
+
+    // STUDIO: cumul studios
+    if (crit === "STUDIO") {
       const st = getStudio(seed);
-      if (!st) continue;
-      pool = basePool.filter(it => includesStudio(getStudio(it), st));
-      label = `Studio : ${st}`;
+      if (!String(st || "").trim()) continue;
+
+      const built = buildStudioCumulativePool(basePool, getStudio, st, MIN);
+      if (!built || built.pool.length < MIN) continue;
+      const label = `Studios : ${summarizeForLabel(built.values, 3)}`;
+      return { label, pool: built.pool, crit };
     }
 
-    if (chosenCrit === "TAG") {
-      const tags = Array.isArray(seed.tags) ? seed.tags : [];
+    // TAG: cumul tags
+    if (crit === "TAG") {
+      const tags = getTagsArr(seed);
       if (!tags.length) continue;
+
       const t = tags[Math.floor(Math.random() * tags.length)];
-      pool = basePool.filter(it => hasTag(it, t));
-      label = `Tag : ${t}`;
+      if (!String(t || "").trim()) continue;
+
+      const built = buildTagCumulativePool(basePool, getTagsArr, t, MIN);
+      if (!built || built.pool.length < MIN) continue;
+      const label = `Tags : ${summarizeForLabel(built.values, 3)}`;
+      return { label, pool: built.pool, crit };
     }
 
-    if (chosenCrit === "SCORE_NEAR") {
+    // ARTIST (songs): cumul artistes
+    if (crit === "ARTIST" && mode === "songs") {
+      const arts = getArtistsArr(seed).filter(Boolean);
+      if (!arts.length) continue;
+
+      const a = arts[Math.floor(Math.random() * arts.length)];
+      if (!String(a || "").trim()) continue;
+
+      const built = buildArtistCumulativePool(basePool, getArtistsArr, a, MIN);
+      if (!built || built.pool.length < MIN) continue;
+      const label = `Artistes : ${summarizeForLabel(built.values, 3)}`;
+      return { label, pool: built.pool, crit };
+    }
+
+    // SCORE_NEAR: fenêtre ±
+    if (crit === "SCORE_NEAR") {
       const sc = getScore(seed);
       if (!sc) continue;
-      pool = nearbyPool(basePool, getScore, sc, MIN);
-      label = `Score proche`;
+
+      const built = buildScoreWindowPool(basePool, getScore, sc, MIN);
+      if (!built || built.pool.length < MIN) continue;
+
+      const label = built.delta === 0 ? `Score : ${round1(sc)}` : `Score : ${round1(sc)} ± ${built.delta}`;
+      return { label, pool: built.pool, crit };
     }
 
-    if (chosenCrit === "POP_NEAR") {
+    // POP_NEAR: bande Top A–B% + élargissement
+    if (crit === "POP_NEAR") {
       const pop = getPop(seed);
       if (!pop) continue;
-      pool = nearbyPool(basePool, getPop, pop, MIN);
-      label = `Popularité proche`;
+
+      const built = buildPopPercentBandPool(basePool, getPop, globalSortedMembersDesc, pop, MIN);
+      if (!built || built.pool.length < MIN) continue;
+
+      const label =
+        (built.lo === 1 && built.hi === 5)
+          ? `Popularité : Top 1–5%`
+          : `Popularité : Top ${built.lo}–${built.hi}%`;
+
+      return { label, pool: built.pool, crit };
     }
 
-    if (chosenCrit === "ARTIST" && mode === "songs") {
-      const arts = Array.isArray(seed.artistsArr) ? seed.artistsArr.filter(Boolean) : [];
-      if (!arts.length) continue;
-      const a = arts[Math.floor(Math.random() * arts.length)];
-      pool = basePool.filter(it =>
-        Array.isArray(it.artistsArr) && it.artistsArr.some(x => norm(x) === norm(a))
-      );
-      label = `Artiste : ${a}`;
-    }
+    // FIRST_LETTER: cumul lettres
+    if (crit === "FIRST_LETTER") {
+      const L = smartFirstLetter(getTitleForLetter(seed));
+      if (!String(L || "").trim()) continue;
 
-    if (chosenCrit === "FIRST_LETTER") {
-      const letter = smartFirstLetter(getTitleForLetter(seed));
-      if (!letter) continue;
-      pool = basePool.filter(it => smartFirstLetter(getTitleForLetter(it)) === letter);
-      label = `Lettre : ${letter}`;
-    }
+      // d'abord essai strict lettre unique
+      const strict = basePool.filter(it => smartFirstLetter(getTitleForLetter(it)) === L);
+      if (strict.length >= MIN) {
+        return { label: `Lettre : ${L}`, pool: strict, crit };
+      }
 
-    if (pool.length >= MIN) return { label, pool, crit: chosenCrit };
+      // sinon cumul
+      const built = buildLetterCumulativePool(basePool, getTitleForLetter, L, MIN);
+      if (!built || built.pool.length < MIN) continue;
+
+      const label = `Lettres : ${summarizeForLabel(built.values, 4)}`;
+      return { label, pool: built.pool, crit };
+    }
   }
 
-  // fallback rare: on garde le round mais en Libre
   return { label: "Libre", pool: basePool, crit: "FREE_FALLBACK" };
 }
 
@@ -550,6 +825,7 @@ const forcedMode = urlParams.get("mode"); // "anime" | "songs"
 // ====== DATA ======
 let allAnimes = [];
 let allSongs = [];
+let GLOBAL_MEMBERS_DESC = []; // ✅ ref pop globale (members titres)
 
 // ====== SETTINGS ======
 let currentMode = "anime";
@@ -1188,8 +1464,8 @@ function startRound() {
     return;
   }
 
-  // ✅ Thème contenu UNIFORME (Libre inclus)
-  currentContentTheme = pickRoundContentThemeUniform(filteredPool, currentMode);
+  // ✅ Thème contenu ÉLASTIQUE (aligné Tournament)
+  currentContentTheme = pickRoundContentThemeElastic(filteredPool, currentMode);
   setThemeUI(currentContentTheme);
 
   const themePool = (currentContentTheme?.pool && currentContentTheme.pool.length >= 6)
@@ -1199,7 +1475,17 @@ function startRound() {
   let picks = null;
 
   if (currentMode === "songs") {
-    picks = pickSongsWithPolicy(themePool, filteredPool, 6);
+    // d'abord essayer de respecter le thème, puis fallback Libre si impossible avec la policy
+    picks = tryPickSongsNo4(themePool, 6);
+    if (!picks) {
+      picks = tryPickSongsNo4(filteredPool, 6);
+      if (picks) {
+        // thème impossible à respecter proprement -> fallback UI cohérent
+        currentContentTheme = { label: "Libre", pool: filteredPool, crit: "FREE_FALLBACK" };
+        setThemeUI(currentContentTheme);
+      }
+    }
+
     if (!picks) {
       resultDiv.textContent =
         "❌ Impossible de créer un round de 6 songs sans dépasser 3 songs du même anime.\n" +
@@ -1211,6 +1497,13 @@ function startRound() {
     }
   } else {
     picks = pickNFromPool(themePool, 6);
+    if (!picks || picks.length < 6) {
+      picks = pickNFromPool(filteredPool, 6);
+      if (picks && picks.length >= 6) {
+        currentContentTheme = { label: "Libre", pool: filteredPool, crit: "FREE_FALLBACK" };
+        setThemeUI(currentContentTheme);
+      }
+    }
   }
 
   if (!picks || picks.length < 6) {
@@ -1261,6 +1554,12 @@ fetch("../data/licenses_only.json")
         _themes: Array.isArray(a.themes) ? a.themes : [],
       };
     });
+
+    // ✅ ref globale pop (members titres)
+    GLOBAL_MEMBERS_DESC = allAnimes
+      .map(a => +a._members || 0)
+      .filter(v => Number.isFinite(v) && v > 0)
+      .sort((a, b) => b - a);
 
     allSongs = [];
     for (const a of allAnimes) allSongs.push(...extractSongsFromAnime(a));
