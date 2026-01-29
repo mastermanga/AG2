@@ -1,20 +1,18 @@
 /**********************
  * Keep or Next (Anime / Songs) — script.js (COMPLET MODIFIÉ)
- * ✅ Fix pool Songs (mapping pills opening/ending/insert -> OP/ED/IN)
- * ✅ Mode Parcours: auto-start (skip personnalisation du mini-jeu)
- * ✅ Sécurité: au moins 1 type actif + (si songs) au moins 1 song-type actif
- * ✅ Volume persistant (localStorage) + appliqué aux 2 players
- * ✅ Nettoyages handlers/tokens un peu plus stricts (anti-bugs mobile)
+ * ✅ Thème contenu par round (caché pendant le round, révélé après le choix)
+ * ✅ Thèmes = ceux du Tournament + ajustements demandés
+ *   - Anime: FREE, YEAR(± progressif), STUDIO(agrandi), TAG(agrandi), SCORE_NEAR, POP_NEAR(% global)
+ *   - Songs: + SONG_YEAR(± progressif), ARTIST(agrandi), SAME_ANIME(agrandi), YEAR anime (± progressif)
+ * ✅ Preview/menu reste MIN 64 (inchangé)
+ * ✅ Parcours: fin = continuer parcours (return=... sinon history.back())
  *
- * - Default tours = 1
- * - Cartes + slot media plus grands
- * - Droite cachée = même taille (slot fixe) + 💤 centré
- * - Pas de gros texte résultat (juste un mini hint)
- * - Effet visuel choix : chosen/rejected
- * - Tours indépendants
- * - Songs : vidéo non mutée + volume global
- * - Loader media + retries (0/2/4/6/8/10s)
- * - Songs : start at 45s, play 20s
+ * Autres features conservées:
+ * - Mode Parcours: auto-start
+ * - Sécurité: au moins 1 type actif + (si songs) au moins 1 song-type actif
+ * - Volume persistant
+ * - Loader media + retries
+ * - Songs : start at 45s, play 30s
  **********************/
 
 // ====== MENU & THEME ======
@@ -46,12 +44,10 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// ====== HELPERS ======
-const MIN_REQUIRED = 64;
+// ====== HELPERS / CONFIG ======
+const MIN_REQUIRED = 64; // ✅ menu preview/start reste 64
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
 const STALL_TIMEOUT_MS = 6000;
-
-// sécurité anti-blocage (si ça ne joue jamais)
 const MAX_WALL_SNIPPET_MS = 60000;
 
 // ✅ Clip settings (Songs)
@@ -61,12 +57,64 @@ const CLIP_EPS = 0.05;
 
 // ✅ Volume persistence
 const VOLUME_KEY_MAIN = "keepnext_volume";
-const VOLUME_KEY_FALLBACK = "tournament_volume"; // si tu veux partager avec Tournament
+const VOLUME_KEY_FALLBACK = "tournament_volume";
+
+// ✅ Theme content
+const THEME_MIN = 2;
+const THEME_MAX_TRIES = 140;
+const YEAR_MAX_K = 12; // ±0..±12 (suffisant, fallback FREE sinon)
+
+// ====== SMALL UTILS ======
+function norm(s) { return String(s || "").trim().toLowerCase(); }
+
+function includesStudio(studio, needle) {
+  const s = norm(studio);
+  const n = norm(needle);
+  if (!s || !n) return false;
+  return s.includes(n);
+}
+
+function clampInt(n, a, b) {
+  n = Number.isFinite(n) ? n : a;
+  return Math.max(a, Math.min(b, n));
+}
+function safeNum(x) {
+  const n = +x;
+  return Number.isFinite(n) ? n : 0;
+}
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+function pickRandom(arr) {
+  if (!arr || !arr.length) return null;
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+function pickTwoDistinct(arr) {
+  if (!arr || arr.length < 2) return { a: null, b: null };
+  if (arr.length === 2) return { a: arr[0], b: arr[1] };
+  const a = pickRandom(arr);
+  let b = pickRandom(arr);
+  let guard = 0;
+  while (b && a && b._key === a._key && guard++ < 30) b = pickRandom(arr);
+  if (b && a && b._key === a._key) b = arr.find(x => x._key !== a._key) || b;
+  return { a, b };
+}
 
 function normalizeAnimeList(json) {
   if (Array.isArray(json)) return json;
   if (json && Array.isArray(json.animes)) return json.animes;
   return [];
+}
+
+function extractTagName(x) {
+  if (!x) return "";
+  if (typeof x === "string") return x;
+  if (typeof x === "object") return x.name || x.title || x.tag || "";
+  return "";
 }
 
 function getDisplayTitle(a) {
@@ -84,6 +132,11 @@ function getYear(a) {
   const s = ((a && a.season) ? String(a.season) : "").trim();
   const m = s.match(/(\d{4})/);
   return m ? parseInt(m[1], 10) : 0;
+}
+function yearFromSeasonStr(seasonStr, fallback = 0) {
+  const s = String(seasonStr || "").trim();
+  const m = s.match(/(\d{4})/);
+  return m ? parseInt(m[1], 10) : (fallback || 0);
 }
 
 function clampYearSliders() {
@@ -103,25 +156,7 @@ function clampYearSliders() {
   }
 }
 
-function shuffleInPlace(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
-function clampInt(n, a, b) {
-  n = Number.isFinite(n) ? n : a;
-  return Math.max(a, Math.min(b, n));
-}
-
-function safeNum(x) {
-  const n = +x;
-  return Number.isFinite(n) ? n : 0;
-}
-
-// ====== SONG TYPE / LABEL ======
+// ====== SONG LABELS ======
 function songTypeLabel(t) {
   if (t === "OP") return "OP";
   if (t === "ED") return "ED";
@@ -148,15 +183,11 @@ function mapSongPillToCode(v) {
   if (s === "opening" || s === "op") return "OP";
   if (s === "ending" || s === "ed") return "ED";
   if (s === "insert" || s === "in") return "IN";
-  // au cas où ton HTML met déjà OP/ED/IN
-  if (s === "op" || s === "opening") return "OP";
-  if (s === "ed" || s === "ending") return "ED";
-  if (s === "in" || s === "insert") return "IN";
-  // valeur brute
   const raw = String(v || "").trim();
   return raw;
 }
 
+// ====== EXTRACT SONGS (avec meta anime + songYear + artistsArr) ======
 function extractSongsFromAnime(anime) {
   const out = [];
   const song = anime.song || {};
@@ -172,8 +203,10 @@ function extractSongsFromAnime(anime) {
       const url = it.video || it.url || "";
       if (!url || typeof url !== "string" || url.length < 6) continue;
 
-      const artistsArr = Array.isArray(it.artists) ? it.artists : [];
+      const artistsArr = Array.isArray(it.artists) ? it.artists.filter(Boolean) : [];
       const artists = artistsArr.join(", ");
+      const seasonStr = String(it.season || "").trim();
+      const songYear = yearFromSeasonStr(seasonStr, anime._year);
 
       out.push({
         kind: "song",
@@ -181,16 +214,23 @@ function extractSongsFromAnime(anime) {
         songName: it.name || "",
         songNumber: safeNum(it.number) || 1,
         songArtists: artists || "",
+        artistsArr,
+
+        songSeason: seasonStr,
+        songYear,          // ✅ pour SONG_YEAR
 
         animeTitle: anime._title,
-        animeImage: anime.image || "",
         animeType: anime._type,
         animeYear: anime._year,
         animeMembers: anime._members,
         animeScore: anime._score,
+        studio: anime._studio || "",
+        tags: Array.isArray(anime._tags) ? anime._tags : [],
+
+        image: anime.image || "",
 
         url,
-        _key: `${b.type}|${it.number || ""}|${it.name || ""}|${url}|${anime.mal_id || ""}`,
+        _key: `song|${b.type}|${it.number || ""}|${it.name || ""}|${url}|${anime.mal_id || ""}`,
       });
     }
   }
@@ -217,6 +257,7 @@ const applyBtn = document.getElementById("applyFiltersBtn");
 const turnCountEl = document.getElementById("turnCount");
 
 const roundLabel = document.getElementById("roundLabel");
+const themePill = document.getElementById("themePill");
 
 const leftCard = document.getElementById("leftCard");
 const rightCard = document.getElementById("rightCard");
@@ -248,31 +289,42 @@ const isParcours = urlParams.get("parcours") === "1";
 const parcoursCount = parseInt(urlParams.get("count") || "1", 10);
 const forcedMode = urlParams.get("mode"); // "anime" | "songs" éventuel
 
-// (optionnel) si ton global passe aussi les filtres dans l’URL
+// optionnel: filtres via URL
 const qpPop = urlParams.get("pop");
 const qpScore = urlParams.get("score");
 const qpYearMin = urlParams.get("ymin") || urlParams.get("yearMin");
 const qpYearMax = urlParams.get("ymax") || urlParams.get("yearMax");
-const qpTypes = urlParams.get("types"); // ex "TV,Movie"
-const qpSongs = urlParams.get("songs"); // ex "opening,ending" ou "OP,ED"
+const qpTypes = urlParams.get("types"); // "TV,Movie"
+const qpSongs = urlParams.get("songs"); // "opening,ending" ou "OP,ED"
+
+// ✅ retour parcours (si fourni)
+const qpReturn = urlParams.get("return");
 
 // ====== DATA ======
 let allAnimes = [];
 let allSongs = [];
+
+// ✅ pool global pop (pour label Top X–Y%)
+let POP_GLOBAL_VALUES = []; // members desc
+function buildGlobalPopRef() {
+  POP_GLOBAL_VALUES = allAnimes
+    .map(a => safeNum(a._members))
+    .filter(v => Number.isFinite(v) && v > 0)
+    .sort((a, b) => b - a);
+}
 
 // ====== SETTINGS ======
 let currentMode = "anime";
 let filteredPool = [];
 
 // ====== GAME STATE ======
-let totalTurns = 1; // ✅ default 1
+let totalTurns = 1;
 let currentTurn = 1;
 
 let leftItem = null;
 let rightItem = null;
 
-let bag = [];
-let bagIndex = 0;
+let currentTheme = null; // { crit, label, hint }
 
 // tokens anti-bug media
 let roundToken = 0;
@@ -293,7 +345,7 @@ function showGame() {
   if (gamePanel) gamePanel.style.display = "block";
 }
 
-// ====== DEFAULT PILLS (sécurité) ======
+// ====== DEFAULT PILLS ======
 function ensureDefaultTypes() {
   const pills = Array.from(document.querySelectorAll("#typePills .pill"));
   if (!pills.length) return;
@@ -318,7 +370,7 @@ function ensureDefaultSongs() {
 
   pills.forEach((b) => {
     const s = (b.dataset.song || "").toLowerCase();
-    const on = (s === "opening" || s === "op");
+    const on = (s === "opening" || s === "op" || s === "OP");
     b.classList.toggle("active", on);
     b.setAttribute("aria-pressed", on ? "true" : "false");
   });
@@ -337,7 +389,6 @@ function loadSavedVolumePercent() {
 function saveVolumePercent(p) {
   const v = String(Math.max(0, Math.min(100, p)));
   localStorage.setItem(VOLUME_KEY_MAIN, v);
-  // si tu veux partager aussi avec Tournament:
   localStorage.setItem(VOLUME_KEY_FALLBACK, String(Math.max(0, Math.min(1, (parseInt(v, 10) || 30) / 100))));
 }
 
@@ -372,7 +423,6 @@ function withCacheBuster(url) {
   return frag ? busted + "#" + frag : busted;
 }
 
-// ✅ Loader générique : retries + anti-stall + callback onReady
 function loadMediaWithRetries(player, url, localRound, localMedia, { onReady } = {}) {
   let attemptIndex = 0;
   let stallTimer = null;
@@ -465,19 +515,16 @@ function clearWallTimerFor(player) {
   }
 }
 
-// ✅ Clip: seek start puis play, stop après 20s DE VIDEO.
 function playClip(player, localRound, localMedia, { autoplay = true } = {}) {
   const tokenNow = () => (player === leftPlayer ? mediaTokenLeft : mediaTokenRight);
   const isStillValid = () => (localRound === roundToken && localMedia === tokenNow());
 
-  // clean anciens handlers
   player.ontimeupdate = null;
   player.onended = null;
   player.onplay = null;
 
   clearWallTimerFor(player);
 
-  // anti-blocage
   const wall = setTimeout(() => {
     if (!isStillValid()) return;
     try { player.pause(); } catch {}
@@ -486,7 +533,6 @@ function playClip(player, localRound, localMedia, { autoplay = true } = {}) {
   if (player === leftPlayer) wallTimerLeft = wall;
   else wallTimerRight = wall;
 
-  // calc start/end (clamp si durée connue)
   let start = CLIP_START_S;
   const dur = player.duration;
 
@@ -514,17 +560,14 @@ function playClip(player, localRound, localMedia, { autoplay = true } = {}) {
     try { player.currentTime = start; } catch {}
   };
 
-  // 1) seek d’abord
   trySeek();
 
-  // 2) puis play (autoplay)
   if (autoplay) {
     player.muted = false;
     const p = player.play?.();
     if (p && typeof p.catch === "function") p.catch(() => {});
   }
 
-  // 3) re-seek rapide si ça reste proche de 0
   let tries = 0;
   const seeker = setInterval(() => {
     if (!isStillValid()) { clearInterval(seeker); return; }
@@ -538,7 +581,6 @@ function playClip(player, localRound, localMedia, { autoplay = true } = {}) {
     if (tries >= 15) { clearInterval(seeker); }
   }, 120);
 
-  // si user clique play plus tard
   player.onplay = () => {
     if (!isStillValid()) return;
     const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
@@ -585,19 +627,16 @@ function updateModePillsFromState() {
 }
 
 function applyParcoursParamsToUIIfAny() {
-  // mode
   if (forcedMode === "anime" || forcedMode === "songs") {
     currentMode = forcedMode;
     updateModePillsFromState();
   }
 
-  // sliders (si fournis)
   if (qpPop && popEl) popEl.value = String(clampInt(parseInt(qpPop, 10), 1, 100));
   if (qpScore && scoreEl) scoreEl.value = String(clampInt(parseInt(qpScore, 10), 1, 100));
   if (qpYearMin && yearMinEl) yearMinEl.value = String(parseInt(qpYearMin, 10) || yearMinEl.value);
   if (qpYearMax && yearMaxEl) yearMaxEl.value = String(parseInt(qpYearMax, 10) || yearMaxEl.value);
 
-  // types (si fournis)
   if (qpTypes) {
     const wanted = new Set(qpTypes.split(",").map(s => s.trim()).filter(Boolean));
     const pills = Array.from(document.querySelectorAll("#typePills .pill"));
@@ -611,10 +650,9 @@ function applyParcoursParamsToUIIfAny() {
     }
   }
 
-  // songs (si fournis)
   if (qpSongs) {
     const wantedRaw = new Set(qpSongs.split(",").map(s => s.trim()).filter(Boolean));
-    const wanted = new Set(Array.from(wantedRaw).map(mapSongPillToCode)); // normalise
+    const wanted = new Set(Array.from(wantedRaw).map(mapSongPillToCode));
 
     const pills = Array.from(document.querySelectorAll("#songPills .pill"));
     if (pills.length) {
@@ -627,7 +665,6 @@ function applyParcoursParamsToUIIfAny() {
     }
   }
 
-  // volume init (si pas déjà)
   if (volumeSlider) {
     const pv = loadSavedVolumePercent();
     volumeSlider.value = String(pv);
@@ -637,7 +674,6 @@ function applyParcoursParamsToUIIfAny() {
 }
 
 function initCustomUI() {
-  // Mode pills
   document.querySelectorAll("#modePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll("#modePills .pill").forEach((b) => {
@@ -652,12 +688,10 @@ function initCustomUI() {
     });
   });
 
-  // Type pills (au moins 1)
   document.getElementById("typePills")?.addEventListener("click", (e) => {
     const btn = e.target.closest(".pill");
     if (!btn) return;
 
-    // si on essaie d’éteindre le dernier -> refuse
     if (btn.classList.contains("active")) {
       const actives = Array.from(document.querySelectorAll("#typePills .pill.active"));
       if (actives.length === 1) return;
@@ -669,7 +703,6 @@ function initCustomUI() {
     updatePreview();
   });
 
-  // Song pills (au moins 1)
   document.getElementById("songPills")?.addEventListener("click", (e) => {
     const btn = e.target.closest(".pill");
     if (!btn) return;
@@ -685,7 +718,6 @@ function initCustomUI() {
     updatePreview();
   });
 
-  // Sliders
   function syncLabels() {
     clampYearSliders();
     if (popValEl) popValEl.textContent = popEl.value;
@@ -697,7 +729,6 @@ function initCustomUI() {
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el?.addEventListener("input", syncLabels));
   turnCountEl?.addEventListener("input", updatePreview);
 
-  // Apply
   applyBtn?.addEventListener("click", () => {
     ensureDefaultTypes();
     if (currentMode === "songs") ensureDefaultSongs();
@@ -715,7 +746,6 @@ function initCustomUI() {
   keepBtn?.addEventListener("click", () => handleChoice("keep"));
   nextChoiceBtn?.addEventListener("click", () => handleChoice("next"));
 
-  // init volume slider from storage
   if (volumeSlider) {
     const pv = loadSavedVolumePercent();
     volumeSlider.value = String(pv);
@@ -724,7 +754,6 @@ function initCustomUI() {
 
   ensureDefaultTypes();
   ensureDefaultSongs();
-
   updateModeVisibility();
   syncLabels();
 }
@@ -757,22 +786,29 @@ function applyFilters() {
     pool.sort((a, b) => b._score - a._score);
     pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
+    // ✅ on garde la meta pour thèmes
     return pool.map((a) => ({
       kind: "anime",
       _key: `anime|${a.mal_id}`,
       title: a._title,
-      image: a.image || ""
+      image: a.image || "",
+
+      _year: a._year,
+      _type: a._type,
+      _members: a._members,
+      _score: a._score,
+      _studio: a._studio || "",
+      tags: Array.isArray(a._tags) ? a._tags : [],
     }));
   }
 
-  // songs mode
   const allowedSongPills = [...document.querySelectorAll("#songPills .pill.active")]
     .map((b) => b.dataset.song)
     .filter(Boolean);
 
   if (allowedSongPills.length === 0) return [];
 
-  const allowedSongCodes = new Set(allowedSongPills.map(mapSongPillToCode)); // ✅ FIX
+  const allowedSongCodes = new Set(allowedSongPills.map(mapSongPillToCode));
   let pool = allSongs.filter((s) =>
     s.animeYear >= yearMin &&
     s.animeYear <= yearMax &&
@@ -788,14 +824,28 @@ function applyFilters() {
 
   return pool.map((s) => ({
     kind: "song",
-    _key: `song|${s._key}`,
+    _key: s._key,
+
     animeTitle: s.animeTitle || "Anime",
     songName: s.songName || "",
     songNumber: s.songNumber || 1,
     songArtists: s.songArtists || "",
+    artistsArr: Array.isArray(s.artistsArr) ? s.artistsArr : [],
+
     songType: s.songType,
+    songSeason: s.songSeason || "",
+    songYear: safeNum(s.songYear) || 0,
+
     url: s.url,
-    image: s.animeImage || ""
+    image: s.image || "",
+
+    // ✅ meta anime portée par song
+    _year: safeNum(s.animeYear) || 0,
+    _type: s.animeType || "Unknown",
+    _members: safeNum(s.animeMembers) || 0,
+    _score: safeNum(s.animeScore) || 0,
+    _studio: s.studio || "",
+    tags: Array.isArray(s.tags) ? s.tags : [],
   }));
 }
 
@@ -834,32 +884,285 @@ function updatePreview() {
   }
 }
 
-// ====== BAG ======
-function refillBag() {
-  bag = shuffleInPlace([...filteredPool]);
-  bagIndex = 0;
-}
-function drawOne(excludeKey = null) {
-  if (!bag.length || bagIndex >= bag.length) refillBag();
+// ====== THEME HELPERS ======
+function popBracketFromMembers(members) {
+  const vals = POP_GLOBAL_VALUES;
+  const n = vals.length;
+  const v = safeNum(members);
+  if (!n || !v) return null;
 
-  const maxTries = Math.max(20, bag.length * 2);
-  for (let t = 0; t < maxTries; t++) {
-    if (bagIndex >= bag.length) refillBag();
-    const it = bag[bagIndex++];
-    if (!excludeKey || it._key !== excludeKey) return it;
+  // rank = 1 + nb de valeurs strictement > v
+  let lo = 0, hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (vals[mid] > v) lo = mid + 1;
+    else hi = mid;
+  }
+  const rank = lo + 1;
+  const raw = Math.ceil((rank / n) * 100);
+
+  let start = Math.floor((raw - 1) / 5) * 5;
+  let end = start + 5;
+  start = Math.max(0, Math.min(95, start));
+  end = Math.max(5, Math.min(100, end));
+
+  const label = (start === 0) ? "Top 1–5%" : `Top ${start}–${end}%`;
+  return { start, end, raw, label };
+}
+
+function popToleranceFromStart(start) {
+  // ex: start=5 -> 5 ; start=20 -> 10 ; start=30 -> 15
+  return Math.max(5, Math.floor(start / 10) * 5);
+}
+
+function nearbyPool(pool, getNum, target, want = 24) {
+  const arr = [...pool].sort((a, b) => getNum(a) - getNum(b));
+  let best = 0, bestD = Infinity;
+
+  for (let i = 0; i < arr.length; i++) {
+    const d = Math.abs(getNum(arr[i]) - target);
+    if (d < bestD) { bestD = d; best = i; }
   }
 
-  if (!filteredPool.length) return null;
-  let it = filteredPool[Math.floor(Math.random() * filteredPool.length)];
-  if (excludeKey && it._key === excludeKey && filteredPool.length > 1) {
-    it = filteredPool.find((x) => x._key !== excludeKey) || it;
+  let L = best, R = best;
+  const w = Math.max(2, Math.min(want, arr.length));
+  while ((R - L + 1) < w && (L > 0 || R < arr.length - 1)) {
+    if (L > 0) L--;
+    if ((R - L + 1) < w && R < arr.length - 1) R++;
   }
-  return it;
+
+  return arr.slice(L, R + 1);
 }
-function drawPair() {
-  const a = drawOne(null);
-  const b = drawOne(a?._key || null);
-  return { a, b };
+
+// agrandi générique (union sur une clé)
+function buildUnionPoolByValues(basePool, {
+  seedValue,
+  valueFromItem,
+  matchesValue,
+  labelPrefix,
+  pickExtraValueFromSeed,
+  safetyMax = 220
+}) {
+  const used = [];
+  const usedKey = new Set();
+  const mapByKey = new Map();
+
+  const addValue = (val) => {
+    const v = String(val || "").trim();
+    const k = norm(v);
+    if (!k || usedKey.has(k)) return;
+
+    usedKey.add(k);
+    used.push(v);
+
+    for (const it of basePool) {
+      if (matchesValue(it, v)) {
+        const key = it._key || JSON.stringify(it);
+        if (!mapByKey.has(key)) mapByKey.set(key, it);
+      }
+    }
+  };
+
+  addValue(seedValue);
+
+  const candidates = shuffleInPlace([...basePool]);
+  let safety = 0;
+
+  while (mapByKey.size < THEME_MIN && safety < safetyMax && candidates.length) {
+    safety++;
+    const seed = candidates.pop();
+    const extra = pickExtraValueFromSeed(seed);
+    addValue(extra);
+  }
+
+  const out = Array.from(mapByKey.values());
+  if (out.length < THEME_MIN) return null;
+
+  const label = `${labelPrefix} : ${used.join(" + ")}`;
+  return { pool: out, label };
+}
+
+function pickContentThemeForRound(basePool, modeLocal) {
+  const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR"];
+  const criteriaSongs = ["FREE", "SONG_YEAR", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST", "SAME_ANIME"];
+  const criteria = (modeLocal === "songs") ? criteriaSongs : criteriaAnime;
+
+  for (let attempt = 0; attempt < THEME_MAX_TRIES; attempt++) {
+    const crit = criteria[Math.floor(Math.random() * criteria.length)];
+
+    if (crit === "FREE") {
+      return { crit: "FREE", label: "Libre", pool: basePool };
+    }
+
+    const seed = pickRandom(basePool);
+    if (!seed) continue;
+
+    // YEAR (anime) progressive ±0..±k
+    if (crit === "YEAR") {
+      const y = safeNum(seed._year);
+      if (!y) continue;
+
+      for (let k = 0; k <= YEAR_MAX_K; k++) {
+        const pool = basePool.filter(it => {
+          const yy = safeNum(it._year);
+          return yy && Math.abs(yy - y) <= k;
+        });
+        if (pool.length >= THEME_MIN) {
+          return { crit, label: `Année : ${y} ± ${k}`, pool };
+        }
+      }
+      continue;
+    }
+
+    // SONG_YEAR progressive
+    if (crit === "SONG_YEAR" && modeLocal === "songs") {
+      const y = safeNum(seed.songYear);
+      if (!y) continue;
+
+      for (let k = 0; k <= YEAR_MAX_K; k++) {
+        const pool = basePool.filter(it => {
+          const yy = safeNum(it.songYear);
+          return yy && Math.abs(yy - y) <= k;
+        });
+        if (pool.length >= THEME_MIN) {
+          return { crit, label: `Année song : ${y} ± ${k}`, pool };
+        }
+      }
+      continue;
+    }
+
+    // STUDIO (agrandi)
+    if (crit === "STUDIO") {
+      const st = String(seed._studio || "").trim();
+      if (!st) continue;
+
+      const built = buildUnionPoolByValues(basePool, {
+        seedValue: st,
+        valueFromItem: it => it._studio,
+        matchesValue: (it, v) => includesStudio(it._studio || "", v),
+        labelPrefix: "Studios",
+        pickExtraValueFromSeed: (s) => (s?._studio || ""),
+        safetyMax: 180
+      });
+      if (!built) continue;
+      return { crit, label: built.label, pool: built.pool };
+    }
+
+    // TAG (agrandi)
+    if (crit === "TAG") {
+      const tags = Array.isArray(seed.tags) ? seed.tags : [];
+      if (!tags.length) continue;
+
+      const seedTag = pickRandom(tags);
+      if (!seedTag) continue;
+
+      const built = buildUnionPoolByValues(basePool, {
+        seedValue: seedTag,
+        matchesValue: (it, v) => {
+          const arr = Array.isArray(it.tags) ? it.tags : [];
+          const key = norm(v);
+          return arr.some(x => norm(x) === key);
+        },
+        labelPrefix: "Tags",
+        pickExtraValueFromSeed: (s) => {
+          const arr = Array.isArray(s?.tags) ? s.tags : [];
+          return pickRandom(arr) || "";
+        },
+        safetyMax: 220
+      });
+      if (!built) continue;
+      return { crit, label: built.label, pool: built.pool };
+    }
+
+    // SCORE_NEAR
+    if (crit === "SCORE_NEAR") {
+      const sc = safeNum(seed._score);
+      if (!sc) continue;
+
+      const pool = nearbyPool(basePool, it => safeNum(it._score), sc, 24);
+      if (pool.length < THEME_MIN) continue;
+
+      let delta = 0;
+      for (const it of pool) delta = Math.max(delta, Math.abs(safeNum(it._score) - sc));
+      delta = Math.round(delta * 10) / 10;
+
+      return { crit, label: `Score : ${Math.round(sc * 10) / 10} ± ${delta}`, pool };
+    }
+
+    // POP_NEAR (% global) + tol selon tranche + expansion +5
+    if (crit === "POP_NEAR") {
+      const pop = safeNum(seed._members);
+      if (!pop) continue;
+
+      const seedB = popBracketFromMembers(pop);
+      if (!seedB) continue;
+
+      const baseTol = popToleranceFromStart(seedB.start);
+
+      for (let extra = 0; extra <= 60; extra += 5) {
+        const tol = baseTol + extra;
+        const low = Math.max(0, seedB.start - tol);
+        const high = Math.min(95, seedB.start + tol);
+
+        const pool = basePool.filter(it => {
+          const b = popBracketFromMembers(safeNum(it._members));
+          if (!b) return false;
+          return b.start >= low && b.start <= high;
+        });
+
+        if (pool.length >= THEME_MIN) {
+          return { crit, label: `Popularité : ${seedB.label} ± ${tol}`, pool };
+        }
+      }
+
+      continue;
+    }
+
+    // ARTIST (songs agrandi)
+    if (crit === "ARTIST" && modeLocal === "songs") {
+      const arts = Array.isArray(seed.artistsArr) ? seed.artistsArr.filter(Boolean) : [];
+      if (!arts.length) continue;
+
+      const seedArtist = pickRandom(arts);
+      if (!seedArtist) continue;
+
+      const built = buildUnionPoolByValues(basePool, {
+        seedValue: seedArtist,
+        matchesValue: (it, v) => {
+          const arr = Array.isArray(it.artistsArr) ? it.artistsArr : [];
+          const key = norm(v);
+          return arr.some(x => norm(x) === key);
+        },
+        labelPrefix: "Artistes",
+        pickExtraValueFromSeed: (s) => {
+          const arr = Array.isArray(s?.artistsArr) ? s.artistsArr : [];
+          return pickRandom(arr) || "";
+        },
+        safetyMax: 260
+      });
+      if (!built) continue;
+      return { crit, label: built.label, pool: built.pool };
+    }
+
+    // SAME_ANIME (songs agrandi)
+    if (crit === "SAME_ANIME" && modeLocal === "songs") {
+      const seedAnime = String(seed.animeTitle || "").trim();
+      if (!seedAnime) continue;
+
+      const built = buildUnionPoolByValues(basePool, {
+        seedValue: seedAnime,
+        matchesValue: (it, v) => String(it.animeTitle || "").trim() === String(v || "").trim(),
+        labelPrefix: "Animes",
+        pickExtraValueFromSeed: (s) => String(s?.animeTitle || "").trim(),
+        safetyMax: 220
+      });
+      if (!built) continue;
+      return { crit, label: built.label, pool: built.pool };
+    }
+  }
+
+  // fallback
+  return { crit: "FREE", label: "Libre", pool: basePool };
 }
 
 // ====== GAME ======
@@ -868,10 +1171,22 @@ function clearChoiceEffects() {
   rightCard?.classList.remove("chosen", "rejected");
 }
 
+function hideTheme() {
+  if (!themePill) return;
+  themePill.textContent = "";
+  themePill.style.display = "none";
+}
+function showTheme(label) {
+  if (!themePill) return;
+  themePill.textContent = `🎯 Thème contenu : ${label || "Libre"}`;
+  themePill.style.display = "block";
+}
+
 function resetGameUI() {
   currentTurn = 1;
   leftItem = null;
   rightItem = null;
+  currentTheme = null;
 
   clearChoiceEffects();
 
@@ -881,15 +1196,26 @@ function resetGameUI() {
   if (keepBtn) keepBtn.disabled = false;
   if (nextChoiceBtn) nextChoiceBtn.disabled = false;
 
+  hideTheme();
   stopAllMedia();
   hideRightCard();
+}
+
+function prepareRound() {
+  // 1) pick theme (pool >= 2)
+  currentTheme = pickContentThemeForRound(filteredPool, currentMode);
+
+  // 2) pick left/right from theme pool
+  const themePool = Array.isArray(currentTheme?.pool) ? currentTheme.pool : filteredPool;
+  const { a, b } = pickTwoDistinct(shuffleInPlace([...themePool]));
+  leftItem = a;
+  rightItem = b;
 }
 
 function startGame() {
   roundToken++;
   resetGameUI();
 
-  // ✅ parcours force count
   if (isParcours) {
     totalTurns = clampInt(parcoursCount, 1, 100);
   }
@@ -899,22 +1225,24 @@ function startGame() {
     if (resultDiv) resultDiv.textContent = "❌ Pas assez d’items avec ces filtres.";
     if (nextBtn) {
       nextBtn.style.display = "block";
-      nextBtn.textContent = "Retour réglages";
+      nextBtn.textContent = isParcours ? "Retour parcours" : "Retour réglages";
       nextBtn.onclick = () => {
         stopAllMedia();
-        showCustomization();
-        updatePreview();
+        if (isParcours) continueParcours();
+        else { showCustomization(); updatePreview(); }
       };
     }
     return;
   }
 
-  refillBag();
-  const p = drawPair();
-  leftItem = p.a;
-  rightItem = p.b;
-
+  prepareRound();
   renderTurn();
+}
+
+function clearChoiceThemeForNewTurn() {
+  hideTheme();
+  if (resultDiv) resultDiv.textContent = "";
+  clearChoiceEffects();
 }
 
 function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
@@ -926,7 +1254,6 @@ function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
   const pZone = isLeft ? leftPlayerZone : rightPlayerZone;
   const player = isLeft ? leftPlayer : rightPlayer;
 
-  // (sécurité)
   if (!item) {
     nameEl.textContent = "";
     nameEl.style.display = "none";
@@ -943,26 +1270,21 @@ function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
   nameEl.style.display = revealed ? "block" : "none";
 
   if (isSongs) {
-    // jamais d'image avant la vidéo en Songs
     img.style.display = "none";
     img.removeAttribute("src");
 
     pZone.style.display = revealed ? "block" : "none";
 
     if (revealed && item?.url) {
-      // pas de poster non plus
       player.poster = "";
-
       applyVolume();
 
-      // tokens
       if (isLeft) mediaTokenLeft++;
       else mediaTokenRight++;
 
       const localRound = roundToken;
       const localMedia = isLeft ? mediaTokenLeft : mediaTokenRight;
 
-      // reset + load
       try { player.pause(); } catch {}
       player.ontimeupdate = null;
       player.onended = null;
@@ -970,7 +1292,6 @@ function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
 
       player.removeAttribute("src");
       player.load();
-
       player.muted = false;
 
       loadMediaWithRetries(player, item.url, localRound, localMedia, {
@@ -981,8 +1302,6 @@ function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
 
           applyVolume();
           player.muted = false;
-
-          // seek+play snippet
           playClip(player, localRound, localMedia, { autoplay });
         }
       });
@@ -998,7 +1317,6 @@ function setCardContent(side, item, { revealed = true, autoplay = true } = {}) {
       clearWallTimerFor(player);
     }
   } else {
-    // mode anime (image)
     pZone.style.display = "none";
     try { player.pause(); } catch {}
     player.ontimeupdate = null;
@@ -1045,10 +1363,9 @@ function revealRightCard(item) {
 }
 
 function renderTurn() {
-  clearChoiceEffects();
+  clearChoiceThemeForNewTurn();
 
   if (roundLabel) roundLabel.textContent = `Tour ${currentTurn} / ${totalTurns}`;
-  if (resultDiv) resultDiv.textContent = "";
   if (nextBtn) nextBtn.style.display = "none";
 
   if (keepBtn) keepBtn.disabled = false;
@@ -1061,17 +1378,31 @@ function renderTurn() {
   applyVolume();
 }
 
+function continueParcours() {
+  stopAllMedia();
+  // 1) si le parcours passe un return=... on l’utilise
+  if (qpReturn) {
+    window.location.href = qpReturn;
+    return;
+  }
+  // 2) sinon retour arrière (souvent la page "parcours")
+  if (window.history.length > 1) {
+    window.history.back();
+    return;
+  }
+  // 3) fallback
+  window.location.href = "../index.html";
+}
+
 function handleChoice(choice) {
   if (!leftItem || !rightItem) return;
 
   if (keepBtn) keepBtn.disabled = true;
   if (nextChoiceBtn) nextChoiceBtn.disabled = true;
 
-  // éviter double audio au reveal
   try { leftPlayer.pause(); } catch {}
   leftPlayer.onplay = null;
 
-  // effet visuel choix
   if (choice === "keep") {
     leftCard?.classList.add("chosen");
     rightCard?.classList.add("rejected");
@@ -1084,29 +1415,34 @@ function handleChoice(choice) {
 
   revealRightCard(rightItem);
 
+  // ✅ Reveal thème seulement après le choix
+  showTheme(currentTheme?.label || "Libre");
+
   const isLast = currentTurn >= totalTurns;
 
   if (nextBtn) {
     nextBtn.style.display = "block";
+
     if (!isLast) {
       nextBtn.textContent = "Tour suivant";
       nextBtn.onclick = () => {
         stopAllMedia();
-
-        const p = drawPair();
-        leftItem = p.a;
-        rightItem = p.b;
-
         currentTurn++;
+        prepareRound();
         renderTurn();
       };
     } else {
-      nextBtn.textContent = "Retour réglages";
-      nextBtn.onclick = () => {
-        stopAllMedia();
-        showCustomization();
-        updatePreview();
-      };
+      if (isParcours) {
+        nextBtn.textContent = "Continuer parcours";
+        nextBtn.onclick = () => continueParcours();
+      } else {
+        nextBtn.textContent = "Retour réglages";
+        nextBtn.onclick = () => {
+          stopAllMedia();
+          showCustomization();
+          updatePreview();
+        };
+      }
     }
   }
 }
@@ -1122,6 +1458,10 @@ fetch("../data/licenses_only.json")
 
     allAnimes = (Array.isArray(raw) ? raw : []).map((a) => {
       const title = getDisplayTitle(a);
+      const genres = Array.isArray(a.genres) ? a.genres.map(extractTagName).filter(Boolean) : [];
+      const themes = Array.isArray(a.themes) ? a.themes.map(extractTagName).filter(Boolean) : [];
+      const studio = (typeof a.studio === "string" && a.studio.trim()) ? a.studio.trim() : "";
+
       return {
         ...a,
         _title: title,
@@ -1129,24 +1469,26 @@ fetch("../data/licenses_only.json")
         _members: safeNum(a.members),
         _score: safeNum(a.score),
         _type: a.type || "Unknown",
+        _studio: studio,
+        _tags: [...genres, ...themes],
       };
     });
+
+    // ✅ global ref pop (avant filtres menu)
+    buildGlobalPopRef();
 
     allSongs = [];
     for (const a of allAnimes) allSongs.push(...extractSongsFromAnime(a));
 
     initCustomUI();
 
-    // ✅ applique params parcours si présents (mode/count + éventuellement filtres)
     if (isParcours) {
       applyParcoursParamsToUIIfAny();
-      // force mode pills cohérents
       updateModePillsFromState();
     }
 
     updatePreview();
 
-    // ✅ Parcours: auto-start (skip personnalisation du mini-jeu)
     if (isParcours) {
       ensureDefaultTypes();
       if (currentMode === "songs") ensureDefaultSongs();
@@ -1160,7 +1502,6 @@ fetch("../data/licenses_only.json")
         showGame();
         startGame();
       } else {
-        // si vraiment pas assez, on retombe sur l’écran réglages pour voir le problème
         showCustomization();
         updatePreview();
       }
