@@ -5,6 +5,7 @@
  * ✅ Thèmes contenus "pool agrandi" (reste sur le même thème)
  * ✅ Popularité: Top% calculé sur GLOBAL (tous les animes), pas sur pool filtré
  * ✅ Songs: "Année song" (Spring 2012 => 2012) + thème "Anime" (songs du même anime)
+ * ✅ Songs: ➕ Thème "Année anime" (basé sur animeYear)
  **********************/
 
 // =======================
@@ -772,6 +773,27 @@ function themeYearSong(basePool) {
   return { crit: "SONG_YEAR", label: `Année song : ${Y} ± ${k}`, pool: pickUniqueN(pool, THEME_POOL_SIZE) };
 }
 
+// ✅➕ AJOUT : thème "Année anime" (mode songs) basé uniquement sur animeYear
+function themeAnimeYearSong(basePool) {
+  const seed = pickRandomFrom(basePool, it => safeNum(it?.animeYear) > 0);
+  if (!seed) return null;
+
+  const Y = safeNum(seed.animeYear);
+  let k = 0;
+  let pool = [];
+
+  while (k <= 20) {
+    pool = basePool.filter(it => {
+      const y = safeNum(it?.animeYear);
+      return y >= (Y - k) && y <= (Y + k);
+    });
+    if (pool.length >= THEME_POOL_SIZE) break;
+    k++;
+  }
+
+  return { crit: "ANIME_YEAR", label: `Année anime : ${Y} ± ${k}`, pool: pickUniqueN(pool, THEME_POOL_SIZE) };
+}
+
 function themeScoreNear(basePool, modeLocal) {
   const getScore = (it) => (modeLocal === "songs") ? safeNum(it?.animeScore) : safeNum(it?._score);
   const seed = pickRandomFrom(basePool, it => getScore(it) > 0);
@@ -840,7 +862,6 @@ function themePopNearGlobal(basePool, modeLocal) {
     pool: pickUniqueN(pool, THEME_POOL_SIZE),
   };
 }
-
 
 function themeStudioMix(basePool, modeLocal) {
   const getStudio = (it) => (modeLocal === "songs") ? (it?.animeStudio || "") : (it?._studio || "");
@@ -1012,7 +1033,10 @@ function pickContentThemeExpanded(basePool, modeLocal) {
   }
 
   const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR"];
-  const criteriaSongs = ["FREE", "SONG_YEAR", "ANIME", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST"];
+
+  // ✅ MODIF : ajout de ANIME_YEAR en mode songs
+  const criteriaSongs = ["FREE", "SONG_YEAR", "ANIME_YEAR", "ANIME", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST"];
+
   const criteria = (modeLocal === "songs") ? criteriaSongs : criteriaAnime;
 
   const MAX_TRIES = 120;
@@ -1024,6 +1048,8 @@ function pickContentThemeExpanded(basePool, modeLocal) {
     if (crit === "FREE") t = themeFree(basePool);
     else if (crit === "YEAR" && modeLocal !== "songs") t = themeYearAnime(basePool);
     else if (crit === "SONG_YEAR" && modeLocal === "songs") t = themeYearSong(basePool);
+    // ✅➕ AJOUT : handler du thème Année anime (songs)
+    else if (crit === "ANIME_YEAR" && modeLocal === "songs") t = themeAnimeYearSong(basePool);
     else if (crit === "ANIME" && modeLocal === "songs") t = themeAnimeSongs(basePool);
     else if (crit === "STUDIO") t = themeStudioMix(basePool, modeLocal);
     else if (crit === "TAG") t = themeTagMix(basePool, modeLocal);
