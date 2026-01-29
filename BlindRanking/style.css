@@ -411,7 +411,7 @@ body.light .anime-item{ background:#e4f2fc; }
 #songPlayer{
   width:100%;
   border-radius: 14px;
-  background:#222;
+  background:#000; /* ✅ écran noir */
   box-shadow: 0 2px 12px #1116;
 }
 
