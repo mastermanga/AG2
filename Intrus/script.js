@@ -220,6 +220,9 @@ const pickStatusEl = document.getElementById("pickStatus");
 const resultDiv = document.getElementById("result");
 const nextBtn = document.getElementById("nextBtn");
 
+// ✅ NOUVEAU : bloc règles
+const rulesBox = document.getElementById("roundRules");
+
 const nowPlaying = document.getElementById("nowPlaying");
 const songPlayer = document.getElementById("songPlayer");
 
@@ -392,6 +395,12 @@ function resetRoundUI() {
   themeDescEl.style.display = "none";
   pickStatusEl.style.display = "none";
 
+  // ✅ on garde les règles visibles, mais on reset le contenu (rempli juste après)
+  if (rulesBox) {
+    rulesBox.style.display = "block";
+    rulesBox.innerHTML = "";
+  }
+
   revealStatusEl.style.display = "none";
   revealStatusEl.classList.remove("good");
   revealStatusEl.classList.add("bad");
@@ -415,11 +424,40 @@ const THEME_LABELS = {
   SCOREBIN: "Score",
   // Songs
   LICENSE: "Licence",
-  YEAR_SONG: "Année",
   ARTIST: "Artiste",
   SONG_TYPE: "Type",
-  YEAR: "Année",
 };
+
+// ✅ NOUVEAU : thème visible dès le début (sans activer le choix)
+function showThemeEarly(themeKey) {
+  const label = THEME_LABELS[themeKey] || "Thème";
+  themeNameEl.textContent = `🎯 Thème : ${label}`;
+  themeDescEl.textContent =
+    (currentMode === "anime")
+      ? "🖼️ Révélation en cours… (tu choisiras quand tout est révélé)."
+      : "🎧 Écoute en cours… (tu choisiras après les 4 extraits).";
+
+  themeNameEl.style.display = "block";
+  themeDescEl.style.display = "block";
+}
+
+// ✅ NOUVEAU : règles visibles dès le début
+function updateRulesBox() {
+  if (!rulesBox) return;
+
+  rulesBox.innerHTML = `
+    <div class="rules-title">📌 Règles</div>
+    <div>4 choix (A–D). Un seul est l’intrus.</div>
+    <div style="margin-top:6px;">
+      ${
+        currentMode === "anime"
+          ? "📺 Mode Anime : A apparaît direct, puis +1 image/seconde. Tu choisis à la fin."
+          : "🎵 Mode Songs : tu écoutes A→D. Tu choisis après les 4 extraits."
+      }
+    </div>
+  `;
+}
+
 function showThemeOnly(themeKey) {
   const label = THEME_LABELS[themeKey] || "Thème";
   themeNameEl.textContent = `🎯 Thème : ${label}`;
@@ -478,7 +516,6 @@ function applyFilters() {
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  // ✅ on garde aussi les infos d’affichage pour reveal après réponse
   return pool.map(s => ({
     kind: "song",
     _key: s._key,
@@ -860,7 +897,6 @@ function revealSongCardAfterAnswer(i) {
   const li = choiceList.querySelector(`li[data-index="${i}"]`);
   if (!li || !it) return;
 
-  // remplace la box par une cover image
   const oldBox = li.querySelector(".intrus-song-box");
   if (oldBox) {
     const cover = document.createElement("div");
@@ -894,6 +930,7 @@ function finishRevealAndShowTheme() {
   revealStatusEl.classList.add("good");
   revealStatusEl.textContent = "✅ Tout est révélé — à toi de jouer !";
 
+  // ✅ à la fin on passe en "mode choix"
   showThemeOnly(currentThemeKey);
   enableChoiceButtons();
 }
@@ -1018,7 +1055,6 @@ function onPick(index) {
 
   updateRoundLabel();
 
-  // ✅ APRÈS RÉPONSE : reveal songs (image + label complet)
   if (currentMode === "songs") {
     for (let i = 0; i < 4; i++) revealSongCardAfterAnswer(i);
   }
@@ -1078,6 +1114,10 @@ function startRound() {
   roundItems = built.items;
   currentIntrusIndex = built.intrusIndex;
   currentThemeKey = built.themeKey;
+
+  // ✅ NOUVEAU : thème + règles visibles dès le début du round
+  updateRulesBox();
+  showThemeEarly(currentThemeKey);
 
   renderInitialCards();
 
