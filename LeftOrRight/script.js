@@ -2,14 +2,6 @@
  * Left or Right (Anime / Songs) — Duels indépendants
  * ✅ Thème contenu à CHAQUE DUEL (round indépendant)
  * ✅ Feedback visuel de choix (néon vert + loser grisé)
- *
- * Flow par duel:
- *  - pool = applyFilters()
- *  - seed random dans pool
- *  - critère random (Libre / Année / Studio / Tag / Score / Pop (+ Songs: SongYear/AnimeYear/Anime/Artist))
- *  - build themePool “élastique”
- *  - pick 2 items distincts dans themePool
- *  - affiche "🎯 Thème contenu : ..."
  **********************/
 
 // ====== MENU & THEME ======
@@ -44,12 +36,12 @@ document.addEventListener("click", (e) => {
 // =======================
 // SETTINGS THEME CONTENU
 // =======================
-const THEME_MIN_SIZE = 2; // ✅ un duel = 2 items
+const THEME_MIN_SIZE = 2; // un duel = 2 items
 const THEME_POOL_SIZE = 2;
 
 // ✅ Clip settings (Songs)
 const CLIP_START_S = 45;
-const CLIP_DURATION_S = 20;
+const CLIP_DURATION_S = 30; // ✅ demandé : 30s
 const CLIP_EPS = 0.05;
 
 // retries: 1 essai + 5 retries => 0, 2s, 4s, 6s, 8s, 10s
@@ -172,22 +164,22 @@ function extractSongsFromAnime(anime) {
         songName: it.name || "",
         songNumber: safeNum(it.number) || 1,
         songArtists: artists || "",
-        artistsArr, // ✅ pour thème ARTIST
+        artistsArr, // pour thème ARTIST
         songSeason,
-        songYear, // ✅ pour thème SONG_YEAR
+        songYear, // pour thème SONG_YEAR
         url,
 
         // anime meta (hérité)
-        animeId: anime.mal_id || null, // ✅ pour thème ANIME
-        animeTitle: anime._title || "", // ✅ pour thème ANIME
+        animeId: anime.mal_id || null, // pour thème ANIME
+        animeTitle: anime._title || "", // pour thème ANIME
         image: anime.image || "",
-        year: anime._year, // année ANIME
+        year: anime._year,
         members: anime._members,
         score: anime._score,
         type: anime._type,
 
-        studio: anime._studio || "", // ✅ pour thème STUDIO
-        tags: Array.isArray(anime._tags) ? anime._tags : [], // ✅ pour thème TAG
+        studio: anime._studio || "",
+        tags: Array.isArray(anime._tags) ? anime._tags : [],
 
         _key: `song|${b.type}|${it.number || ""}|${it.name || ""}|${url}|${anime.mal_id || ""}`,
       });
@@ -262,8 +254,7 @@ function topPercentFromValue(sortedDesc, value) {
   const v = +value || 0;
   if (!n || !v) return 100;
 
-  let lo = 0,
-    hi = n;
+  let lo = 0, hi = n;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
     if (vals[mid] > v) lo = mid + 1;
@@ -531,7 +522,6 @@ function pickContentThemeEachRound(basePool, modeLocal, allTitlesForPop) {
       if (!pop) continue;
       const built = buildPopPercentBandPool(basePool, getPop0, globalSortedMembersDesc, pop, THEME_POOL_SIZE);
       if (!built || built.pool.length < THEME_POOL_SIZE) continue;
-
       const label = (built.lo === 1 && built.hi === 5) ? `Popularité : Top 1–5%` : `Popularité : Top ${built.lo}–${built.hi}%`;
       return { crit, label, pool: built.pool };
     }
@@ -550,7 +540,6 @@ function pickPairWithTheme(basePool, modeLocal, allTitlesForPop) {
     if (picked.length >= 2) return { theme, left: picked[0], right: picked[1] };
   }
 
-  // fallback ultime: Libre
   const fallback = pickUniqueN(basePool, 2);
   if (fallback.length >= 2) return { theme: { crit: "FREE", label: "Libre", pool: basePool }, left: fallback[0], right: fallback[1] };
   return null;
@@ -748,7 +737,7 @@ function loadMediaWithRetries(player, url, localDuel, localMedia, { onReady } = 
   return cleanup;
 }
 
-// ✅ Clip controller : seek 45s, play 20s, stop + reset + callback onDone
+// ✅ Clip controller : seek 45s, play 30s, stop + reset
 function setupClipPlayback(player, localDuel, localMedia, { autoplay = false, onDone } = {}) {
   const isStillValid = () => (localDuel === duelToken && localMedia === mediaToken);
 
@@ -779,42 +768,61 @@ function setupClipPlayback(player, localDuel, localMedia, { autoplay = false, on
     endTime = Math.min(start + CLIP_DURATION_S, Math.max(0, dur - 0.05));
   }
 
+  // ✅ pour pouvoir forcer le démarrage à 45 juste avant play
+  player.dataset.clipStart = String(start);
+  player.dataset.clipEnd = String(endTime);
+
+  const forceToStart = () => {
+    if (!isStillValid()) return;
+    const s = parseFloat(player.dataset.clipStart || `${CLIP_START_S}`);
+    if (Number.isFinite(s)) {
+      try { player.currentTime = s; } catch {}
+    }
+  };
+
   const stopSnippet = () => {
     if (!isStillValid()) return;
     clearWall();
     try { player.pause(); } catch {}
-    try { player.currentTime = start; } catch {}
+    forceToStart(); // ✅ reset à 45
     finishOnce();
   };
 
   player.ontimeupdate = () => {
     if (!isStillValid()) return;
-    if (player.currentTime >= (endTime - CLIP_EPS)) stopSnippet();
+    const end = parseFloat(player.dataset.clipEnd || `${endTime}`);
+    if (player.currentTime >= (end - CLIP_EPS)) stopSnippet();
   };
   player.onended = () => stopSnippet();
 
+  // ✅ important: même si le player a un currentTime bizarre, on remet à start
   player.onplay = () => {
     if (!isStillValid()) return;
+    const s = parseFloat(player.dataset.clipStart || `${start}`);
+    if (!Number.isFinite(s)) return;
     const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
-    if (ct < (start - 1)) {
-      try { player.currentTime = start; } catch {}
+    if (Math.abs(ct - s) > 1.0) {
+      try { player.currentTime = s; } catch {}
     }
   };
 
-  try { player.currentTime = start; } catch {}
+  forceToStart();
 
+  // mini boucle pour s'assurer que le seek a bien été pris
   let tries = 0;
   const seeker = setInterval(() => {
     if (!isStillValid()) { clearInterval(seeker); return; }
+    const s = parseFloat(player.dataset.clipStart || `${start}`);
     const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
-    if (Math.abs(ct - start) < 0.8) { clearInterval(seeker); return; }
+    if (Number.isFinite(s) && Math.abs(ct - s) < 0.8) { clearInterval(seeker); return; }
     tries++;
-    try { player.currentTime = start; } catch {}
+    forceToStart();
     if (tries >= 15) clearInterval(seeker);
   }, 120);
 
   if (autoplay) {
     player.muted = false;
+    forceToStart();
     const p = player.play?.();
     if (p && typeof p.catch === "function") p.catch(() => {});
   }
@@ -1055,12 +1063,19 @@ function renderDuel() {
     return;
   }
 
-  // songs: 2 vidéos direct (droite démarre quand gauche finit)
+  // songs: gauche 45s/30s -> stop -> droite 45s/30s
   const localDuel = duelToken;
   const localMedia = mediaToken;
 
   let rightReady = false;
   let leftFinished = false;
+
+  const forceStart = (v) => {
+    const s = parseFloat(v?.dataset?.clipStart || `${CLIP_START_S}`);
+    if (Number.isFinite(s)) {
+      try { v.currentTime = s; } catch {}
+    }
+  };
 
   const startRightIfPossible = () => {
     if (localDuel !== duelToken || localMedia !== mediaToken) return;
@@ -1069,6 +1084,9 @@ function renderDuel() {
 
     applyVolume();
     rightVid.muted = false;
+
+    // ✅ force bien à 45 juste avant play
+    forceStart(rightVid);
 
     const p = rightVid.play?.();
     if (p && typeof p.catch === "function") p.catch(() => {});
@@ -1083,8 +1101,6 @@ function renderDuel() {
     v.removeAttribute("src");
     v.load();
     v.muted = false;
-
-    // pas de poster
     v.poster = "";
     v.removeAttribute("poster");
   });
@@ -1123,6 +1139,7 @@ function renderDuel() {
         applyVolume();
         rightVid.muted = false;
 
+        // prépare le clip (seek 45 + stop à 30s)
         setupClipPlayback(rightVid, localDuel, localMedia, { autoplay: false });
 
         rightReady = true;
@@ -1193,7 +1210,6 @@ function handlePick(side) {
   const chosen = side === "left" ? leftItem : rightItem;
   resultDiv.textContent = `✅ Choix validé : ${currentMode === "songs" ? formatSongTitle(chosen) : (chosen.title || "")}`;
 
-  // fin ?
   if (duelIndex >= totalDuels) {
     finishGame("✅ Terminé !");
     return;
