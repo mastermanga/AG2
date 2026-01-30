@@ -537,7 +537,26 @@ body::before{
   font-weight: 1000;
   color:#00eaff;
   text-shadow: 0 0 14px rgba(0,234,255,0.25);
+  transition: transform .12s, color .12s, text-shadow .12s;
 }
+
+/* ✅ ajout: urgence timer (<= 3s) */
+#timer.timer-urgent{
+  color:#fff96a;
+  text-shadow: 0 0 18px rgba(255, 249, 106, 0.35);
+  transform: scale(1.02);
+}
+#timer.timer-shake{
+  animation: timerShake .18s linear infinite;
+}
+@keyframes timerShake{
+  0%{ transform: translateX(0) scale(1.02); }
+  25%{ transform: translateX(-1px) scale(1.02); }
+  50%{ transform: translateX(1px) scale(1.02); }
+  75%{ transform: translateX(-1px) scale(1.02); }
+  100%{ transform: translateX(0) scale(1.02); }
+}
+
 #feedback{
   margin:0;
   font-weight: 900;
@@ -599,6 +618,10 @@ body.light .suggestions{
   border-color: rgba(66,165,245,0.45);
 }
 body.light #timer{ color:#1565c0; }
+body.light #timer.timer-urgent{
+  color:#c62828;
+  text-shadow: 0 0 14px rgba(198, 40, 40, 0.25);
+}
 body.light .info-tip{
   background: linear-gradient(120deg, #e0f7fa 90%, #1565c01a 100%);
   border: 1.5px solid rgba(66, 165, 245, 0.45);
@@ -633,4 +656,3 @@ body.light .info-icon{
   #game-panel #container{ padding: 28px 18px 26px; border-radius: 28px; }
   .year-split{ gap: 12px; }
 }
-
