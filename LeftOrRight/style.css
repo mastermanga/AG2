@@ -519,7 +519,7 @@ body.light footer{ color:#888; }
   border-radius: 18px;
   padding: 12px;
   cursor: pointer;
-  transition: transform 0.14s, box-shadow 0.14s, border-color 0.14s, filter 0.14s;
+  transition: transform 0.14s, box-shadow 0.14s, border-color 0.14s, filter 0.14s, opacity 0.14s;
   color: inherit;
   text-align: center;
   user-select: none;
@@ -534,6 +534,12 @@ body.light footer{ color:#888; }
   outline: 2px solid rgba(0,234,255,0.35);
   outline-offset: 3px;
 }
+.lor-card:disabled{
+  cursor: default;
+  /* évite l’opacité grise browser sur button disabled (on gère nous-mêmes) */
+  opacity: 1;
+}
+
 .lor-media{
   width:100%;
   border-radius: 14px;
@@ -577,6 +583,7 @@ body.light .lor-card{
   header h1{ font-size: 1.19rem; }
   .info-tip{ width: min(320px, 86vw); right: 0; }
 }
+
 /* ✅ Thème contenu (mini pill) */
 .mini-pill--theme{
   margin-top: -6px;
@@ -590,18 +597,21 @@ body.light .mini-pill--theme{
 }
 
 /* =========================
-   KEEP / NEXT — feedback choix
+   FEEDBACK CHOIX (JS)
+   classes: lor-chosen / lor-loser / lor-locked
    ========================= */
 
-/* Base: assure un contour visible même avant choix */
-#leftCard, #rightCard{
-  border: 1.5px solid rgba(0,188,212,0.35);
-  border-radius: 18px;
-  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, opacity .16s ease, filter .16s ease;
+/* Lock: coupe le “hover vibe” */
+.lor-card.lor-locked:hover{
+  transform: none;
+  box-shadow: none;
+}
+.lor-card.lor-locked:active{
+  transform: none;
 }
 
 /* Gagnant: contour vert + glow */
-#leftCard.chosen, #rightCard.chosen{
+.lor-card.lor-chosen{
   border-color: rgba(38,255,128,0.92);
   box-shadow:
     0 0 18px rgba(38,255,128,0.28),
@@ -611,28 +621,33 @@ body.light .mini-pill--theme{
 }
 
 /* Perdant: grisé + assombri */
-#leftCard.rejected, #rightCard.rejected{
+.lor-card.lor-loser{
   opacity: 0.45;
   border-color: rgba(255,255,255,0.10);
   box-shadow: none;
+  transform: none;
 }
 
 /* Grise surtout le média (image/vidéo) sans tuer totalement le texte */
-#leftCard.rejected img,
-#rightCard.rejected img,
-#leftCard.rejected video,
-#rightCard.rejected video{
+.lor-card.lor-loser .lor-img,
+.lor-card.lor-loser .lor-vid{
   filter: grayscale(1) brightness(0.55) contrast(0.95);
 }
 
-/* Optionnel: pendant le lock, on évite les hover trop “vivants” */
-#leftCard.locked:hover, #rightCard.locked:hover{
-  transform: none;
-  box-shadow: none;
-}
-
-/* Light mode (optionnel, juste pour garder un rendu clean) */
-body.light #leftCard.rejected, body.light #rightCard.rejected{
+/* Light mode tweaks */
+body.light .lor-card.lor-loser{
   opacity: 0.55;
   border-color: rgba(0,0,0,0.10);
 }
+body.light .lor-card.lor-chosen{
+  border-color: rgba(38,255,128,0.80);
+  box-shadow:
+    0 0 18px rgba(38,255,128,0.22),
+    0 0 36px rgba(38,255,128,0.12),
+    inset 0 0 0 1px rgba(38,255,128,0.18);
+}
+
+/* (Optionnel) compat si jamais t’avais encore des vieux IDs ailleurs */
+#leftCard.chosen, #rightCard.chosen{ /* legacy */ }
+#leftCard.rejected, #rightCard.rejected{ /* legacy */ }
+#leftCard.locked:hover, #rightCard.locked:hover{ /* legacy */ }
