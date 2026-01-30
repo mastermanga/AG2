@@ -588,3 +588,51 @@ body.light .mini-pill--theme{
   border-color: rgba(25,118,210,0.22);
   box-shadow: 0 0 14px rgba(66,165,245,0.10);
 }
+
+/* =========================
+   KEEP / NEXT — feedback choix
+   ========================= */
+
+/* Base: assure un contour visible même avant choix */
+#leftCard, #rightCard{
+  border: 1.5px solid rgba(0,188,212,0.35);
+  border-radius: 18px;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, opacity .16s ease, filter .16s ease;
+}
+
+/* Gagnant: contour vert + glow */
+#leftCard.chosen, #rightCard.chosen{
+  border-color: rgba(38,255,128,0.92);
+  box-shadow:
+    0 0 18px rgba(38,255,128,0.28),
+    0 0 42px rgba(38,255,128,0.16),
+    inset 0 0 0 1px rgba(38,255,128,0.25);
+  transform: translateY(-2px);
+}
+
+/* Perdant: grisé + assombri */
+#leftCard.rejected, #rightCard.rejected{
+  opacity: 0.45;
+  border-color: rgba(255,255,255,0.10);
+  box-shadow: none;
+}
+
+/* Grise surtout le média (image/vidéo) sans tuer totalement le texte */
+#leftCard.rejected img,
+#rightCard.rejected img,
+#leftCard.rejected video,
+#rightCard.rejected video{
+  filter: grayscale(1) brightness(0.55) contrast(0.95);
+}
+
+/* Optionnel: pendant le lock, on évite les hover trop “vivants” */
+#leftCard.locked:hover, #rightCard.locked:hover{
+  transform: none;
+  box-shadow: none;
+}
+
+/* Light mode (optionnel, juste pour garder un rendu clean) */
+body.light #leftCard.rejected, body.light #rightCard.rejected{
+  opacity: 0.55;
+  border-color: rgba(0,0,0,0.10);
+}
