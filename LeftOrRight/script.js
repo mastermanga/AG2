@@ -164,14 +164,14 @@ function extractSongsFromAnime(anime) {
         songName: it.name || "",
         songNumber: safeNum(it.number) || 1,
         songArtists: artists || "",
-        artistsArr, // pour thème ARTIST
+        artistsArr,
         songSeason,
-        songYear, // pour thème SONG_YEAR
+        songYear,
         url,
 
         // anime meta (hérité)
-        animeId: anime.mal_id || null, // pour thème ANIME
-        animeTitle: anime._title || "", // pour thème ANIME
+        animeId: anime.mal_id || null,
+        animeTitle: anime._title || "",
         image: anime.image || "",
         year: anime._year,
         members: anime._members,
@@ -737,26 +737,27 @@ function loadMediaWithRetries(player, url, localDuel, localMedia, { onReady } = 
   return cleanup;
 }
 
-// ✅ Clip controller : seek 45s, play 30s, stop + reset
+// ✅ Clip controller : seek 45s, play 30s, stop (SANS reset à 45) + cleanup total
 function setupClipPlayback(player, localDuel, localMedia, { autoplay = false, onDone } = {}) {
   const isStillValid = () => (localDuel === duelToken && localMedia === mediaToken);
 
   let finished = false;
+  let seeker = null;
+  let wallTimer = null;
+
   const finishOnce = () => {
     if (finished) return;
     finished = true;
     onDone?.();
   };
 
-  let wallTimer = setTimeout(() => {
-    if (!isStillValid()) return;
-    try { player.pause(); } catch {}
-    finishOnce();
-  }, MAX_WALL_SNIPPET_MS);
+  const cleanup = () => {
+    player.ontimeupdate = null;
+    player.onended = null;
+    player.onplay = null;
 
-  const clearWall = () => {
-    if (wallTimer) clearTimeout(wallTimer);
-    wallTimer = null;
+    if (seeker) { clearInterval(seeker); seeker = null; }
+    if (wallTimer) { clearTimeout(wallTimer); wallTimer = null; }
   };
 
   const dur = player.duration;
@@ -768,61 +769,54 @@ function setupClipPlayback(player, localDuel, localMedia, { autoplay = false, on
     endTime = Math.min(start + CLIP_DURATION_S, Math.max(0, dur - 0.05));
   }
 
-  // ✅ pour pouvoir forcer le démarrage à 45 juste avant play
+  // (optionnel) utile pour ton helper forceStart() ailleurs
   player.dataset.clipStart = String(start);
   player.dataset.clipEnd = String(endTime);
 
-  const forceToStart = () => {
-    if (!isStillValid()) return;
-    const s = parseFloat(player.dataset.clipStart || `${CLIP_START_S}`);
-    if (Number.isFinite(s)) {
-      try { player.currentTime = s; } catch {}
-    }
-  };
-
   const stopSnippet = () => {
-    if (!isStillValid()) return;
-    clearWall();
+    if (!isStillValid() || finished) return;
+    cleanup();
     try { player.pause(); } catch {}
-    forceToStart(); // ✅ reset à 45
+    // ✅ IMPORTANT : on NE remet PAS currentTime à 45 (sinon seek => requêtes => spam)
     finishOnce();
   };
 
+  // sécurité anti-blocage
+  wallTimer = setTimeout(() => {
+    if (!isStillValid() || finished) return;
+    stopSnippet();
+  }, MAX_WALL_SNIPPET_MS);
+
   player.ontimeupdate = () => {
-    if (!isStillValid()) return;
-    const end = parseFloat(player.dataset.clipEnd || `${endTime}`);
-    if (player.currentTime >= (end - CLIP_EPS)) stopSnippet();
+    if (!isStillValid() || finished) return;
+    if (player.currentTime >= (endTime - CLIP_EPS)) stopSnippet();
   };
   player.onended = () => stopSnippet();
 
-  // ✅ important: même si le player a un currentTime bizarre, on remet à start
   player.onplay = () => {
-    if (!isStillValid()) return;
-    const s = parseFloat(player.dataset.clipStart || `${start}`);
-    if (!Number.isFinite(s)) return;
+    if (!isStillValid() || finished) return;
     const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
-    if (Math.abs(ct - s) > 1.0) {
-      try { player.currentTime = s; } catch {}
+    if (ct < (start - 1)) {
+      try { player.currentTime = start; } catch {}
     }
   };
 
-  forceToStart();
+  // seek au départ
+  try { player.currentTime = start; } catch {}
 
   // mini boucle pour s'assurer que le seek a bien été pris
   let tries = 0;
-  const seeker = setInterval(() => {
-    if (!isStillValid()) { clearInterval(seeker); return; }
-    const s = parseFloat(player.dataset.clipStart || `${start}`);
+  seeker = setInterval(() => {
+    if (!isStillValid() || finished) { clearInterval(seeker); seeker = null; return; }
     const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
-    if (Number.isFinite(s) && Math.abs(ct - s) < 0.8) { clearInterval(seeker); return; }
+    if (Math.abs(ct - start) < 0.8) { clearInterval(seeker); seeker = null; return; }
     tries++;
-    forceToStart();
-    if (tries >= 15) clearInterval(seeker);
+    try { player.currentTime = start; } catch {}
+    if (tries >= 15) { clearInterval(seeker); seeker = null; }
   }, 120);
 
   if (autoplay) {
     player.muted = false;
-    forceToStart();
     const p = player.play?.();
     if (p && typeof p.catch === "function") p.catch(() => {});
   }
