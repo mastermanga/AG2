@@ -169,6 +169,7 @@ function extractSongsFromAnime(anime) {
     anime.license ||
     anime.franchise ||
     anime.series ||
+    anime._title ||   // ✅ fallback propre
     "";
 
   for (const b of buckets) {
@@ -749,7 +750,9 @@ function buildRoundSongs(pool){
       if (!intrus) continue;
 
       const maybeName = (list.find(x => (x.licenseName || "").trim())?.licenseName || "").trim();
-      themeValue = maybeName ? maybeName : `#${licKey}`;
+      themeValue = maybeName
+        || (list.find(x => (x.licenseName || "").trim())?.licenseName || "").trim()
+        || (list[0]?.animeTitle || "Licence inconnue");
     }
 
     if (themeKey === "YEAR") {
@@ -921,11 +924,9 @@ function enableChoiceButtons() {
 
 // ====== REVEAL FLOW ======
 function finishRevealAndShowTheme() {
-  // ✅ fin reveal : on affiche valeur + on active le choix
-  showThemeFinal(currentThemeKey, currentThemeValue);
+  // ✅ fin reveal : on active juste le choix (le thème est déjà affiché)
   enableChoiceButtons();
 }
-
 function startRevealAnime(localRound) {
   let idx = 0;
 
@@ -1100,7 +1101,7 @@ function startRound() {
   currentThemeValue = built.themeValue || "";
 
   // ✅ Début round : uniquement "Thème : <Nom>" (sans valeur)
-  showThemeEarly(currentThemeKey);
+  showThemeFinal(currentThemeKey, currentThemeValue);
 
   renderInitialCards();
 
