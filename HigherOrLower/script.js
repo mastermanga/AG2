@@ -118,6 +118,30 @@ const rightTitle = document.getElementById("rightTitle");
 const resultDiv = document.getElementById("result");
 const nextBtn = document.getElementById("nextBtn");
 
+const holDuel = document.querySelector(".hol-duel");
+
+function applyHolFeedback(pickedSide, isCorrect) {
+  if (!holDuel) return;
+
+  holDuel.classList.add("is-locked");
+
+  // clean (au cas où)
+  [leftPick, rightPick].forEach(btn => btn.classList.remove("is-correct", "is-wrong", "is-dim"));
+
+  const pickedBtn = pickedSide === "left" ? leftPick : rightPick;
+  const otherBtn  = pickedSide === "left" ? rightPick : leftPick;
+
+  pickedBtn.classList.add(isCorrect ? "is-correct" : "is-wrong");
+  otherBtn.classList.add("is-dim");
+}
+
+function resetHolFeedback() {
+  if (!holDuel) return;
+  holDuel.classList.remove("is-locked");
+  [leftPick, rightPick].forEach(btn => btn.classList.remove("is-correct", "is-wrong", "is-dim"));
+}
+
+
 // ====== DATA ======
 let allAnimes = [];
 
@@ -275,6 +299,8 @@ function updatePrompt() {
   promptLine.textContent = themeByKey(currentThemeKey).prompt;
 }
 function renderDuel() {
+  resetHolFeedback(); // ✅ reset visuel à chaque nouveau duel
+
   updateTopLabels();
   updatePrompt();
 
@@ -288,6 +314,7 @@ function renderDuel() {
   leftPick.disabled = false;
   rightPick.disabled = false;
 }
+
 
 // ====== START GAME ======
 function startGame() {
@@ -364,6 +391,7 @@ function handlePick(side) {
   const correct = (side === winSide);
   const winner = (winSide === "left") ? champion : challenger;
   const loser  = (winSide === "left") ? challenger : champion;
+  applyHolFeedback(side, correct); // ✅ applique grisé + vert/rouge
 
   if (!correct) {
     resultDiv.textContent = `❌ Mauvais ! Score final : ${score}`;
