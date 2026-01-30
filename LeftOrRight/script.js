@@ -2,6 +2,7 @@
  * Left or Right (Anime / Songs) — Duels indépendants
  * ✅ Thème contenu à CHAQUE DUEL (round indépendant)
  * ✅ Feedback visuel de choix (néon vert + loser grisé)
+ * ✅ Gestion vidéo type Tournament (token session + retry + snippetended)
  **********************/
 
 // ====== MENU & THEME ======
@@ -41,15 +42,12 @@ const THEME_POOL_SIZE = 2;
 
 // ✅ Clip settings (Songs)
 const CLIP_START_S = 45;
-const CLIP_DURATION_S = 30; // ✅ demandé : 30s
+const CLIP_DURATION_S = 30; // 30s
 const CLIP_EPS = 0.05;
 
-// retries: 1 essai + 5 retries => 0, 2s, 4s, 6s, 8s, 10s
+// retries: 0, 2s, 4s, 6s, 8s, 10s
 const RETRY_DELAYS = [0, 2000, 4000, 6000, 8000, 10000];
-const STALL_TIMEOUT_MS = 6000;
-
-// sécurité anti-blocage total (si ça ne joue jamais)
-const MAX_WALL_SNIPPET_MS = 60000;
+const LOAD_TIMEOUT_MS = 6000;
 
 // ====== HELPERS ======
 function normalizeAnimeList(json) {
@@ -601,9 +599,8 @@ let leftItem = null;
 let rightItem = null;
 let currentTheme = { crit: "FREE", label: "Libre" };
 
-// anti stale media
-let duelToken = 0;
-let mediaToken = 0;
+// ✅ token session (comme Tournament)
+let LOAD_SESSION = 0;
 
 // ====== UI SHOW/HIDE ======
 function showCustomization() {
@@ -628,198 +625,216 @@ function applyVolume() {
 }
 if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
 
-// ====== MEDIA LOADER (retries + anti-stall) ======
-function hardResetMedia(player) {
-  try { player.pause(); } catch {}
-  player.removeAttribute("src");
-  player.load();
-}
+// =======================
+// VIDEO MANAGEMENT (style Tournament)
+// =======================
 function withCacheBuster(url) {
   const [base, frag] = url.split("#");
   const sep = base.includes("?") ? "&" : "?";
   const busted = base + sep + "t=" + Date.now();
   return frag ? busted + "#" + frag : busted;
 }
-function stopVideo(player) {
-  try { player.pause(); } catch {}
-  player.ontimeupdate = null;
-  player.onended = null;
-  player.onplay = null;
-  player.onloadedmetadata = null;
-  player.oncanplay = null;
-  player.onloadeddata = null;
-  player.onplaying = null;
-  player.onwaiting = null;
-  player.onstalled = null;
-  player.onerror = null;
-  player.removeAttribute("src");
-  player.load();
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
-// ✅ Loader + callback onReady
-function loadMediaWithRetries(player, url, localDuel, localMedia, { onReady } = {}) {
-  let attemptIndex = 0;
-  let stallTimer = null;
-  let done = false;
+function waitEventOrTimeout(target, events, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let done = false;
 
-  const cleanup = () => {
-    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
-    player.onloadedmetadata = null;
-    player.oncanplay = null;
-    player.onloadeddata = null;
-    player.onplaying = null;
-    player.onwaiting = null;
-    player.onstalled = null;
-    player.onerror = null;
-  };
-
-  const isStillValid = () => (localDuel === duelToken && localMedia === mediaToken);
-
-  const startStallTimer = () => {
-    if (stallTimer) clearTimeout(stallTimer);
-    stallTimer = setTimeout(() => {
-      if (!isStillValid() || done) return;
-      triggerRetry();
-    }, STALL_TIMEOUT_MS);
-  };
-
-  const markReady = () => {
-    if (!isStillValid() || done) return;
-    done = true;
-    cleanup();
-    onReady?.();
-  };
-
-  const triggerRetry = () => {
-    if (!isStillValid() || done) return;
-    cleanup();
-    attemptIndex++;
-    if (attemptIndex >= RETRY_DELAYS.length) {
+    const onOk = () => {
+      if (done) return;
       done = true;
-      try { player.pause(); } catch {}
-      return;
-    }
-    setTimeout(() => {
-      if (!isStillValid() || done) return;
-      doAttempt();
-    }, RETRY_DELAYS[attemptIndex]);
-  };
-
-  const doAttempt = () => {
-    if (!isStillValid() || done) return;
-    const src = attemptIndex === 0 ? url : withCacheBuster(url);
-
-    try { hardResetMedia(player); } catch {}
-    player.preload = "metadata";
-    player.muted = false;
-    player.src = src;
-    player.load();
-
-    player.onloadedmetadata = () => { if (!isStillValid() || done) return; markReady(); };
-    player.oncanplay = () => { if (!isStillValid() || done) return; markReady(); };
-    player.onloadeddata = () => { if (!isStillValid() || done) return; markReady(); };
-
-    player.onwaiting = () => { if (!isStillValid() || done) return; startStallTimer(); };
-    player.onstalled = () => { if (!isStillValid() || done) return; startStallTimer(); };
-
-    player.onplaying = () => {
-      if (!isStillValid() || done) return;
-      if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+      cleanup();
+      resolve(true);
     };
 
-    player.onerror = () => { if (!isStillValid() || done) return; triggerRetry(); };
+    const onFail = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error("video error"));
+    };
 
-    startStallTimer();
-  };
+    const t = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error("timeout"));
+    }, timeoutMs);
 
-  attemptIndex = 0;
-  doAttempt();
-  return cleanup;
+    function cleanup() {
+      clearTimeout(t);
+      events.ok.forEach((ev) => target.removeEventListener(ev, onOk));
+      events.fail.forEach((ev) => target.removeEventListener(ev, onFail));
+    }
+
+    events.ok.forEach((ev) => target.addEventListener(ev, onOk, { once: true }));
+    events.fail.forEach((ev) => target.addEventListener(ev, onFail, { once: true }));
+  });
 }
 
-// ✅ Clip controller : seek 45s, play 30s, stop (SANS reset à 45) + cleanup total
-function setupClipPlayback(player, localDuel, localMedia, { autoplay = false, onDone } = {}) {
-  const isStillValid = () => (localDuel === duelToken && localMedia === mediaToken);
+// snippet limiter: start 45s, stop after 30s, dispatch "snippetended"
+// ✅ IMPORTANT: PAS de reset currentTime à 45 à la fin (sinon spam fetch)
+function installSnippetLimiter(video, startSec, endSec, session) {
+  if (!video) return () => {};
 
-  let finished = false;
-  let seeker = null;
+  let endedOnce = false;
+  let playingArmed = false;
   let wallTimer = null;
 
-  const finishOnce = () => {
-    if (finished) return;
-    finished = true;
-    onDone?.();
-  };
+  const safeSeek = (t) => { try { video.currentTime = t; } catch {} };
 
-  const cleanup = () => {
-    player.ontimeupdate = null;
-    player.onended = null;
-    player.onplay = null;
-
-    if (seeker) { clearInterval(seeker); seeker = null; }
+  const clearWall = () => {
     if (wallTimer) { clearTimeout(wallTimer); wallTimer = null; }
   };
 
-  const dur = player.duration;
-  let start = CLIP_START_S;
-  let endTime = start + CLIP_DURATION_S;
-
-  if (Number.isFinite(dur) && dur > 1) {
-    start = Math.min(CLIP_START_S, Math.max(0, dur - 0.25));
-    endTime = Math.min(start + CLIP_DURATION_S, Math.max(0, dur - 0.05));
-  }
-
-  // (optionnel) utile pour ton helper forceStart() ailleurs
-  player.dataset.clipStart = String(start);
-  player.dataset.clipEnd = String(endTime);
-
-  const stopSnippet = () => {
-    if (!isStillValid() || finished) return;
+  const finish = () => {
+    if (endedOnce) return;
+    endedOnce = true;
+    clearWall();
+    try { video.pause(); } catch {}
+    // event custom (comme Tournament)
+    try { video.dispatchEvent(new Event("snippetended")); } catch {}
     cleanup();
-    try { player.pause(); } catch {}
-    // ✅ IMPORTANT : on NE remet PAS currentTime à 45 (sinon seek => requêtes => spam)
-    finishOnce();
   };
 
-  // sécurité anti-blocage
-  wallTimer = setTimeout(() => {
-    if (!isStillValid() || finished) return;
-    stopSnippet();
-  }, MAX_WALL_SNIPPET_MS);
+  const onPlaying = () => {
+    if (session !== LOAD_SESSION) return;
+    if (playingArmed) return;
+    playingArmed = true;
 
-  player.ontimeupdate = () => {
-    if (!isStillValid() || finished) return;
-    if (player.currentTime >= (endTime - CLIP_EPS)) stopSnippet();
-  };
-  player.onended = () => stopSnippet();
-
-  player.onplay = () => {
-    if (!isStillValid() || finished) return;
-    const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
-    if (ct < (start - 1)) {
-      try { player.currentTime = start; } catch {}
-    }
+    // sécurité si jamais timeupdate ne tourne pas
+    clearWall();
+    wallTimer = setTimeout(() => {
+      if (session !== LOAD_SESSION) return;
+      finish();
+    }, 60000);
   };
 
-  // seek au départ
-  try { player.currentTime = start; } catch {}
+  const onPlay = () => {
+    if (session !== LOAD_SESSION) return;
+    // si l'utilisateur relance ou si le browser part ailleurs, on recale au début snippet
+    const ct = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+    if (ct < startSec - 0.25 || ct > endSec + 0.25) safeSeek(startSec);
+  };
 
-  // mini boucle pour s'assurer que le seek a bien été pris
-  let tries = 0;
-  seeker = setInterval(() => {
-    if (!isStillValid() || finished) { clearInterval(seeker); seeker = null; return; }
-    const ct = Number.isFinite(player.currentTime) ? player.currentTime : 0;
-    if (Math.abs(ct - start) < 0.8) { clearInterval(seeker); seeker = null; return; }
-    tries++;
-    try { player.currentTime = start; } catch {}
-    if (tries >= 15) { clearInterval(seeker); seeker = null; }
-  }, 120);
+  const onTime = () => {
+    if (session !== LOAD_SESSION) return;
+    if (endedOnce) return;
+    if (video.currentTime >= (endSec - CLIP_EPS)) finish();
+  };
 
-  if (autoplay) {
-    player.muted = false;
-    const p = player.play?.();
-    if (p && typeof p.catch === "function") p.catch(() => {});
+  const onEnded = () => {
+    if (session !== LOAD_SESSION) return;
+    finish();
+  };
+
+  video.addEventListener("playing", onPlaying);
+  video.addEventListener("play", onPlay);
+  video.addEventListener("timeupdate", onTime);
+  video.addEventListener("ended", onEnded);
+
+  const cleanup = () => {
+    clearWall();
+    video.removeEventListener("playing", onPlaying);
+    video.removeEventListener("play", onPlay);
+    video.removeEventListener("timeupdate", onTime);
+    video.removeEventListener("ended", onEnded);
+  };
+
+  return cleanup;
+}
+
+// reset hard + cleanup snippet
+function stopVideo(video) {
+  if (!video) return;
+  try { video.pause(); } catch {}
+
+  // cleanup snippet limiter si présent
+  if (typeof video._cleanupSnippet === "function") {
+    try { video._cleanupSnippet(); } catch {}
   }
+  video._cleanupSnippet = null;
+
+  try {
+    video.removeAttribute("src");
+    video.load();
+  } catch {}
+}
+
+async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, snippet = false } = {}) {
+  if (!video || !url) return false;
+
+  video.preload = "metadata";
+  video.playsInline = true;
+
+  // nettoie avant de recharger
+  stopVideo(video);
+
+  applyVolume();
+
+  for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+    if (session !== LOAD_SESSION) return false;
+
+    const delay = RETRY_DELAYS[attempt];
+    if (delay) await sleep(delay);
+
+    if (session !== LOAD_SESSION) return false;
+
+    try {
+      stopVideo(video);
+
+      // cachebuster sur retries
+      const src = attempt === 0 ? url : withCacheBuster(url);
+      video.src = src;
+      video.load();
+
+      await waitEventOrTimeout(
+        video,
+        { ok: ["loadedmetadata", "loadeddata", "canplay"], fail: ["error", "abort"] },
+        LOAD_TIMEOUT_MS
+      );
+
+      if (session !== LOAD_SESSION) return false;
+
+      // snippet setup
+      if (snippet) {
+        const dur = video.duration;
+        let start = CLIP_START_S;
+        let end = CLIP_START_S + CLIP_DURATION_S;
+
+        if (Number.isFinite(dur) && dur > 1) {
+          start = Math.min(CLIP_START_S, Math.max(0, dur - 0.25));
+          end = Math.min(start + CLIP_DURATION_S, Math.max(0, dur - 0.05));
+        }
+
+        video.dataset.clipStart = String(start);
+        video.dataset.clipEnd = String(end);
+
+        // seek au début snippet
+        try { video.currentTime = start; } catch {}
+
+        // installe limiter + mémorise cleanup
+        video._cleanupSnippet = installSnippetLimiter(video, start, end, session);
+      }
+
+      if (autoplay) {
+        try {
+          await video.play();
+        } catch {
+          // autoplay bloqué -> l'utilisateur peut cliquer sur la vidéo
+        }
+      }
+
+      return true;
+    } catch {
+      // retry
+    }
+  }
+
+  return false;
 }
 
 // ====== INIT CUSTOM UI ======
@@ -920,7 +935,7 @@ function applyFilters() {
       score: a._score,
       type: a._type,
 
-      // ✅ pour thèmes
+      // thèmes
       studio: a._studio || "",
       tags: Array.isArray(a._tags) ? a._tags : [],
       _year: a._year,
@@ -977,8 +992,8 @@ function updatePreview() {
 
 // ====== GAME UI ======
 function resetDuelUI() {
-  duelToken++;
-  mediaToken++;
+  // ✅ invalide tout chargement en cours (comme Tournament)
+  LOAD_SESSION++;
 
   stopVideo(leftVid);
   stopVideo(rightVid);
@@ -988,7 +1003,6 @@ function resetDuelUI() {
   leftPick.disabled = false;
   rightPick.disabled = false;
 
-  // ✅ reset feedback visuel
   [leftPick, rightPick].forEach((btn) => {
     btn.classList.remove("lor-chosen", "lor-loser", "lor-locked");
   });
@@ -1022,7 +1036,7 @@ function showMediaForMode() {
   rightVid.style.display = isSongs ? "block" : "none";
 }
 
-// ====== DUEL GENERATION (indépendant) ======
+// ====== DUEL GENERATION ======
 function generateNewDuelPair() {
   const basePool = applyFilters();
   if (!basePool || basePool.length < 2) return false;
@@ -1036,18 +1050,19 @@ function generateNewDuelPair() {
   return true;
 }
 
-function renderDuel() {
+async function renderDuel() {
   updateTopLabels();
   updateThemeLabel();
   updatePrompt();
   showMediaForMode();
 
-  // labels
   leftTitle.textContent = currentMode === "songs" ? formatSongTitle(leftItem) : (leftItem?.title || "");
   rightTitle.textContent = currentMode === "songs" ? formatSongTitle(rightItem) : (rightItem?.title || "");
 
   // anime: images
   if (currentMode === "anime") {
+    stopVideo(leftVid);
+    stopVideo(rightVid);
     leftImg.src = leftItem?.image || "";
     rightImg.src = rightItem?.image || "";
     resultDiv.textContent = "";
@@ -1057,89 +1072,60 @@ function renderDuel() {
     return;
   }
 
-  // songs: gauche 45s/30s -> stop -> droite 45s/30s
-  const localDuel = duelToken;
-  const localMedia = mediaToken;
+  // songs: gestion type Tournament
+  const session = LOAD_SESSION;
+
+  // reset players
+  stopVideo(leftVid);
+  stopVideo(rightVid);
+  applyVolume();
 
   let rightReady = false;
   let leftFinished = false;
 
-  const forceStart = (v) => {
-    const s = parseFloat(v?.dataset?.clipStart || `${CLIP_START_S}`);
-    if (Number.isFinite(s)) {
-      try { v.currentTime = s; } catch {}
-    }
-  };
+  const startRightIfPossible = async () => {
+    if (session !== LOAD_SESSION) return;
+    if (!leftFinished || !rightReady) return;
 
-  const startRightIfPossible = () => {
-    if (localDuel !== duelToken || localMedia !== mediaToken) return;
-    if (!leftFinished) return;
-    if (!rightReady) return;
+    const st = parseFloat(rightVid.dataset.clipStart || String(CLIP_START_S));
+    if (Number.isFinite(st)) {
+      try { rightVid.currentTime = st; } catch {}
+    }
 
     applyVolume();
-    rightVid.muted = false;
-
-    // ✅ force bien à 45 juste avant play
-    forceStart(rightVid);
-
-    const p = rightVid.play?.();
-    if (p && typeof p.catch === "function") p.catch(() => {});
+    try { await rightVid.play(); } catch {}
   };
 
-  // reset players
-  [leftVid, rightVid].forEach((v) => {
-    try { v.pause(); } catch {}
-    v.ontimeupdate = null;
-    v.onended = null;
-    v.onplay = null;
-    v.removeAttribute("src");
-    v.load();
-    v.muted = false;
-    v.poster = "";
-    v.removeAttribute("poster");
+  // quand LEFT finit -> start RIGHT
+  const onLeftDone = () => {
+    if (session !== LOAD_SESSION) return;
+    leftFinished = true;
+    startRightIfPossible();
+  };
+
+  leftVid.addEventListener("snippetended", onLeftDone, { once: true });
+  leftVid.addEventListener("ended", onLeftDone, { once: true });
+
+  // charge RIGHT (sans autoplay)
+  const rightPromise = (rightItem?.url)
+    ? loadVideoWithRetry(rightVid, rightItem.url, { autoplay: false, session, snippet: true })
+    : Promise.resolve(false);
+
+  rightPromise.then((ok) => {
+    if (session !== LOAD_SESSION) return;
+    rightReady = !!ok;
+    startRightIfPossible();
   });
 
-  applyVolume();
-
-  // LEFT
+  // charge LEFT + autoplay
   if (leftItem?.url) {
-    loadMediaWithRetries(leftVid, leftItem.url, localDuel, localMedia, {
-      onReady: () => {
-        if (localDuel !== duelToken || localMedia !== mediaToken) return;
+    const okLeft = await loadVideoWithRetry(leftVid, leftItem.url, { autoplay: true, session, snippet: true });
+    if (session !== LOAD_SESSION) return;
 
-        applyVolume();
-        leftVid.muted = false;
-
-        setupClipPlayback(leftVid, localDuel, localMedia, {
-          autoplay: true,
-          onDone: () => {
-            if (localDuel !== duelToken || localMedia !== mediaToken) return;
-            leftFinished = true;
-            startRightIfPossible();
-          },
-        });
-      },
-    });
+    // si la gauche ne charge pas, on la considère "finie" pour pouvoir lancer la droite
+    if (!okLeft) onLeftDone();
   } else {
-    leftFinished = true;
-  }
-
-  // RIGHT
-  if (rightItem?.url) {
-    loadMediaWithRetries(rightVid, rightItem.url, localDuel, localMedia, {
-      onReady: () => {
-        if (localDuel !== duelToken || localMedia !== mediaToken) return;
-
-        applyVolume();
-        rightVid.muted = false;
-
-        // prépare le clip (seek 45 + stop à 30s)
-        setupClipPlayback(rightVid, localDuel, localMedia, { autoplay: false });
-
-        rightReady = true;
-        startRightIfPossible();
-      },
-    });
+    onLeftDone();
   }
 
   resultDiv.textContent = "";
@@ -1149,6 +1135,8 @@ function renderDuel() {
 }
 
 function finishGame(message) {
+  // stop tout
+  LOAD_SESSION++;
   stopVideo(leftVid);
   stopVideo(rightVid);
 
@@ -1186,7 +1174,6 @@ function handlePick(side) {
   leftPick.disabled = true;
   rightPick.disabled = true;
 
-  // ✅ lock visuel + highlight choix
   leftPick.classList.add("lor-locked");
   rightPick.classList.add("lor-locked");
 
@@ -1197,8 +1184,13 @@ function handlePick(side) {
   otherBtn.classList.add("lor-loser");
 
   if (currentMode === "songs") {
+    // stop juste la lecture + enlève limiter (sans relancer réseau)
     try { leftVid.pause(); } catch {}
     try { rightVid.pause(); } catch {}
+    if (typeof leftVid._cleanupSnippet === "function") { try { leftVid._cleanupSnippet(); } catch {} }
+    if (typeof rightVid._cleanupSnippet === "function") { try { rightVid._cleanupSnippet(); } catch {} }
+    leftVid._cleanupSnippet = null;
+    rightVid._cleanupSnippet = null;
   }
 
   const chosen = side === "left" ? leftItem : rightItem;
