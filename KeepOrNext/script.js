@@ -1240,7 +1240,7 @@ function startGame() {
 }
 
 function clearChoiceThemeForNewTurn() {
-  hideTheme();
+  // ✅ on ne cache plus le thème pendant le round
   if (resultDiv) resultDiv.textContent = "";
   clearChoiceEffects();
 }
@@ -1371,6 +1371,9 @@ function renderTurn() {
   if (keepBtn) keepBtn.disabled = false;
   if (nextChoiceBtn) nextChoiceBtn.disabled = false;
 
+  // ✅ thème visible dès le début du round
+  showTheme(currentTheme?.label || "Libre");
+
   setCardContent("left", leftItem, { revealed: true, autoplay: true });
   hideRightCard();
 
@@ -1415,8 +1418,6 @@ function handleChoice(choice) {
 
   revealRightCard(rightItem);
 
-  // ✅ Reveal thème seulement après le choix
-  showTheme(currentTheme?.label || "Libre");
 
   const isLast = currentTurn >= totalTurns;
 
