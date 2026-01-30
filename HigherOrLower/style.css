@@ -521,3 +521,61 @@ body.light .hol-card{
   header h1{ font-size: 1.19rem; }
   .info-tip{ width: min(320px, 86vw); right: 0; }
 }
+
+/* ===== FEEDBACK VISUEL (comme image 3) ===== */
+.hol-card{
+  position: relative;
+  overflow: hidden; /* pour que l'overlay respecte les arrondis */
+  transition: transform 0.14s, box-shadow 0.14s, border-color 0.14s, filter 0.14s, opacity 0.14s;
+}
+
+/* Quand on a répondu, on bloque le hover qui bouge */
+.hol-duel.is-locked .hol-card:hover{
+  transform: none;
+}
+
+/* Carte grisée */
+.hol-card.is-dim{
+  opacity: 0.35;
+  filter: grayscale(1) brightness(0.75);
+}
+.hol-card.is-dim::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background: rgba(0,0,0,0.55);
+  pointer-events:none;
+}
+
+/* Carte validée (vert) */
+.hol-card.is-correct{
+  border-color: rgba(38,255,128,0.95);
+  box-shadow: 0 0 0 2px rgba(38,255,128,0.35), 0 0 24px rgba(38,255,128,0.28);
+}
+
+/* Carte erreur (rouge) */
+.hol-card.is-wrong{
+  border-color: rgba(255,80,80,0.95);
+  box-shadow: 0 0 0 2px rgba(255,80,80,0.35), 0 0 24px rgba(255,80,80,0.22);
+}
+
+/* Petit badge ✓ / ✕ (optionnel mais + visuel) */
+.hol-card.is-correct::after,
+.hol-card.is-wrong::after{
+  position:absolute;
+  top:10px;
+  right:12px;
+  font-weight: 900;
+  font-size: 18px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.18);
+}
+.hol-card.is-correct::after{ content:"✓"; }
+.hol-card.is-wrong::after{ content:"✕"; }
+
+/* Light mode: overlay plus clair */
+body.light .hol-card.is-dim::before{
+  background: rgba(255,255,255,0.55);
+}
