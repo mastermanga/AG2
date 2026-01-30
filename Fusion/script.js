@@ -16,6 +16,8 @@ const STAGE_PENALTY = 1000;
 const STAGES = 3; // 3 manches
 const MIN_TITLES_TO_START = 64;
 
+const STAGE_TIME = 10; // ✅ 10s par manche
+
 // Taille interne du canvas (CSS scale ensuite)
 const CANVAS_W = 420;
 const CANVAS_H = 560;
@@ -161,6 +163,62 @@ let stageIndex = 0; // 0..2
 let gameEnded = false;
 
 let transitionMsg = null; // message affiché après passage de manche
+
+// ====== Stage timer (10s) ======
+let stageTimerInterval = null;
+let stageTimerTimeout = null;
+let stageDeadline = 0;
+let stageTimerToken = 0;
+let stageBaseLabel = "";
+
+function stopStageTimer() {
+  stageTimerToken++; // invalide les callbacks en cours
+
+  if (stageTimerInterval) clearInterval(stageTimerInterval);
+  if (stageTimerTimeout) clearTimeout(stageTimerTimeout);
+
+  stageTimerInterval = null;
+  stageTimerTimeout = null;
+
+  // reset visuel
+  timerDisplay.classList.remove("timer-urgent", "timer-shake");
+}
+
+function updateTimerLabel() {
+  const left = Math.max(0, Math.ceil((stageDeadline - Date.now()) / 1000));
+
+  // effet "urgence" si <= 3s
+  if (left <= 3 && left > 0) {
+    timerDisplay.classList.add("timer-urgent");
+    timerDisplay.classList.toggle("timer-shake", left <= 2);
+  } else {
+    timerDisplay.classList.remove("timer-urgent", "timer-shake");
+  }
+
+  timerDisplay.textContent = `${stageBaseLabel} — ⏱️ ${left}s`;
+}
+
+function startStageTimer(baseLabel) {
+  stopStageTimer();
+
+  stageBaseLabel = baseLabel;
+  stageDeadline = Date.now() + STAGE_TIME * 1000;
+
+  const token = stageTimerToken;
+
+  updateTimerLabel();
+
+  stageTimerInterval = setInterval(() => {
+    if (gameEnded || token !== stageTimerToken) return;
+    updateTimerLabel();
+  }, 250);
+
+  stageTimerTimeout = setTimeout(() => {
+    if (gameEnded || token !== stageTimerToken) return;
+    stopStageTimer();
+    advanceStage("timeout");
+  }, STAGE_TIME * 1000);
+}
 
 // ====== UI show/hide ======
 function showCustomization() {
@@ -405,6 +463,8 @@ async function drawFusion2(canvas, urlA, urlB, orientation /* 'vertical' | 'hori
 
 // ====== Game flow ======
 function resetRoundUI() {
+  stopStageTimer();
+
   if (roundLabel) roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
 
   container.innerHTML = "";
@@ -446,10 +506,10 @@ function pickAnimeSafely() {
 async function renderStage() {
   if (!currentAnime || gameEnded) return;
 
-  timerDisplay.textContent = getStageLabel(stageIndex);
-  setScoreBar(stageMaxScore(stageIndex));
+  // stoppe un timer précédent pendant la génération
+  stopStageTimer();
 
-  // Message de transition (mauvais/skip) affiché sur la nouvelle manche
+  // Message de transition (mauvais/skip/timeout) affiché sur la nouvelle manche
   if (transitionMsg) {
     feedback.textContent = transitionMsg;
     feedback.className = "info";
@@ -465,6 +525,10 @@ async function renderStage() {
 
   const canvas = makeCanvas();
 
+  let baseLabel = getStageLabel(stageIndex);
+  timerDisplay.textContent = `${baseLabel} — ⏱️ ${STAGE_TIME}s`;
+  setScoreBar(stageMaxScore(stageIndex));
+
   try {
     if (stageIndex === 0) {
       const picks = pickRandomUnique(currentAnime._validCharacters, 4);
@@ -473,6 +537,7 @@ async function renderStage() {
       container.innerHTML = "";
       container.appendChild(canvas);
       await drawFusion4(canvas, urls);
+
     } else if (stageIndex === 1) {
       const picks = pickRandomUnique(currentAnime._validTopCharacters, 4);
       const urls = picks.map(p => p.image);
@@ -480,6 +545,7 @@ async function renderStage() {
       container.innerHTML = "";
       container.appendChild(canvas);
       await drawFusion4(canvas, urls);
+
     } else {
       // Manche 3 : 2 persos top, moitié/moitié (vertical ou horizontal)
       const top = currentAnime._validTopCharacters.slice(0, 2);
@@ -492,13 +558,14 @@ async function renderStage() {
       container.appendChild(canvas);
       await drawFusion2(canvas, a.image, b.image, orientation);
 
-      // Petit hint discret via le timer
-      timerDisplay.textContent = `${getStageLabel(stageIndex)} — split ${orientation === "vertical" ? "vertical" : "horizontal"}`;
+      baseLabel = `${getStageLabel(stageIndex)} — split ${orientation === "vertical" ? "vertical" : "horizontal"}`;
     }
+
+    // ✅ Timer démarre quand la fusion est prête
+    startStageTimer(baseLabel);
+
   } catch (e) {
-    // Si une image fail malgré les filtres -> on relance la manche (rare)
     container.innerHTML = `<div class="fusion-loading">⚠️ Image invalide, relance…</div>`;
-    // mini reroll : on retente en re-render
     setTimeout(() => {
       if (!gameEnded) renderStage();
     }, 250);
@@ -518,14 +585,18 @@ function startNewRound() {
   renderStage();
 }
 
-function advanceStage(reason /* 'wrong' | 'skip' */) {
+function advanceStage(reason /* 'wrong' | 'skip' | 'timeout' */) {
   if (!currentAnime || gameEnded) return;
+
+  // on stoppe le timer dès qu’on quitte la manche
+  stopStageTimer();
 
   if (stageIndex < STAGES - 1) {
     stageIndex += 1;
 
     if (reason === "wrong") transitionMsg = "❌ Mauvaise réponse — manche suivante.";
     if (reason === "skip") transitionMsg = "⏭️ Manche suivante.";
+    if (reason === "timeout") transitionMsg = "⏱️ Temps écoulé — manche suivante.";
 
     // reset input
     input.value = "";
@@ -536,11 +607,14 @@ function advanceStage(reason /* 'wrong' | 'skip' */) {
     renderStage();
   } else {
     // fin des manches -> perdu
-    loseRound(reason === "skip" ? "⏭️ Fin des manches !" : "❌ Mauvaise réponse.");
+    if (reason === "skip") loseRound("⏭️ Fin des manches !");
+    else if (reason === "timeout") loseRound("⏱️ Temps écoulé.");
+    else loseRound("❌ Mauvaise réponse.");
   }
 }
 
 function endRound(roundScore, won, messageHtml) {
+  stopStageTimer();
   gameEnded = true;
 
   input.disabled = true;
@@ -607,6 +681,9 @@ function checkGuess() {
     feedback.className = "error";
     return;
   }
+
+  // ✅ le joueur a tenté : on stoppe le timer
+  stopStageTimer();
 
   const ok = normalizeTitle(guess) === normalizeTitle(currentAnime._title);
 
@@ -749,4 +826,3 @@ fetch("../data/licenses_only.json")
     showCustomization();
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
-
