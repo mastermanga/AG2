@@ -9,7 +9,7 @@
 // - Score: tolérance ±0 puis ±0.1 puis ±0.2 ...
 // - Pour tous les critères: on prend TOUT ce qui match, puis random pick 32 dans ce pool
 // - Songs: start à 45s, durée 30s (extrait), autoplay gauche
-// - Parcours: si ?parcours=1 -> ne montre pas le menu tournament, auto-start avec params URL si présents
+// - Parcours: si ?parcours=1 -> auto-start + continue + postMessage
 // =======================
 
 // =======================
@@ -44,12 +44,59 @@ const PARAM_SCORE = urlParams.get("scorePercent") || urlParams.get("score");
 const PARAM_YMIN = urlParams.get("yearMin") || urlParams.get("yMin");
 const PARAM_YMAX = urlParams.get("yearMax") || urlParams.get("yMax");
 
+// ✅ Parcours: fallback config globale si tu l'utilises ailleurs
+const PARCOURS_CFG_KEY = "AG_parcours_filters";
+let parcoursSent = false;
+
+function loadParcoursCfg() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_CFG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function sendParcoursScore(score = 1, total = 1) {
+  if (parcoursSent) return;
+  parcoursSent = true;
+
+  try {
+    parent.postMessage(
+      {
+        parcoursScore: {
+          label: "Anime Tournament",
+          score,
+          total,
+        },
+      },
+      "*"
+    );
+  } catch (e) {
+    console.warn("postMessage parcours failed:", e);
+  }
+}
+
+// ✅ Anti-flash parcours (script chargé en bas => DOM déjà présent)
+if (IS_PARCOURS) {
+  document.body.classList.add("game-started");
+
+  const backBtn = document.getElementById("back-to-menu");
+  if (backBtn) backBtn.style.display = "none";
+
+  const custom = document.getElementById("custom-panel");
+  if (custom) custom.style.display = "none";
+
+  const game = document.getElementById("game-panel");
+  if (game) game.style.display = "block";
+}
+
 // =======================
 // GLOBAL STATE
 // =======================
 let ALL_TITLES = [];
-let items = [];              // 32 items sélectionnés (animes OU songs)
-let mode = "anime";          // "anime" | "songs"
+let items = []; // 32 items sélectionnés (animes OU songs)
+let mode = "anime"; // "anime" | "songs"
 
 let losses = [];
 let eliminationOrder = [];
@@ -157,10 +204,7 @@ document.getElementById("back-to-menu")?.addEventListener("click", () => {
 
 document.getElementById("themeToggle")?.addEventListener("click", () => {
   document.body.classList.toggle("light");
-  localStorage.setItem(
-    "theme",
-    document.body.classList.contains("light") ? "light" : "dark"
-  );
+  localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -234,34 +278,33 @@ function updateVolumeVisibility() {
 }
 
 // =======================
-// THEME STRIP (auto-create if missing)
+// THEME INDICATOR (✅ utilise #theme-indicator)
 // =======================
-function ensureThemeStrip() {
-  let el = document.getElementById("content-theme");
+function getThemeEl() {
+  return document.getElementById("theme-indicator") || document.getElementById("content-theme");
+}
+
+function ensureThemeEl() {
+  let el = getThemeEl();
+  if (el) return el;
+
+  // fallback si jamais l'HTML n'a pas #theme-indicator
   const roundBox = document.getElementById("round-indicator");
-  if (el || !roundBox) return el;
+  if (!roundBox) return null;
 
   el = document.createElement("div");
-  el.id = "content-theme";
-  el.className = "main-block";
-  el.style.maxWidth = "920px";
-  el.style.padding = "0.85rem 1.2rem";
-  el.style.margin = "0 auto 0.8rem auto";
-  el.style.fontWeight = "900";
-  el.style.fontSize = "1.02rem";
-  el.style.letterSpacing = "0.3px";
-  el.style.textAlign = "center";
-
+  el.id = "theme-indicator";
+  el.className = "theme-indicator";
   roundBox.insertAdjacentElement("afterend", el);
   return el;
 }
 
 function updateThemeStrip() {
-  const el = ensureThemeStrip();
+  const el = ensureThemeEl();
   if (!el) return;
 
   const inGame = document.body.classList.contains("game-started");
-  el.style.display = inGame ? "" : "none";
+  el.style.display = inGame ? "flex" : "none";
 
   const label = CURRENT_CONTENT_THEME?.label || "Libre";
   el.textContent = `🎯 Thème contenu : ${label}`;
@@ -278,7 +321,7 @@ function showCustomization() {
 
   const gameEls = [
     document.getElementById("round-indicator"),
-    document.getElementById("content-theme"),
+    getThemeEl(),
     document.getElementById("volumeBar"),
     document.getElementById("duel-container"),
     document.getElementById("next-match-btn"),
@@ -300,6 +343,9 @@ function showGame() {
 
   const roundBox = document.getElementById("round-indicator");
   if (roundBox) roundBox.style.display = "";
+
+  const themeEl = ensureThemeEl();
+  if (themeEl) themeEl.style.display = "flex";
 
   const classement = document.getElementById("classement");
   if (classement) classement.style.display = "none";
@@ -415,11 +461,22 @@ function ensureDefaultSongs() {
 
 // =======================
 // PARCOURS -> appliquer params à l’UI (si présents)
+// + fallback localStorage AG_parcours_filters
 // =======================
 function applyParcoursParamsToUI() {
-  // mode forcé
-  if (FORCED_MODE === "anime" || FORCED_MODE === "songs") {
-    mode = FORCED_MODE;
+  const cfg = loadParcoursCfg();
+
+  const has = (x) => x != null && x !== "";
+
+  // mode forcé (URL > localStorage)
+  const modeFromCfg = (cfg && (cfg.mode || cfg.tournamentMode)) || null;
+  const wantedMode =
+    (FORCED_MODE === "anime" || FORCED_MODE === "songs") ? FORCED_MODE :
+    (modeFromCfg === "anime" || modeFromCfg === "songs") ? modeFromCfg :
+    null;
+
+  if (wantedMode) {
+    mode = wantedMode;
     syncModeButtons();
   }
 
@@ -430,20 +487,26 @@ function applyParcoursParamsToUI() {
   const yMaxEl = document.getElementById("yearMax");
 
   const trySetInt = (el, val, min, max) => {
-    if (!el || val == null || val === "") return;
+    if (!el || !has(val)) return;
     const n = parseInt(val, 10);
     if (!Number.isFinite(n)) return;
     el.value = String(clamp(n, min, max));
   };
 
-  trySetInt(popEl, PARAM_POP, 1, 100);
-  trySetInt(scoreEl, PARAM_SCORE, 1, 100);
-  trySetInt(yMinEl, PARAM_YMIN, 1900, 2100);
-  trySetInt(yMaxEl, PARAM_YMAX, 1900, 2100);
+  // URL > cfg
+  trySetInt(popEl, has(PARAM_POP) ? PARAM_POP : cfg?.popPercent, 1, 100);
+  trySetInt(scoreEl, has(PARAM_SCORE) ? PARAM_SCORE : cfg?.scorePercent, 1, 100);
+  trySetInt(yMinEl, has(PARAM_YMIN) ? PARAM_YMIN : cfg?.yearMin, 1900, 2100);
+  trySetInt(yMaxEl, has(PARAM_YMAX) ? PARAM_YMAX : cfg?.yearMax, 1900, 2100);
 
-  // types pills
-  if (PARAM_TYPES) {
-    const want = new Set(PARAM_TYPES.split(",").map(s => s.trim()).filter(Boolean));
+  // types pills (URL > cfg.types)
+  const typesList =
+    has(PARAM_TYPES) ? PARAM_TYPES.split(",").map(s => s.trim()).filter(Boolean)
+    : Array.isArray(cfg?.types) ? cfg.types
+    : null;
+
+  if (typesList && typesList.length) {
+    const want = new Set(typesList);
     const pills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
     if (pills.length) {
       pills.forEach(p => {
@@ -455,9 +518,14 @@ function applyParcoursParamsToUI() {
     }
   }
 
-  // songs pills
-  if (PARAM_SONGS) {
-    const want = new Set(PARAM_SONGS.split(",").map(s => s.trim().toLowerCase()).filter(Boolean));
+  // songs pills (URL > cfg.songs)
+  const songsList =
+    has(PARAM_SONGS) ? PARAM_SONGS.split(",").map(s => s.trim().toLowerCase()).filter(Boolean)
+    : Array.isArray(cfg?.songs) ? cfg.songs.map(x => String(x).toLowerCase())
+    : null;
+
+  if (songsList && songsList.length) {
+    const want = new Set(songsList);
     const pills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
     if (pills.length) {
       pills.forEach(p => {
@@ -505,13 +573,9 @@ function readOptions() {
   if (yMinVal) yMinVal.textContent = String(yMin);
   if (yMaxVal) yMaxVal.textContent = String(yMax);
 
-  const types = new Set(
-    [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type)
-  );
+  const types = new Set([...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type));
 
-  const songKinds = new Set(
-    [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song)
-  );
+  const songKinds = new Set([...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song));
 
   return {
     pop,
@@ -529,11 +593,7 @@ function readOptions() {
 // FILTER TITLES
 // =======================
 function filterTitles(data, o) {
-  let arr = data.filter(a =>
-    o.types.has(a._type) &&
-    a._year >= o.yMin &&
-    a._year <= o.yMax
-  );
+  let arr = data.filter((a) => o.types.has(a._type) && a._year >= o.yMin && a._year <= o.yMax);
 
   arr.sort((a, b) => b._members - a._members);
   arr = arr.slice(0, Math.ceil(arr.length * o.pop));
@@ -564,11 +624,9 @@ function buildSongsWithMeta(titles, o) {
         _key: `song|${t.mal_id || ""}|${kindCode}|${s.number ?? ""}|${s.name ?? ""}|${url}`,
 
         video: url,
-        label: `${t._title} ${kindHuman} ${s.number ?? ""} : ${s.name ?? ""}${artistsLabel}`
-          .replace(/\s+/g, " ")
-          .trim(),
+        label: `${t._title} ${kindHuman} ${s.number ?? ""} : ${s.name ?? ""}${artistsLabel}`.replace(/\s+/g, " ").trim(),
 
-        // ✅ meta anime (pour score/pop/filtrage + thèmes)
+        // meta anime
         animeId: t.mal_id || null,
         animeTitle: t._title || "",
 
@@ -598,11 +656,7 @@ function buildSongsWithMeta(titles, o) {
 }
 
 function filterSongs(data, o) {
-  const titles = data.filter(a =>
-    o.types.has(a._type) &&
-    a._year >= o.yMin &&
-    a._year <= o.yMax
-  );
+  const titles = data.filter((a) => o.types.has(a._type) && a._year >= o.yMin && a._year <= o.yMax);
 
   let songs = buildSongsWithMeta(titles, o);
 
@@ -632,18 +686,17 @@ function pickUniqueN(pool, n) {
 }
 
 function summarizeForLabel(arr, max = 3) {
-  const clean = (arr || []).map(x => String(x || "").trim()).filter(Boolean);
+  const clean = (arr || []).map((x) => String(x || "").trim()).filter(Boolean);
   if (clean.length <= max) return clean.join(" + ");
   return clean.slice(0, max).join(" + ") + ` + ${clean.length - max} autres`;
 }
 
-// YEAR-like (0, ±1, ±2, ...) jusqu'à minSize
 function buildYearWindowPool(basePool, getYearFn, centerYear, minSize = THEME_POOL_SIZE) {
   const y0 = Number.isFinite(+centerYear) ? +centerYear : 0;
   if (!y0) return null;
 
   for (let delta = 0; delta <= 120; delta++) {
-    const pool = basePool.filter(it => {
+    const pool = basePool.filter((it) => {
       const y = +getYearFn(it) || 0;
       return y && Math.abs(y - y0) <= delta;
     });
@@ -654,14 +707,13 @@ function buildYearWindowPool(basePool, getYearFn, centerYear, minSize = THEME_PO
   return null;
 }
 
-// SCORE-like (±0, ±0.1, ±0.2, ...)
 function buildScoreWindowPool(basePool, getScoreFn, centerScore, minSize = THEME_POOL_SIZE) {
   const sc0 = Number.isFinite(+centerScore) ? +centerScore : 0;
   if (!sc0) return null;
 
   for (let step = 0; step <= 10.0; step += 0.1) {
     const delta = Math.round(step * 10) / 10;
-    const pool = basePool.filter(it => {
+    const pool = basePool.filter((it) => {
       const sc = +getScoreFn(it) || 0;
       return sc && Math.abs(sc - sc0) <= delta;
     });
@@ -672,31 +724,28 @@ function buildScoreWindowPool(basePool, getScoreFn, centerScore, minSize = THEME
   return null;
 }
 
-// POP: calc top% depuis un tableau global trié desc
 function topPercentFromValue(sortedDesc, value) {
   const vals = sortedDesc || [];
   const n = vals.length;
   const v = +value || 0;
   if (!n || !v) return 100;
 
-  // nb de vals strictement > v (binary search sur desc)
-  let lo = 0, hi = n;
+  let lo = 0,
+    hi = n;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
     if (vals[mid] > v) lo = mid + 1;
     else hi = mid;
   }
-  const rank = lo + 1; // 1..n
+  const rank = lo + 1;
   return clamp(Math.ceil((rank / n) * 100), 1, 100);
 }
 
-// band Top A–B% (bin 5%), puis élargissement ±5, ±10...
 function buildPopPercentBandPool(basePool, getPopFn, globalSortedDesc, seedValue, minSize = THEME_POOL_SIZE) {
   const seedP = topPercentFromValue(globalSortedDesc, seedValue);
 
-  // bin 5% (30 tombe dans 25–30)
-  const baseStart = Math.floor((seedP - 1) / 5) * 5; // 0,5,10...
-  const baseEnd = baseStart + 5; // 5..100
+  const baseStart = Math.floor((seedP - 1) / 5) * 5;
+  const baseEnd = baseStart + 5;
 
   const cache = new Map();
   const getP = (it) => {
@@ -710,10 +759,10 @@ function buildPopPercentBandPool(basePool, getPopFn, globalSortedDesc, seedValue
   for (let expand = 0; expand <= 100; expand += 5) {
     const s0 = clamp(baseStart - expand, 0, 95);
     const e0 = clamp(baseEnd + expand, 5, 100);
-    const lo = (s0 === 0) ? 1 : s0;
+    const lo = s0 === 0 ? 1 : s0;
     const hi = e0;
 
-    const pool = basePool.filter(it => {
+    const pool = basePool.filter((it) => {
       const p = getP(it);
       return p >= lo && p <= hi;
     });
@@ -725,10 +774,9 @@ function buildPopPercentBandPool(basePool, getPopFn, globalSortedDesc, seedValue
   return null;
 }
 
-// cumul générique (même critère): on ajoute des seeds jusqu'à atteindre minSize
 function buildCumulativePool(basePool, getValueFromItem, matchesValueFn, seedValue, minSize = THEME_POOL_SIZE, safetyMax = 600) {
   const usedValues = [];
-  const usedKey = new Set(); // valeurs déjà ajoutées
+  const usedKey = new Set();
   const mapByKey = new Map();
 
   const addValue = (val) => {
@@ -764,7 +812,6 @@ function buildCumulativePool(basePool, getValueFromItem, matchesValueFn, seedVal
   return { pool: out, values: usedValues };
 }
 
-// cumul TAG (valeur = un tag, getValueFromItem = tag aléatoire de l'item)
 function buildTagCumulativePool(basePool, getTagsFn, seedTag, minSize = THEME_POOL_SIZE) {
   const getValueFromItem = (it) => {
     const tags = getTagsFn(it);
@@ -773,12 +820,11 @@ function buildTagCumulativePool(basePool, getTagsFn, seedTag, minSize = THEME_PO
   };
   const matches = (it, v, key) => {
     const tags = getTagsFn(it);
-    return Array.isArray(tags) && tags.some(x => norm(x) === key);
+    return Array.isArray(tags) && tags.some((x) => norm(x) === key);
   };
   return buildCumulativePool(basePool, getValueFromItem, matches, seedTag, minSize, 900);
 }
 
-// cumul ARTIST (songs)
 function buildArtistCumulativePool(basePool, getArtistsFn, seedArtist, minSize = THEME_POOL_SIZE) {
   const getValueFromItem = (it) => {
     const arr = getArtistsFn(it);
@@ -787,19 +833,17 @@ function buildArtistCumulativePool(basePool, getArtistsFn, seedArtist, minSize =
   };
   const matches = (it, v, key) => {
     const arr = getArtistsFn(it);
-    return Array.isArray(arr) && arr.some(x => norm(x) === key);
+    return Array.isArray(arr) && arr.some((x) => norm(x) === key);
   };
   return buildCumulativePool(basePool, getValueFromItem, matches, seedArtist, minSize, 1200);
 }
 
-// cumul STUDIO (anime + songs)
 function buildStudioCumulativePool(basePool, getStudioFn, seedStudio, minSize = THEME_POOL_SIZE) {
   const getValueFromItem = (it) => getStudioFn(it);
   const matches = (it, v) => includesStudio(getStudioFn(it), v);
   return buildCumulativePool(basePool, getValueFromItem, matches, seedStudio, minSize, 900);
 }
 
-// cumul ANIME (songs): valeur = animeKey (id si possible sinon title)
 function buildAnimeCumulativePool(basePool, getAnimeKeyFn, getAnimeLabelFn, seedItem, minSize = THEME_POOL_SIZE) {
   const usedLabels = [];
   const usedKey = new Set();
@@ -842,15 +886,13 @@ function buildAnimeCumulativePool(basePool, getAnimeKeyFn, getAnimeLabelFn, seed
 }
 
 function pickContentTheme64(basePool, modeLocal) {
-  // basePool doit être >= 32 pour que les thèmes aient une chance
   if (!Array.isArray(basePool) || basePool.length < THEME_POOL_SIZE) {
     return { crit: "FREE", label: "Libre", pool: Array.isArray(basePool) ? basePool : [] };
   }
 
-  // ✅ critères (Libre a la même chance que chaque autre)
-  const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR"]; // 6
-  const criteriaSongs = ["FREE", "SONG_YEAR", "ANIME_YEAR", "ANIME", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST"]; // 9
-  const criteria = (modeLocal === "songs") ? criteriaSongs : criteriaAnime;
+  const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR"];
+  const criteriaSongs = ["FREE", "SONG_YEAR", "ANIME_YEAR", "ANIME", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST"];
+  const criteria = modeLocal === "songs" ? criteriaSongs : criteriaAnime;
 
   const getYear = (it) => it?._year || it?.year || 0;
   const getStudio = (it) => it?._studio || it?.studio || "";
@@ -858,10 +900,9 @@ function pickContentTheme64(basePool, modeLocal) {
   const getPop = (it) => it?._members || it?.members || 0;
 
   const getSongYear = (it) => (Number.isFinite(+it?.songYear) ? +it.songYear : 0);
-  const getTagsArr = (it) => Array.isArray(it?.tags) ? it.tags : (Array.isArray(it?._tags) ? it._tags : []);
-  const getArtistsArr = (it) => Array.isArray(it?.artistsArr) ? it.artistsArr : [];
+  const getTagsArr = (it) => (Array.isArray(it?.tags) ? it.tags : Array.isArray(it?._tags) ? it._tags : []);
+  const getArtistsArr = (it) => (Array.isArray(it?.artistsArr) ? it.artistsArr : []);
 
-  // songs: anime key/label
   const getAnimeKey = (it) => {
     if (it?.animeId != null && it.animeId !== "") return String(it.animeId);
     const t = String(it?.animeTitle || "").trim();
@@ -869,10 +910,9 @@ function pickContentTheme64(basePool, modeLocal) {
   };
   const getAnimeLabel = (it) => String(it?.animeTitle || it?.title || it?._title || it?.animeId || "Anime").trim();
 
-  // ✅ référence global pop: MEMBERS des titres complets
   const globalSortedMembersDesc = ALL_TITLES
-    .map(t => +t?._members || 0)
-    .filter(v => Number.isFinite(v) && v > 0)
+    .map((t) => +t?._members || 0)
+    .filter((v) => Number.isFinite(v) && v > 0)
     .sort((a, b) => b - a);
 
   const MAX_TRIES = 200;
@@ -880,7 +920,6 @@ function pickContentTheme64(basePool, modeLocal) {
   for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
     const crit = criteria[Math.floor(Math.random() * criteria.length)];
 
-    // FREE (on garde tout, puis random pick 32 plus tard)
     if (crit === "FREE") {
       return { crit: "FREE", label: "Libre", pool: basePool };
     }
@@ -888,7 +927,6 @@ function pickContentTheme64(basePool, modeLocal) {
     const seed = basePool[Math.floor(Math.random() * basePool.length)];
     if (!seed) continue;
 
-    // YEAR (anime) -> 0,±1,±2...
     if (crit === "YEAR") {
       const y = getYear(seed);
       const built = buildYearWindowPool(basePool, getYear, y, THEME_POOL_SIZE);
@@ -898,7 +936,6 @@ function pickContentTheme64(basePool, modeLocal) {
       return { crit, label, pool: built.pool };
     }
 
-    // SONG_YEAR (songs) -> 0,±1,±2...
     if (crit === "SONG_YEAR" && modeLocal === "songs") {
       const y = getSongYear(seed);
       const built = buildYearWindowPool(basePool, getSongYear, y, THEME_POOL_SIZE);
@@ -908,9 +945,8 @@ function pickContentTheme64(basePool, modeLocal) {
       return { crit, label, pool: built.pool };
     }
 
-    // ANIME_YEAR (songs) -> année de l'anime, même logique que YEAR anime
     if (crit === "ANIME_YEAR" && modeLocal === "songs") {
-      const y = getYear(seed); // songs ont _year = année anime
+      const y = getYear(seed);
       const built = buildYearWindowPool(basePool, getYear, y, THEME_POOL_SIZE);
       if (!built || built.pool.length < THEME_POOL_SIZE) continue;
 
@@ -918,7 +954,6 @@ function pickContentTheme64(basePool, modeLocal) {
       return { crit, label, pool: built.pool };
     }
 
-    // ANIME (songs) — cumul d'animes: AnimeA + AnimeB ... jusqu'à >=32
     if (crit === "ANIME" && modeLocal === "songs") {
       const built = buildAnimeCumulativePool(basePool, getAnimeKey, getAnimeLabel, seed, THEME_POOL_SIZE);
       if (!built || built.pool.length < THEME_POOL_SIZE) continue;
@@ -927,7 +962,6 @@ function pickContentTheme64(basePool, modeLocal) {
       return { crit, label, pool: built.pool };
     }
 
-    // STUDIO (anime + songs) — cumul studios
     if (crit === "STUDIO") {
       const seedStudio = getStudio(seed);
       if (!String(seedStudio || "").trim()) continue;
@@ -939,7 +973,6 @@ function pickContentTheme64(basePool, modeLocal) {
       return { crit, label, pool: built.pool };
     }
 
-    // TAG (anime + songs) — cumul tags
     if (crit === "TAG") {
       const tags = getTagsArr(seed);
       if (!Array.isArray(tags) || !tags.length) continue;
@@ -954,7 +987,6 @@ function pickContentTheme64(basePool, modeLocal) {
       return { crit, label, pool: built.pool };
     }
 
-    // ARTIST (songs) — cumul artistes
     if (crit === "ARTIST" && modeLocal === "songs") {
       const arts = getArtistsArr(seed).filter(Boolean);
       if (!arts.length) continue;
@@ -969,7 +1001,6 @@ function pickContentTheme64(basePool, modeLocal) {
       return { crit, label, pool: built.pool };
     }
 
-    // SCORE_NEAR (anime + songs) — fenêtre ±0, ±0.1, ...
     if (crit === "SCORE_NEAR") {
       const sc = getScore(seed);
       if (!sc) continue;
@@ -981,7 +1012,6 @@ function pickContentTheme64(basePool, modeLocal) {
       return { crit, label, pool: built.pool };
     }
 
-    // POP_NEAR (anime + songs) — band Top A–B% + élargissement
     if (crit === "POP_NEAR") {
       const pop = getPop(seed);
       if (!pop) continue;
@@ -989,16 +1019,11 @@ function pickContentTheme64(basePool, modeLocal) {
       const built = buildPopPercentBandPool(basePool, getPop, globalSortedMembersDesc, pop, THEME_POOL_SIZE);
       if (!built || built.pool.length < THEME_POOL_SIZE) continue;
 
-      const label =
-        (built.lo === 1 && built.hi === 5)
-          ? `Popularité : Top 1–5%`
-          : `Popularité : Top ${built.lo}–${built.hi}%`;
-
+      const label = built.lo === 1 && built.hi === 5 ? `Popularité : Top 1–5%` : `Popularité : Top ${built.lo}–${built.hi}%`;
       return { crit, label, pool: built.pool };
     }
   }
 
-  // dernier recours
   return { crit: "FREE", label: "Libre", pool: basePool };
 }
 
@@ -1121,8 +1146,11 @@ fetch(DATA_URL)
     updateVolumeVisibility();
     updateThemeStrip();
 
-    // ✅ Parcours: pas de menu tournament -> auto-start
+    // ✅ Parcours: cacher le bouton menu + autostart
     if (IS_PARCOURS) {
+      const backBtn = document.getElementById("back-to-menu");
+      if (backBtn) backBtn.style.display = "none";
+
       applyParcoursParamsToUI();
       startGame();
     } else {
@@ -1132,6 +1160,36 @@ fetch(DATA_URL)
   .catch((e) => {
     alert("Erreur chargement dataset: " + e.message);
   });
+
+// =======================
+// Parcours helpers (no alert)
+// =======================
+function parcoursAbort(message, score = 0, total = 1) {
+  showGame();
+  updateThemeStrip();
+
+  const duel = document.getElementById("duel-container");
+  if (duel) duel.innerHTML = "";
+
+  const classement = document.getElementById("classement");
+  if (classement) {
+    classement.innerHTML = "";
+    classement.style.display = "none";
+  }
+
+  const roundBox = document.getElementById("round-indicator");
+  if (roundBox) roundBox.textContent = message;
+
+  const btn = document.getElementById("next-match-btn");
+  if (btn) {
+    btn.style.display = "";
+    btn.textContent = "Continuer le parcours";
+    btn.onclick = () => {
+      btn.disabled = true;
+      sendParcoursScore(score, total);
+    };
+  }
+}
 
 // =======================
 // START GAME (avec thème contenu)
@@ -1148,23 +1206,28 @@ function startGame() {
     const minTitlesNeeded = Math.max(MIN_REQUIRED_TITLES, TOTAL_MATCH_ITEMS);
 
     if (titles.length < minTitlesNeeded) {
+      if (IS_PARCOURS) {
+        parcoursAbort(`❌ Pool insuffisant : ${titles.length} titres (min ${minTitlesNeeded}).`, 0, 1);
+        return;
+      }
       alert(`Pas assez de titres (${titles.length}/${minTitlesNeeded}).`);
-      if (!IS_PARCOURS) showCustomization();
+      showCustomization();
       return;
     }
 
-    // base pool
     CURRENT_BASE_POOL = titles;
 
-    // thème
     const theme = pickContentTheme64(titles, "anime");
     CURRENT_CONTENT_THEME = { crit: theme.crit, label: theme.label };
 
-    // pick 32 depuis pool (pool complet)
     const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
     if (picked.length < TOTAL_MATCH_ITEMS) {
+      if (IS_PARCOURS) {
+        parcoursAbort("❌ Impossible de sélectionner 32 items uniques.", 0, 1);
+        return;
+      }
       alert("Impossible de sélectionner 32 items uniques.");
-      if (!IS_PARCOURS) showCustomization();
+      showCustomization();
       return;
     }
 
@@ -1178,8 +1241,12 @@ function startGame() {
     const minSongsNeeded = Math.max(MIN_REQUIRED_SONGS, TOTAL_MATCH_ITEMS);
 
     if (songs.length < minSongsNeeded) {
+      if (IS_PARCOURS) {
+        parcoursAbort(`❌ Pool insuffisant : ${songs.length} songs (min ${minSongsNeeded}).`, 0, 1);
+        return;
+      }
       alert(`Pas assez de songs (${songs.length}/${minSongsNeeded}).`);
-      if (!IS_PARCOURS) showCustomization();
+      showCustomization();
       return;
     }
 
@@ -1190,8 +1257,12 @@ function startGame() {
 
     const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
     if (picked.length < TOTAL_MATCH_ITEMS) {
+      if (IS_PARCOURS) {
+        parcoursAbort("❌ Impossible de sélectionner 32 items uniques.", 0, 1);
+        return;
+      }
       alert("Impossible de sélectionner 32 items uniques.");
-      if (!IS_PARCOURS) showCustomization();
+      showCustomization();
       return;
     }
 
@@ -1212,9 +1283,13 @@ function startGame() {
 // =======================
 function initTournament() {
   if (!items || items.length < 2) {
+    if (IS_PARCOURS) {
+      parcoursAbort("❌ Pas assez d'items pour démarrer.", 0, 1);
+      return;
+    }
     const roundBox = document.getElementById("round-indicator");
     if (roundBox) roundBox.textContent = "❌ Pas assez d'items pour démarrer.";
-    if (!IS_PARCOURS) showCustomization();
+    showCustomization();
     return;
   }
 
@@ -1278,8 +1353,9 @@ function updateRoundIndicator() {
   const totalThisRound = roundMatches.length || 0;
   const currentIndex = Math.min(roundMatchIndex, totalThisRound);
 
-  box.textContent =
-    `Round ${roundNumber} — Match ${currentIndex}/${totalThisRound} — Mode: ${mode === "anime" ? "Animes" : "Songs"}`;
+  box.textContent = `Round ${roundNumber} — Match ${currentIndex}/${totalThisRound} — Mode: ${
+    mode === "anime" ? "Animes" : "Songs"
+  }`;
 
   updateThemeStrip();
 }
@@ -1379,7 +1455,6 @@ function getOrCreateStatusEl(video) {
   return st;
 }
 
-// snippet limiter (songs): start 45s, stop after 30s
 function installSnippetLimiter(video, startSec, endSec, session) {
   if (!video) return;
 
@@ -1387,7 +1462,9 @@ function installSnippetLimiter(video, startSec, endSec, session) {
   let endedOnce = false;
 
   const safeSeek = (t) => {
-    try { video.currentTime = t; } catch {}
+    try {
+      video.currentTime = t;
+    } catch {}
   };
 
   const onPlay = () => {
@@ -1404,8 +1481,12 @@ function installSnippetLimiter(video, startSec, endSec, session) {
 
     if (video.currentTime >= endSec) {
       endedOnce = true;
-      try { video.pause(); } catch {}
-      try { video.dispatchEvent(new Event("snippetended")); } catch {}
+      try {
+        video.pause();
+      } catch {}
+      try {
+        video.dispatchEvent(new Event("snippetended"));
+      } catch {}
     }
   };
 
@@ -1455,8 +1536,12 @@ async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, s
 
       if (session !== LOAD_SESSION) return false;
 
-      const onWaiting = () => { if (status) status.textContent = "⏳ Buffering…"; };
-      const onPlaying = () => { if (status) status.textContent = "✅ Lecture"; };
+      const onWaiting = () => {
+        if (status) status.textContent = "⏳ Buffering…";
+      };
+      const onPlaying = () => {
+        if (status) status.textContent = "✅ Lecture";
+      };
       video.addEventListener("waiting", onWaiting);
       video.addEventListener("stalled", onWaiting);
       video.addEventListener("playing", onPlaying);
@@ -1472,11 +1557,12 @@ async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, s
           end = Math.min(start + SONG_PLAY_SEC, Math.max(0, dur - 0.05));
         }
 
-        // ✅ mémorise le snippet sur l'élément
         video.dataset.snipStart = String(start);
         video.dataset.snipEnd = String(end);
 
-        try { video.currentTime = start; } catch {}
+        try {
+          video.currentTime = start;
+        } catch {}
         cleanupSnippet = installSnippetLimiter(video, start, end, session);
       }
 
@@ -1524,7 +1610,7 @@ async function renderMatch() {
   cleanupCurrentMedia();
   box.innerHTML = "";
 
-  const session = ++LOAD_SESSION; // ✅ nouveau token à chaque match
+  const session = ++LOAD_SESSION;
 
   const indices = [currentMatch.a, currentMatch.b];
   const cardEls = [];
@@ -1582,10 +1668,11 @@ async function renderMatch() {
         return;
       }
 
-      // se cale au début du snippet avant de jouer
       const st = parseFloat(right.video.dataset.snipStart || String(SONG_START_SEC));
       if (Number.isFinite(st)) {
-        try { right.video.currentTime = st; } catch {}
+        try {
+          right.video.currentTime = st;
+        } catch {}
       }
 
       const status = getOrCreateStatusEl(right.video);
@@ -1598,23 +1685,19 @@ async function renderMatch() {
       }
     };
 
-    // charge/auto-play gauche
     if (left?.video && left?.url) {
-      // quand la gauche finit son snippet => démarre la droite
       left.video.addEventListener("snippetended", startRight, { once: true });
-      left.video.addEventListener("ended", startRight, { once: true }); // au cas où
+      left.video.addEventListener("ended", startRight, { once: true });
 
       await loadVideoWithRetry(left.video, left.url, { autoplay: true, session, snippet: true });
       applyGlobalVolumeToVideo(left.video);
     }
 
-    // charge droite (sans autoplay immédiat)
     if (right?.video && right?.url) {
       const ok = await loadVideoWithRetry(right.video, right.url, { autoplay: false, session, snippet: true });
       rightReady = !!ok && right.video.isConnected;
       applyGlobalVolumeToVideo(right.video);
 
-      // si la gauche a déjà fini avant que la droite soit prête
       if (pendingStartRight) startRight();
     }
 
@@ -1647,7 +1730,7 @@ function vote(winner) {
 // FIN + CLASSEMENT
 // =======================
 function finishTournament() {
-  LOAD_SESSION++; // stop chargements en cours
+  LOAD_SESSION++;
   cleanupCurrentMedia();
 
   const alive = getAliveAll();
@@ -1662,13 +1745,22 @@ function finishTournament() {
   const replay = document.getElementById("next-match-btn");
   if (replay) {
     replay.style.display = "";
-    replay.textContent = "Rejouer";
-    replay.onclick = () => {
-      resetTournament();
-      showCustomization();
-      refreshPreview();
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    };
+
+    if (IS_PARCOURS) {
+      replay.textContent = "Continuer le parcours";
+      replay.onclick = () => {
+        replay.disabled = true;
+        sendParcoursScore(1, 1);
+      };
+    } else {
+      replay.textContent = "Rejouer";
+      replay.onclick = () => {
+        resetTournament();
+        showCustomization();
+        refreshPreview();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      };
+    }
   }
 
   const duel = document.getElementById("duel-container");
@@ -1736,14 +1828,14 @@ function renderClassement(rankingIdx) {
 // RESET
 // =======================
 function resetTournament() {
-  LOAD_SESSION++; // stop chargements en cours
+  LOAD_SESSION++;
   cleanupCurrentMedia();
 
   const duel = document.getElementById("duel-container");
   const classement = document.getElementById("classement");
   const replay = document.getElementById("next-match-btn");
   const roundBox = document.getElementById("round-indicator");
-  const themeStrip = document.getElementById("content-theme");
+  const themeStrip = getThemeEl();
 
   if (duel) duel.innerHTML = "";
   if (classement) {
