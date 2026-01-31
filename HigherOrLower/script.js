@@ -4,10 +4,25 @@
  * - Anti-égalité : interdit les duels où la valeur est exactement égale
  * - Score : +100 / bon choix ; 1 erreur = fin
  * - Anti-boucle : si un anime gagne 3 duels d’affilée -> on retire le gagnant et on garde le perdant comme champion
+ *
+ * ✅ MODE PARCOURS (iframe)
+ * - Si ?parcours=1 :
+ *   - ne montre PAS le menu de personnalisation
+ *   - utilise la config globale stockée dans localStorage["AG_parcours_filters"]
+ *   - utilise ?count=... pour le nombre de rounds
+ *   - à la fin -> affiche un bouton "Continuer le parcours" (pause possible)
+ *     et envoie le score au parent UNIQUEMENT au clic
  **********************/
+
+// ====== PARCOURS (IFRAME) ======
+const URL_PARAMS = new URLSearchParams(window.location.search);
+const IS_PARCOURS = URL_PARAMS.get("parcours") === "1";
+const PARCOURS_CFG_KEY = "AG_parcours_filters";
+const PARCOURS_COUNT_RAW = parseInt(URL_PARAMS.get("count") || "100", 10);
 
 // ====== MENU & THEME ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
+  if (IS_PARCOURS) return; // ✅ en Parcours on ne sort pas du flow
   window.location.href = "../index.html";
 });
 
@@ -18,6 +33,12 @@ document.getElementById("themeToggle").addEventListener("click", () => {
 
 window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
+
+  // ✅ en iframe parcours : cache le bouton menu
+  if (IS_PARCOURS) {
+    const b = document.getElementById("back-to-menu");
+    if (b) b.style.display = "none";
+  }
 });
 
 // ====== TOOLTIP ======
@@ -120,6 +141,15 @@ const nextBtn = document.getElementById("nextBtn");
 
 const holDuel = document.querySelector(".hol-duel");
 
+// ✅ évite le "flash" du menu custom en parcours
+if (IS_PARCOURS) {
+  if (customPanel) customPanel.style.display = "none";
+  if (gamePanel) gamePanel.style.display = "block";
+  if (promptLine) promptLine.textContent = "⏳ Chargement…";
+  if (leftPick) leftPick.disabled = true;
+  if (rightPick) rightPick.disabled = true;
+}
+
 function applyHolFeedback(pickedSide, isCorrect) {
   if (!holDuel) return;
 
@@ -141,6 +171,54 @@ function resetHolFeedback() {
   [leftPick, rightPick].forEach(btn => btn.classList.remove("is-correct", "is-wrong", "is-dim"));
 }
 
+// ====== PARCOURS CONFIG (GLOBAL) ======
+function loadParcoursConfig() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_CFG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function applyParcoursConfigToHolUI(cfg) {
+  if (!cfg) return;
+
+  if (typeof cfg.popPercent === "number") popEl.value = String(cfg.popPercent);
+  if (typeof cfg.scorePercent === "number") scoreEl.value = String(cfg.scorePercent);
+  if (typeof cfg.yearMin === "number") yearMinEl.value = String(cfg.yearMin);
+  if (typeof cfg.yearMax === "number") yearMaxEl.value = String(cfg.yearMax);
+
+  const types = Array.isArray(cfg.types) ? cfg.types : [];
+  document.querySelectorAll("#typePills .pill").forEach((btn) => {
+    const active = types.includes(btn.dataset.type);
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+
+  // labels
+  popValEl.textContent = popEl.value;
+  scoreValEl.textContent = scoreEl.value;
+  yearMinValEl.textContent = yearMinEl.value;
+  yearMaxValEl.textContent = yearMaxEl.value;
+}
+
+// ====== PARCOURS SCORE POSTMESSAGE ======
+let parcoursSent = false;
+function sendParcoursScore() {
+  if (!IS_PARCOURS || parcoursSent) return;
+  parcoursSent = true;
+
+  const total = totalRounds * POINTS_PER_WIN;
+
+  window.parent?.postMessage?.({
+    parcoursScore: {
+      label: "Higher Or Lower",
+      score,
+      total,
+    }
+  }, "*");
+}
 
 // ====== DATA ======
 let allAnimes = [];
@@ -311,32 +389,46 @@ function renderDuel() {
 
   resultDiv.textContent = "";
   nextBtn.style.display = "none";
+
+  // ✅ reset du bouton parcours si besoin
+  nextBtn.classList.remove("parcours-continue");
+  nextBtn.onclick = null;
+
   leftPick.disabled = false;
   rightPick.disabled = false;
 }
-
 
 // ====== START GAME ======
 function startGame() {
   showGame();
 
+  // ✅ important : fixé dès le début (utile aussi si fin anticipée)
+  totalRounds = clampInt(parseInt(roundCountEl.value || "100", 10), 1, 999);
+
   filteredPool = applyFilters();
   const minNeeded = Math.max(2, MIN_REQUIRED);
   if (!filteredPool || filteredPool.length < minNeeded) {
     resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
+
+    if (IS_PARCOURS) {
+      score = 0;
+      endGame(); // ✅ bouton "Continuer le parcours"
+      return;
+    }
+
     nextBtn.style.display = "block";
     nextBtn.textContent = "Retour réglages";
     nextBtn.onclick = () => { showCustomization(); updatePreview(); };
     return;
   }
 
-  totalRounds = clampInt(parseInt(roundCountEl.value || "100", 10), 1, 999);
   roundIndex = 1;
   score = 0;
   championStreak = 0;
   lastThemeKey = null;
   currentThemeKey = null;
   bannedKeyOnce = null;
+  parcoursSent = false;
 
   let ok = false;
   for (let tries = 0; tries < 60 && !ok; tries++) {
@@ -353,6 +445,13 @@ function startGame() {
 
   if (!ok) {
     resultDiv.textContent = "❌ Impossible de créer un duel sans égalité avec ces filtres.";
+
+    if (IS_PARCOURS) {
+      score = 0;
+      endGame(); // ✅ bouton "Continuer le parcours"
+      return;
+    }
+
     nextBtn.style.display = "block";
     nextBtn.textContent = "Retour réglages";
     nextBtn.onclick = () => { showCustomization(); updatePreview(); };
@@ -364,6 +463,17 @@ function startGame() {
 
 // ====== PICK ======
 function endGame() {
+  leftPick.disabled = true;
+  rightPick.disabled = true;
+
+  if (IS_PARCOURS) {
+    nextBtn.style.display = "block";
+    nextBtn.textContent = "Continuer le parcours";
+    nextBtn.classList.add("parcours-continue");
+    nextBtn.onclick = () => sendParcoursScore(); // ✅ envoi au clic uniquement
+    return;
+  }
+
   nextBtn.style.display = "block";
   nextBtn.textContent = "Retour réglages";
   nextBtn.onclick = () => { showCustomization(); updatePreview(); };
@@ -416,17 +526,24 @@ function handlePick(side) {
     resultDiv.textContent += " — 🔁 Swap anti-boucle (3 wins) !";
   }
 
+  // ✅ fin de partie
   if (roundIndex >= totalRounds) {
     updateTopLabels();
-    nextBtn.style.display = "block";
-    nextBtn.textContent = "Terminer";
-    nextBtn.onclick = () => {
-      resultDiv.textContent = `✅ Terminé ! Score final : ${score} / ${totalRounds * POINTS_PER_WIN}`;
-      endGame();
-    };
+    resultDiv.textContent = `✅ Terminé ! Score final : ${score} / ${totalRounds * POINTS_PER_WIN}`;
+    endGame(); // Parcours => bouton continuer ; Standard => retour réglages via bouton Terminer (géré plus bas)
+    if (!IS_PARCOURS) {
+      // En standard, on garde le bouton "Terminer" comme avant
+      nextBtn.style.display = "block";
+      nextBtn.textContent = "Terminer";
+      nextBtn.onclick = () => {
+        resultDiv.textContent = `✅ Terminé ! Score final : ${score} / ${totalRounds * POINTS_PER_WIN}`;
+        endGame();
+      };
+    }
     return;
   }
 
+  // ✅ round suivant
   nextBtn.style.display = "block";
   nextBtn.textContent = "Suivant";
   nextBtn.onclick = () => {
@@ -517,6 +634,20 @@ fetch("../data/licenses_only.json")
     });
 
     initCustomUI();
+
+    // ✅ MODE PARCOURS : applique config + count, puis lance direct
+    if (IS_PARCOURS) {
+      const cfg = loadParcoursConfig();
+      if (cfg) applyParcoursConfigToHolUI(cfg);
+
+      const count = clampInt(Number.isFinite(PARCOURS_COUNT_RAW) ? PARCOURS_COUNT_RAW : 100, 1, 999);
+      roundCountEl.value = String(count);
+
+      startGame();
+      return;
+    }
+
+    // MODE STANDARD : inchangé
     updatePreview();
     showCustomization();
   })
