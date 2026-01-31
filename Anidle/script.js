@@ -1002,7 +1002,14 @@ function submitGuess(guessedAnime) {
   }
   row.appendChild(cellScore);
 
-  results.appendChild(row);
+  // ✅ Dernier guess en haut (juste sous le header)
+   const headerRow = results.querySelector(".header-row");
+   if (headerRow) {
+     const firstGuessRow = headerRow.nextElementSibling; // 1ère ligne de guess existante
+     results.insertBefore(row, firstGuessRow);           // on insère avant => donc tout en haut
+   } else {
+     results.appendChild(row);
+   }
 
   // cleanup
   inputEl.value = "";
