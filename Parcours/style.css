@@ -1,3 +1,8 @@
+/* ✅ Ajout important : base plein écran solide */
+html, body{
+  height:100%;
+}
+
 body{
   background: radial-gradient(circle at 50% 25%, #263859 0%, #121212 100%);
   color:#eee;
@@ -255,7 +260,7 @@ body.light .step-line{ background:#ecf5fc; }
   font-weight:bold;
 }
 
-/* ==== IFRAME CONTAINER ==== */
+/* ==== IFRAME CONTAINER (NORMAL) ==== */
 #parcours-container{
   width:100vw;
   max-width:none;
@@ -272,6 +277,7 @@ body.light .step-line{ background:#ecf5fc; }
 }
 #parcours-container.active{ opacity:1; display:flex; }
 
+/* ✅ Iframe "normal" (hors fullscreen) : tu peux garder 98vw si tu veux */
 #parcours-iframe{
   width:98vw;
   max-width:98vw;
@@ -284,10 +290,21 @@ body.light .step-line{ background:#ecf5fc; }
   display:block;
   opacity:1;
   z-index:2;
-  height:90vh;
+  height:90vh; /* ok en normal */
 }
 body.light #parcours-iframe{ background:#fafcff !important; }
 
+/* ✅ Loader : base (hors fullscreen) */
+#parcours-loader{
+  font-size:1.3rem;
+  font-weight:900;
+  text-align:center;
+  margin:1.3rem;
+  z-index:3;
+  position:relative;
+}
+
+/* Score recap */
 #parcours-score{
   background:#181d25;
   color:#fff;
@@ -329,9 +346,7 @@ footer{
 }
 body.light footer{ color:#888; }
 
-/* =========================
-   TOOLTIP HELP
-   ========================= */
+/* ========================= TOOLTIP HELP ========================= */
 .header-right{
   display:inline-flex;
   align-items:center;
@@ -430,9 +445,7 @@ body.light .info-icon{
     inset 0 0 0 1px rgba(66, 165, 245, 0.18);
 }
 
-/* =========================
-   MENU PERSONNALISATION (GLOBAL)
-   ========================= */
+/* ========================= MENU PERSONNALISATION (GLOBAL) ========================= */
 .main-container{
   background:#161e27ee;
   border-radius:22px;
@@ -593,23 +606,36 @@ body.light .pill.active{
   flex-wrap:wrap;
 }
 
-/* ==== FULLSCREEN PARCOURS ==== */
-html{
-  min-height:100vh;
-  background:#181818 !important;
+/* =========================================================
+   ✅ FULLSCREEN PARCOURS : iframe "invisible" (100vw/100vh)
+   ========================================================= */
+body.parcours-fullscreen{
+  padding:0 !important;
+  margin:0 !important;
+  overflow:hidden !important; /* ✅ pas de scroll parent */
 }
+
+/* (optionnel mais propre) */
+body.parcours-fullscreen::before{
+  opacity:0.22; /* garde un peu, mais tu peux mettre 0 si tu veux aucun fond derrière */
+}
+
 body.parcours-fullscreen header,
 body.parcours-fullscreen footer,
 body.parcours-fullscreen #container,
 body.parcours-fullscreen #parcours-custom-panel{
   display:none !important;
 }
+
+/* ✅ le conteneur devient un vrai fullscreen */
 body.parcours-fullscreen #parcours-container{
+  position:fixed !important;
+  inset:0 !important;
   margin:0 !important;
-  width:100vw !important;
-  min-width:0 !important;
-  max-width:none !important;
   padding:0 !important;
+  width:100vw !important;
+  height:100vh !important;
+  max-width:none !important;
   border-radius:0 !important;
   box-shadow:none !important;
   background:transparent !important;
@@ -618,18 +644,36 @@ body.parcours-fullscreen #parcours-container{
   align-items:stretch !important;
   justify-content:flex-start !important;
 }
+
+/* ✅ iframe pleine page (plus de bande) */
 body.parcours-fullscreen #parcours-iframe{
   width:100vw !important;
-  min-width:0 !important;
-  max-width:none !important;
+  height:100vh !important;
   margin:0 !important;
   border:none !important;
   border-radius:0 !important;
   box-shadow:none !important;
   background:#181818 !important;
   display:block !important;
-  height:95vh !important;
-  opacity:1 !important;
+}
+
+/* ✅ loader plein écran en fullscreen */
+body.parcours-fullscreen #parcours-loader{
+  position:fixed !important;
+  inset:0 !important;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  margin:0 !important;
+  background:#181818;
+  color:#eaffff;
+  font-size:1.35rem;
+  font-weight:900;
+  z-index:5;
+}
+body.light.parcours-fullscreen #parcours-loader{
+  background:#fafcff;
+  color:#0b1a2a;
 }
 
 /* ==== BADGE STEP ==== */
@@ -670,7 +714,7 @@ body.light .step-line:hover .step-badge{
     max-width:99vw;
     min-height:320px;
     height:60vh;
-    border-radius:8px;
+    border-radius:0;
   }
 }
 @media (max-width: 900px){
