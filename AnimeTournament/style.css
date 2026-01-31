@@ -532,6 +532,11 @@ body.light .volume-right { color: #0b1a2a; }
   align-items: start;
 }
 
+/* ✅ IMPORTANT : si vide, on le cache -> évite le grand bloc vide en fin de tournoi */
+#duel-container:empty{
+  display: none !important;
+}
+
 #duel-container .anime,
 #duel-container .opening {
   width: 100%;
@@ -622,36 +627,24 @@ body.light .volume-right { color: #0b1a2a; }
 }
 
 /* =========================================
-   BOUTON REJOUER
+   BOUTON FIN (✅ Terminer / Continuer)
+   - On garde le style .menu-btn (pas de surcharge couleur ici)
+   - Le JS doit faire: btn.style.display = "inline-flex";
    ========================================= */
 #next-match-btn {
   display: none;
   margin: 0 auto 2.0rem auto;
-  padding: 1rem 2.5rem;
-  font-size: 1.17rem;
-  border-radius: 10px;
-  background: #00bcd4;
-  color: #121212;
-  font-weight: bold;
-  border: none;
-  cursor: pointer;
-  box-shadow: 0 2px 16px #00bcd444;
-  transition: background 0.2s, color 0.2s, box-shadow 0.18s;
+  padding: 0.95rem 2.2rem;
+  font-size: 1.12rem;
+  border-radius: 12px;
+  font-weight: 900;
   z-index: 2;
   position: relative;
-}
-#next-match-btn:hover {
-  background: #0097a7;
-  color: #fff;
-  box-shadow: 0 6px 22px #00bcd480;
-}
-body.light #next-match-btn {
-  background: #1565c0;
-  color: #fff;
-}
-body.light #next-match-btn:hover {
-  background: #0d47a1;
-  color: #fff;
+
+  /* rendu propre si tu mets une icône + texte */
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
 }
 
 /* =========================================
