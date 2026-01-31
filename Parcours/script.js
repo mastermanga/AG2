@@ -12,11 +12,25 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 // =====================
-// RETOUR MENU
+// ✅ NAVIGATION MENU (SORT VRAIMENT DE L'IFRAME SI BESOIN)
 // =====================
-document.getElementById("back-to-menu")?.addEventListener("click", () => {
-  window.location.href = "../index.html";
-});
+function goToMainMenu() {
+  const url = new URL("../index.html", window.location.href).href;
+
+  try {
+    // Si cette page est dans un iframe => on navigue le parent (top)
+    if (window.top && window.top !== window) window.top.location.href = url;
+    else window.location.href = url;
+  } catch {
+    // fallback (si cross-origin ou restrictions)
+    window.location.href = url;
+  }
+}
+
+// =====================
+// RETOUR MENU (header)
+// =====================
+document.getElementById("back-to-menu")?.addEventListener("click", goToMainMenu);
 
 // =====================
 // TOOLTIP AIDE
@@ -617,7 +631,7 @@ function startIframeParcours() {
   if (recapSection) recapSection.style.display = "none";
 
   document.body.classList.add("parcours-fullscreen");
-  document.documentElement.classList.add("parcours-fullscreen"); // ✅ bonus propre
+  document.documentElement.classList.add("parcours-fullscreen");
 
   if (parcoursContainer) {
     parcoursContainer.style.display = "flex";
@@ -636,6 +650,7 @@ function resolveStepMode(step) {
   return step.mode === "songs" ? "songs" : "anime";
 }
 
+// ✅ IMPORTANT : protège contre les onload tardifs
 function launchIframeStep(idx) {
   const steps = JSON.parse(localStorage.getItem(PARCOURS_STEPS_KEY) || "[]");
   if (!steps.length || idx >= steps.length) {
@@ -659,18 +674,25 @@ function launchIframeStep(idx) {
 
   const url = `${urlBase}?${params.toString()}`;
 
+  const expectedIdx = idx;
+
   if (parcoursIframe) {
     parcoursIframe.style.display = "none";
     parcoursIframe.classList.remove("active");
   }
-  if (parcoursLoader) parcoursLoader.style.display = "flex"; // ✅ en fullscreen, le CSS le centre
+  if (parcoursLoader) parcoursLoader.style.display = "flex";
 
   if (parcoursIframe) {
     parcoursIframe.onload = () => {
+      // ✅ si le parcours a avancé / fini => on ignore ce chargement
+      const cur = parseInt(localStorage.getItem(PARCOURS_INDEX_KEY) || "-1", 10);
+      if (cur !== expectedIdx) return;
+
       if (parcoursLoader) parcoursLoader.style.display = "none";
       parcoursIframe.style.display = "block";
       parcoursIframe.classList.add("active");
     };
+
     parcoursIframe.src = url;
   }
 }
@@ -699,7 +721,10 @@ function showFinalRecap() {
   localStorage.removeItem(PARCOURS_INPROGRESS_KEY);
   localStorage.removeItem(PARCOURS_INDEX_KEY);
 
+  // ✅ STOP iframe propre : évite qu’un menu interne du jeu s’affiche ensuite
   if (parcoursIframe) {
+    parcoursIframe.onload = null;
+    parcoursIframe.src = "about:blank";
     parcoursIframe.style.display = "none";
     parcoursIframe.classList.remove("active");
   }
@@ -737,8 +762,11 @@ function showFinalRecap() {
   html += `<div style="font-size:2rem;margin-top:13px;"><b>Score total : ${totalScore} / ${maxScore}</b></div>`;
 
   if (parcoursScore) parcoursScore.innerHTML = html;
+
+  // ✅ bouton sans onclick inline + sort vraiment au menu principal
   if (parcoursFinish) {
-    parcoursFinish.innerHTML = `<button onclick="window.location.href='../index.html'" class="toggle-btn">Retour menu</button>`;
+    parcoursFinish.innerHTML = `<button id="goMenuBtn" class="toggle-btn">Retour menu</button>`;
+    document.getElementById("goMenuBtn")?.addEventListener("click", goToMainMenu);
   }
 }
 
