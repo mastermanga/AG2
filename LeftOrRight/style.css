@@ -536,7 +536,6 @@ body.light footer{ color:#888; }
 }
 .lor-card:disabled{
   cursor: default;
-  /* évite l’opacité grise browser sur button disabled (on gère nous-mêmes) */
   opacity: 1;
 }
 
@@ -551,7 +550,7 @@ body.light footer{ color:#888; }
 .lor-img, .lor-vid{
   width: 100%;
   height: 300px;
-  object-fit: contain; /* ✅ image entière */
+  object-fit: contain;
   display: none;
   background:#111;
 }
@@ -600,8 +599,6 @@ body.light .mini-pill--theme{
    FEEDBACK CHOIX (JS)
    classes: lor-chosen / lor-loser / lor-locked
    ========================= */
-
-/* Lock: coupe le “hover vibe” */
 .lor-card.lor-locked:hover{
   transform: none;
   box-shadow: none;
@@ -609,8 +606,6 @@ body.light .mini-pill--theme{
 .lor-card.lor-locked:active{
   transform: none;
 }
-
-/* Gagnant: contour vert + glow */
 .lor-card.lor-chosen{
   border-color: rgba(38,255,128,0.92);
   box-shadow:
@@ -619,22 +614,16 @@ body.light .mini-pill--theme{
     inset 0 0 0 1px rgba(38,255,128,0.25);
   transform: translateY(-2px);
 }
-
-/* Perdant: grisé + assombri */
 .lor-card.lor-loser{
   opacity: 0.45;
   border-color: rgba(255,255,255,0.10);
   box-shadow: none;
   transform: none;
 }
-
-/* Grise surtout le média (image/vidéo) sans tuer totalement le texte */
 .lor-card.lor-loser .lor-img,
 .lor-card.lor-loser .lor-vid{
   filter: grayscale(1) brightness(0.55) contrast(0.95);
 }
-
-/* Light mode tweaks */
 body.light .lor-card.lor-loser{
   opacity: 0.55;
   border-color: rgba(0,0,0,0.10);
@@ -647,7 +636,18 @@ body.light .lor-card.lor-chosen{
     inset 0 0 0 1px rgba(38,255,128,0.18);
 }
 
-/* (Optionnel) compat si jamais t’avais encore des vieux IDs ailleurs */
-#leftCard.chosen, #rightCard.chosen{ /* legacy */ }
-#leftCard.rejected, #rightCard.rejected{ /* legacy */ }
-#leftCard.locked:hover, #rightCard.locked:hover{ /* legacy */ }
+/* =========================
+   ✅ PARCOURS (AJOUT)
+   - activé uniquement si JS ajoute body.parcours (donc uniquement ?parcours=1)
+   - pas d'impact standard
+   ========================= */
+body.parcours #back-to-menu{
+  display: none !important;
+}
+body.parcours #custom-panel{
+  display: none !important;
+}
+/* #game-panel avait un inline style display:none -> il faut !important pour override */
+body.parcours #game-panel{
+  display: block !important;
+}
