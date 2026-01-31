@@ -81,7 +81,6 @@ header h1 {
   opacity: 0.93;
   outline: none;
 }
-
 .menu-btn:hover, .toggle-btn:hover {
   background: linear-gradient(120deg, #1de9b6 70%, #1976d2 100%);
   color: #fff !important;
@@ -89,24 +88,21 @@ header h1 {
   opacity: 1;
   filter: brightness(1.08);
 }
-
 .menu-btn:active, .toggle-btn:active {
   filter: brightness(0.93);
   opacity: 0.89;
 }
 
-/* ==== PERSONNALISATION PANEL (LE CONTAINER SOMBRE) ==== */
+/* ==== PERSONNALISATION PANEL ==== */
 #custom-panel{
   background: #161e27ee;
   border-radius: 22px;
   box-shadow: 0 0 32px 5px #00bcd466;
   border: 1.5px solid rgba(0,188,212,0.25);
-
   max-width: 1400px;
   width: 98vw;
   margin: 0 auto 1.4rem auto;
   padding: 2.0rem 2.2rem;
-
   position: relative;
   z-index: 1;
 }
@@ -122,13 +118,12 @@ header h1 {
   justify-content: center;
   gap: 12px;
 }
-
 #custom-panel .gear{
   font-size: 1.4rem;
   filter: drop-shadow(0 0 10px rgba(0,234,255,0.25));
 }
 
-/* ==== OPT ROWS (layout identique) ==== */
+/* ==== OPT ROWS ==== */
 .opt-row{
   width: 100%;
   display: flex;
@@ -138,30 +133,20 @@ header h1 {
   flex-wrap: wrap;
   margin-top: 14px;
 }
-
 .opt-label{
   font-weight: 900;
   min-width: 160px;
   opacity: 0.95;
 }
-
 .opt-col{
   flex: 1;
   min-width: 280px;
 }
-
 .opt-value{
   margin-top: 6px;
   font-weight: 900;
   opacity: 0.92;
   text-align: right;
-}
-
-.opt-sub{
-  margin-top: 8px;
-  opacity: 0.85;
-  font-weight: 700;
-  font-size: 0.95rem;
 }
 
 /* ==== RANGE STYLE ==== */
@@ -174,7 +159,6 @@ header h1 {
   outline: none;
   box-shadow: 0 1px 10px rgba(0, 188, 212, 0.18);
 }
-
 #custom-panel input[type="range"]::-webkit-slider-thumb{
   appearance: none;
   width: 18px;
@@ -185,7 +169,6 @@ header h1 {
   box-shadow: 0 0 14px rgba(0, 234, 255, 0.55);
   cursor: pointer;
 }
-
 #custom-panel input[type="range"]::-moz-range-thumb{
   width: 18px;
   height: 18px;
@@ -208,7 +191,6 @@ header h1 {
   gap: 10px;
   flex-wrap: wrap;
 }
-
 .pill{
   border: 1.5px solid rgba(0, 188, 212, 0.55);
   background: rgba(0, 0, 0, 0.22);
@@ -220,12 +202,10 @@ header h1 {
   transition: transform 0.15s, box-shadow 0.15s, background 0.15s, border-color 0.15s, opacity 0.15s;
   user-select: none;
 }
-
 .pill:hover{
   transform: translateY(-1px);
   box-shadow: 0 0 16px rgba(0, 234, 255, 0.22);
 }
-
 .pill.active{
   background: linear-gradient(120deg, rgba(0,188,212,0.65), rgba(30,136,229,0.55));
   border-color: rgba(0, 234, 255, 0.85);
@@ -243,12 +223,10 @@ header h1 {
   border: 1px solid #00bcd455;
   background: rgba(0,0,0,0.15);
 }
-
 .preview-count.good{
   border-color: rgba(38, 255, 128, 0.35);
   box-shadow: 0 0 16px rgba(38,255,128,0.12);
 }
-
 .preview-count.bad{
   border-color: rgba(255, 80, 80, 0.35);
   box-shadow: 0 0 16px rgba(255,80,80,0.10);
@@ -262,7 +240,6 @@ header h1 {
   gap: 14px;
   flex-wrap: wrap;
 }
-
 .round-input{
   width: 110px;
   padding: 10px 12px;
@@ -274,7 +251,6 @@ header h1 {
   outline: none;
   box-shadow: 0 0 10px rgba(0, 188, 212, 0.12);
 }
-
 .round-hint{
   opacity: 0.85;
   font-weight: 700;
@@ -288,12 +264,10 @@ header h1 {
   justify-content: center;
   margin-top: 16px;
 }
-
 .start-btn{
   font-size: 1.08rem;
   padding: 0.95rem 1.7rem;
 }
-
 #applyFiltersBtn:disabled{
   opacity: 0.45 !important;
   cursor: not-allowed !important;
@@ -331,6 +305,11 @@ header h1 {
   width: 300px;
 }
 
+.game-col{
+  flex: 1;
+  width: 100%;
+}
+
 /* ==== INDICES ==== */
 .indice-btn{
   background: linear-gradient(120deg, #ffd600 65%, #ff9800 100%);
@@ -344,27 +323,17 @@ header h1 {
   transition: background 0.18s, box-shadow 0.18s, color 0.16s;
   outline: none;
 }
-
 .indice-btn:hover:not(:disabled){
   background: linear-gradient(120deg, #ffe082 70%, #ffa726 100%);
   color: #000 !important;
   box-shadow: 0 4px 18px #ff980055;
 }
-
 .indice-btn:disabled, .indice-btn.used{
   background: #bbb !important;
   color: #888 !important;
   opacity: 0.58 !important;
   cursor: not-allowed !important;
   box-shadow: none !important;
-}
-
-.indices-bar{
-  display:flex;
-  gap:10px;
-  margin:16px 0;
-  flex-wrap:wrap;
-  justify-content:center;
 }
 
 /* ==== SCORE BAR ==== */
@@ -380,7 +349,6 @@ header h1 {
   margin-right: auto;
   position: relative;
 }
-
 #score-bar {
   height: 28px;
   border-radius: 2rem;
@@ -392,7 +360,6 @@ header h1 {
   position: relative;
   overflow: hidden;
 }
-
 #score-bar-label {
   position: absolute;
   left: 50%;
@@ -415,19 +382,13 @@ header h1 {
 .danger-pulse { animation: pulse 0.9s infinite; }
 
 /* ==== INPUT + SUGGESTIONS ==== */
-/* ✅ FIX: la dropdown était trop basse car top:100% se basait sur TOUT le bloc .input-container.
-   On fixe une hauteur d'input et on ancre la dropdown juste sous l'input. */
 .input-container {
-  margin-bottom: 18px;
+  margin-bottom: 6px;
   text-align: center;
   position: relative;
-
-  /* largeur stable pour centrer input + dropdown */
   width: min(520px, 92vw);
   margin-left: auto;
   margin-right: auto;
-
-  /* variable pour ancrer la dropdown */
   --input-height: 48px;
 }
 
@@ -437,20 +398,15 @@ header h1 {
   width: 100%;
   height: var(--input-height);
   box-sizing: border-box;
-
   border-radius: 10px;
   border: none;
   outline: none;
   background: #222;
   color: #eee;
-
-  /* IMPORTANT: pas de margin-bottom, sinon l'ancrage paraît "bas" */
   margin-bottom: 0;
-
   box-shadow: 0 0 8px #00bcd466;
   transition: box-shadow 0.22s;
 }
-
 #animeInput:focus {
   box-shadow: 0 0 16px #00eaffb9;
 }
@@ -459,101 +415,37 @@ header h1 {
   background: #182c36ee;
   border: 1.5px solid #00bcd4cc;
   text-align: left;
-
   border-radius: 12px;
   box-shadow: 0 6px 18px #00bcd433;
-
   position: absolute;
   left: 0;
   right: 0;
-
-  /* ✅ collé sous l'input */
   top: calc(var(--input-height) + 10px);
-
   z-index: 9999;
-
-  /* taille + scroll */
   max-height: 260px;
   overflow-y: auto;
-
-  /* plus de margin auto/bas */
   margin: 0;
 }
 
-.suggestions div {
+.suggestions .suggestion-item {
   padding: 10px 16px;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
 }
-
-.suggestions div:hover {
+.suggestions .suggestion-item:hover,
+.suggestions .suggestion-item.active {
   background: linear-gradient(120deg, #1de9b6 60%, #1e88e5 100%);
   color: #fff;
 }
+.suggestion-hit{
+  font-weight: 900;
+  text-decoration: underline;
+}
 
 /* ==== RESULT TABLE ==== */
-.row {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 6px;
-  transition: box-shadow 0.18s, transform 0.16s;
-}
-
-.row:hover {
-  box-shadow: 0 0 13px #00eaff66, 0 0 1px #00bcd455;
-  transform: scale(1.018);
-  z-index: 1;
-}
-
-.cell {
-  padding: 9px;
-  margin: 2px;
-  border-radius: 6px;
-  background: #192642;
-  border: 1.5px solid #00bcd4cc;
-  white-space: normal;
-  overflow-wrap: break-word;
-  text-align: center;
-  font-size: 1.03rem;
-}
-
-.cell-image { min-width: 100px; max-width: 100px; }
-.cell-title { min-width: 180px; max-width: 180px; word-break: break-word; }
-.cell-season { min-width: 120px; max-width: 120px; }
-.cell-studio { min-width: 140px; max-width: 140px; word-break: break-word; }
-.cell-genre { min-width: 170px; max-width: 170px; word-break: break-word; }
-.cell-score { min-width: 110px; max-width: 110px; font-size: 1.15rem; }
-
 .green { background-color: #27ae60 !important; color: white; }
 .red { background-color: #e74c3c !important; color: white; }
 .orange { background-color: #ff9800 !important; color: white; }
-
-/* Header tableau aligné */
-.header-row {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 6px;
-}
-
-.header-cell {
-  padding: 9px;
-  margin: 2px;
-  border-radius: 8px;
-  background: #0f2230;
-  border: 1.5px solid #00bcd4cc;
-  color: #00eaff;
-  font-weight: 900;
-  font-size: 1.02rem;
-  text-align: center;
-  box-shadow: 0 0 8px #00bcd433;
-}
-
-.header-image  { min-width: 100px; max-width: 100px; }
-.header-title  { min-width: 180px; max-width: 180px; }
-.header-season { min-width: 120px; max-width: 120px; }
-.header-studio { min-width: 140px; max-width: 140px; }
-.header-genre  { min-width: 170px; max-width: 170px; }
-.header-score  { min-width: 110px; max-width: 110px; }
 
 #counter {
   margin: 2rem auto 1rem auto;
@@ -574,18 +466,24 @@ header h1 {
   min-width: 240px;
   box-shadow: 0 2px 8px #00bcd422;
 }
-
 #aideContainer h3 {
   font-size: 1.1rem;
   color: #00eaff;
-  margin: 0 0 10px 0;
+  margin: 0 0 6px 0;
 }
-
+.aide-meta{
+  font-size: 0.95rem;
+  opacity: 0.86;
+  margin-bottom: 10px;
+}
+.aide-empty{
+  opacity: 0.86;
+  padding: 10px 2px;
+}
 #aideContainer ul {
   padding-left: 15px;
   margin: 0;
 }
-
 #aideContainer li {
   margin-bottom: 7px;
   cursor: pointer;
@@ -593,7 +491,6 @@ header h1 {
   font-size: 1rem;
   transition: color 0.18s;
 }
-
 #aideContainer li:hover {
   text-decoration: underline;
   color: #00eaff;
@@ -635,7 +532,6 @@ footer {
   align-items: center;
   justify-content: center;
 }
-
 .info-icon{
   width: 26px;
   height: 26px;
@@ -654,13 +550,7 @@ footer {
   user-select: none;
   transition: transform 0.16s, box-shadow 0.16s, background 0.16s, border-color 0.16s;
 }
-
-.info-svg{
-  width: 18px;
-  height: 18px;
-  display: block;
-}
-
+.info-svg{ width: 18px; height: 18px; display: block; }
 .info-wrap:hover .info-icon,
 .info-icon:focus{
   transform: scale(1.08) rotate(-6deg);
@@ -672,7 +562,6 @@ footer {
     inset 0 0 0 1px rgba(0, 234, 255, 0.25);
   outline: none;
 }
-
 .info-tip{
   position: absolute;
   top: calc(100% + 10px);
@@ -695,7 +584,6 @@ footer {
   transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
   z-index: 999;
 }
-
 .info-tip::after{
   content: "";
   position: absolute;
@@ -706,7 +594,6 @@ footer {
   border-color: transparent transparent #233554f3 transparent;
   filter: drop-shadow(0 2px 2px rgba(0, 234, 255, 0.18));
 }
-
 .info-wrap:hover .info-tip,
 .info-wrap:focus-within .info-tip,
 .info-wrap.open .info-tip{
@@ -725,12 +612,10 @@ body.light {
   background: radial-gradient(circle at 45% 10%, #e3f6fc 0%, #f5f5f5 100%);
   color: #222;
 }
-
 body.light header h1 {
   color: #1976d2;
   text-shadow: 0 2px 8px #42a5f5aa, 0 0 10px #fff2;
 }
-
 body.light #custom-panel,
 body.light #container,
 body.light .main-container {
@@ -738,35 +623,29 @@ body.light .main-container {
   box-shadow: 0 0 18px #42a5f555;
   border: 1.5px solid rgba(66,165,245,0.45);
 }
-
 body.light .pill {
   background: rgba(255,255,255,0.65);
   color: #0b1a2a;
   border-color: rgba(25,118,210,0.35);
 }
-
 body.light .pill.active {
   background: linear-gradient(120deg, rgba(66,165,245,0.7), rgba(0,188,212,0.45));
   border-color: rgba(25,118,210,0.55);
 }
-
 body.light .round-input{
   background: #f8faff;
   color: #0b1a2a;
   border-color: rgba(25,118,210,0.35);
 }
-
 body.light #animeInput{
   background: #f8faff;
   color: #0b1a2a;
 }
-
 body.light .suggestions{
   background: rgba(227, 246, 252, 0.96);
   border-color: rgba(66,165,245,0.55);
   box-shadow: 0 10px 26px rgba(66,165,245,0.22);
 }
-
 body.light footer { color: #888; }
 
 /* Responsive */
@@ -776,14 +655,13 @@ body.light footer { color: #888; }
   .game-layout{ flex-direction: column; }
   .aide-container{ width: 100%; }
 }
-
 @media (max-width: 600px){
   header h1 { font-size: 1.25rem; }
   .info-tip{ width: min(420px, 86vw); right: 0; }
 }
 
 /* =========================================================
-   ALIGNEMENT INDICES ↔ COLONNES (Année/Studio/Genres/Score)
+   ALIGNEMENT INDICES ↔ COLONNES
    ========================================================= */
 :root{
   --col-image: 100px;
@@ -801,7 +679,6 @@ body.light footer { color: #888; }
   );
 }
 
-/* Le conteneur des résultats centre tout */
 #results{
   width: 100%;
   display: flex;
@@ -809,7 +686,6 @@ body.light footer { color: #888; }
   align-items: center;
 }
 
-/* Grille commune */
 .indices-grid,
 .header-row,
 .row{
@@ -829,17 +705,11 @@ body.light footer { color: #888; }
   margin-right: auto;
 }
 
-/* --- Indices au-dessus et pile à la taille des colonnes --- */
 .indices-grid{
   margin: 12px auto 14px auto;
 }
+.indices-spacer{ width: 100%; height: 1px; }
 
-.indices-spacer{
-  width: 100%;
-  height: 1px;
-}
-
-/* Boutons indices = même largeur que leur colonne */
 .indices-grid .indice-btn{
   width: 100%;
   height: 48px;
@@ -851,29 +721,50 @@ body.light footer { color: #888; }
   white-space: nowrap;
 }
 
-/* --- Header / Rows : on enlève tes margins pour laisser la gap gérer --- */
-.header-row{
-  margin: 10px auto 10px auto;
+.header-row{ margin: 10px auto 10px auto; }
+.row{ margin: 0 auto 10px auto; transition: box-shadow 0.18s, transform 0.16s; }
+.row:hover {
+  box-shadow: 0 0 13px #00eaff66, 0 0 1px #00bcd455;
+  transform: scale(1.018);
+  z-index: 1;
 }
 
-.row{
-  margin: 0 auto 10px auto;
-}
-
-/* IMPORTANT: tes .cell / .header-cell avaient margin:2px (ça décale) */
-.cell,
-.header-cell{
+.cell, .header-cell{
+  padding: 9px;
+  border-radius: 6px;
+  background: #192642;
+  border: 1.5px solid #00bcd4cc;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-align: center;
+  font-size: 1.03rem;
   margin: 0 !important;
 }
 
-/* Tu peux garder tes largeurs min/max, mais la grid suffit.
-   Si tu veux, tu peux supprimer tes min-width sur .cell-* plus tard. */
+.header-cell{
+  border-radius: 8px;
+  background: #0f2230;
+  color: #00eaff;
+  font-weight: 900;
+  font-size: 1.02rem;
+  box-shadow: 0 0 8px #00bcd433;
+}
 
-/* =====================
-   RESPONSIVE
-   ===================== */
+.cell-image { min-width: 100px; max-width: 100px; }
+.cell-title { min-width: 180px; max-width: 180px; word-break: break-word; }
+.cell-season { min-width: 120px; max-width: 120px; }
+.cell-studio { min-width: 140px; max-width: 140px; word-break: break-word; }
+.cell-genre { min-width: 170px; max-width: 170px; word-break: break-word; }
+.cell-score { min-width: 110px; max-width: 110px; font-size: 1.15rem; }
+
+.header-image  { min-width: 100px; max-width: 100px; }
+.header-title  { min-width: 180px; max-width: 180px; }
+.header-season { min-width: 120px; max-width: 120px; }
+.header-studio { min-width: 140px; max-width: 140px; }
+.header-genre  { min-width: 170px; max-width: 170px; }
+.header-score  { min-width: 110px; max-width: 110px; }
+
 @media (max-width: 980px){
-  /* Sur écran plus petit : indices repassent en wrap */
   .indices-grid{
     display: flex;
     flex-wrap: wrap;
@@ -885,24 +776,45 @@ body.light footer { color: #888; }
   .indices-grid .indice-btn{
     width: min(340px, 92vw);
   }
-
-  /* La table reste en grid (ça garde l’alignement) */
 }
-
 @media (max-width: 650px){
-  /* Mobile : masque le header et empile les cellules comme avant */
   .header-row{ display:none; }
-
   .row{
     display: flex;
     flex-direction: column;
     width: min(420px, 96vw);
     gap: 10px;
   }
-
   .cell-image, .cell-title, .cell-season, .cell-studio, .cell-genre, .cell-score{
     min-width: unset !important;
     max-width: unset !important;
     width: 100% !important;
   }
+}
+
+/* Parcours error box */
+.parcours-error-box{
+  margin:18px auto;
+  max-width:720px;
+  text-align:center;
+  padding:18px;
+  border-radius:14px;
+  background: rgba(0,0,0,0.25);
+  border:1px solid rgba(255,80,80,0.45);
+}
+.parcours-error-title{
+  font-size:1.6rem;
+  font-weight:900;
+  margin-bottom:10px;
+}
+.parcours-error-msg{
+  opacity:0.95;
+  line-height:1.35;
+}
+.parcours-error-actions{
+  margin-top:14px;
+  display:flex;
+  justify-content:center;
+  gap:10px;
+  flex-wrap:wrap;
 }
