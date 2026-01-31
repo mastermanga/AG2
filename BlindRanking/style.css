@@ -30,6 +30,9 @@ body::before{
   100%{ background-position: 33vw 22vh, 68vw 78vh; }
 }
 
+/* ✅ Anti-flash / parcours uniquement */
+body.parcours #back-to-menu{ display:none !important; }
+
 /* ==== HEADER ==== */
 header{
   max-width: 1100px;
