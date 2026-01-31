@@ -6,6 +6,18 @@
   <title>🧠 Keep or Next</title>
   <link rel="icon" type="image/png" href="../images/favicon-32x32.png">
   <link rel="stylesheet" href="style.css" />
+
+  <!-- ✅ Parcours anti-flash (n'affecte pas le standard) -->
+  <script>
+    (function () {
+      try {
+        var p = new URLSearchParams(window.location.search);
+        if (p.get("parcours") === "1") {
+          document.documentElement.classList.add("parcours");
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 
 <body>
@@ -143,7 +155,7 @@
 
       <div class="mini-pill" id="roundLabel"></div>
 
-      <!-- ✅ Thème contenu (caché pendant le round, révélé après le choix) -->
+      <!-- ✅ Thème contenu -->
       <div class="mini-pill theme-pill" id="themePill" style="display:none;" aria-live="polite"></div>
 
       <div class="duel-grid">
