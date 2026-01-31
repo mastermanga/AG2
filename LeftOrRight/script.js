@@ -3,10 +3,78 @@
  * ✅ Thème contenu à CHAQUE DUEL (round indépendant)
  * ✅ Feedback visuel de choix (néon vert + loser grisé)
  * ✅ Gestion vidéo type Tournament (token session + retry + snippetended)
+ *
+ * ✅ PARCOURS (ajout, sans casser standard)
+ * - si ?parcours=1 : masque menu + masque réglages + auto-start
+ * - applique params URL + fallback localStorage AG_parcours_filters
+ * - fin: bouton "Continuer le parcours" + postMessage parcoursScore
  **********************/
+
+/* =======================
+   PARCOURS (URL PARAMS)
+   ======================= */
+const urlParams = new URLSearchParams(window.location.search);
+const IS_PARCOURS = urlParams.get("parcours") === "1";
+
+const FORCED_MODE = urlParams.get("mode"); // "anime" | "songs"
+const PARAM_TYPES = urlParams.get("types"); // ex: "TV,Movie"
+const PARAM_SONGS = urlParams.get("songs"); // ex: "opening,ending,insert" OU "OP,ED,IN"
+const PARAM_POP = urlParams.get("popPercent") || urlParams.get("pop") || urlParams.get("popularity");
+const PARAM_SCORE = urlParams.get("scorePercent") || urlParams.get("score");
+const PARAM_YMIN = urlParams.get("yearMin") || urlParams.get("yMin");
+const PARAM_YMAX = urlParams.get("yearMax") || urlParams.get("yMax");
+// optionnel: nombre de duels
+const PARAM_DUELS = urlParams.get("duels") || urlParams.get("roundCount") || urlParams.get("rounds");
+
+const PARCOURS_CFG_KEY = "AG_parcours_filters";
+let parcoursSent = false;
+
+function loadParcoursCfg() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_CFG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function sendParcoursScore(score = 1, total = 1) {
+  if (parcoursSent) return;
+  parcoursSent = true;
+
+  try {
+    parent.postMessage(
+      {
+        parcoursScore: {
+          label: "Left or Right",
+          score,
+          total,
+        },
+      },
+      "*"
+    );
+  } catch (e) {
+    console.warn("postMessage parcours failed:", e);
+  }
+}
+
+// ✅ Anti-flash + UX parcours (script chargé en bas => DOM déjà présent)
+if (IS_PARCOURS) {
+  document.body.classList.add("parcours");
+
+  const backBtn = document.getElementById("back-to-menu");
+  if (backBtn) backBtn.style.display = "none";
+
+  const custom = document.getElementById("custom-panel");
+  if (custom) custom.style.display = "none";
+
+  const game = document.getElementById("game-panel");
+  if (game) game.style.display = "block";
+}
 
 // ====== MENU & THEME ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
+  // Standard: inchangé
   window.location.href = "../index.html";
 });
 
@@ -675,8 +743,7 @@ function waitEventOrTimeout(target, events, timeoutMs) {
   });
 }
 
-// snippet limiter: start 45s, stop after 30s, dispatch "snippetended"
-// ✅ IMPORTANT: PAS de reset currentTime à 45 à la fin (sinon spam fetch)
+// snippet limiter
 function installSnippetLimiter(video, startSec, endSec, session) {
   if (!video) return () => {};
 
@@ -695,7 +762,6 @@ function installSnippetLimiter(video, startSec, endSec, session) {
     endedOnce = true;
     clearWall();
     try { video.pause(); } catch {}
-    // event custom (comme Tournament)
     try { video.dispatchEvent(new Event("snippetended")); } catch {}
     cleanup();
   };
@@ -705,7 +771,6 @@ function installSnippetLimiter(video, startSec, endSec, session) {
     if (playingArmed) return;
     playingArmed = true;
 
-    // sécurité si jamais timeupdate ne tourne pas
     clearWall();
     wallTimer = setTimeout(() => {
       if (session !== LOAD_SESSION) return;
@@ -715,7 +780,6 @@ function installSnippetLimiter(video, startSec, endSec, session) {
 
   const onPlay = () => {
     if (session !== LOAD_SESSION) return;
-    // si l'utilisateur relance ou si le browser part ailleurs, on recale au début snippet
     const ct = Number.isFinite(video.currentTime) ? video.currentTime : 0;
     if (ct < startSec - 0.25 || ct > endSec + 0.25) safeSeek(startSec);
   };
@@ -747,12 +811,10 @@ function installSnippetLimiter(video, startSec, endSec, session) {
   return cleanup;
 }
 
-// reset hard + cleanup snippet
 function stopVideo(video) {
   if (!video) return;
   try { video.pause(); } catch {}
 
-  // cleanup snippet limiter si présent
   if (typeof video._cleanupSnippet === "function") {
     try { video._cleanupSnippet(); } catch {}
   }
@@ -770,9 +832,7 @@ async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, s
   video.preload = "metadata";
   video.playsInline = true;
 
-  // nettoie avant de recharger
   stopVideo(video);
-
   applyVolume();
 
   for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
@@ -786,7 +846,6 @@ async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, s
     try {
       stopVideo(video);
 
-      // cachebuster sur retries
       const src = attempt === 0 ? url : withCacheBuster(url);
       video.src = src;
       video.load();
@@ -799,7 +858,6 @@ async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, s
 
       if (session !== LOAD_SESSION) return false;
 
-      // snippet setup
       if (snippet) {
         const dur = video.duration;
         let start = CLIP_START_S;
@@ -813,19 +871,12 @@ async function loadVideoWithRetry(video, url, { autoplay = false, session = 0, s
         video.dataset.clipStart = String(start);
         video.dataset.clipEnd = String(end);
 
-        // seek au début snippet
         try { video.currentTime = start; } catch {}
-
-        // installe limiter + mémorise cleanup
         video._cleanupSnippet = installSnippetLimiter(video, start, end, session);
       }
 
       if (autoplay) {
-        try {
-          await video.play();
-        } catch {
-          // autoplay bloqué -> l'utilisateur peut cliquer sur la vidéo
-        }
+        try { await video.play(); } catch {}
       }
 
       return true;
@@ -883,7 +934,7 @@ function initCustomUI() {
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
   roundCountEl.addEventListener("input", () => updatePreview());
 
-  // Apply
+  // Apply (standard inchangé)
   applyBtn.addEventListener("click", () => {
     const pool = applyFilters();
     totalDuels = clampInt(parseInt(roundCountEl.value || "10", 10), 1, 100);
@@ -935,7 +986,6 @@ function applyFilters() {
       score: a._score,
       type: a._type,
 
-      // thèmes
       studio: a._studio || "",
       tags: Array.isArray(a._tags) ? a._tags : [],
       _year: a._year,
@@ -992,7 +1042,6 @@ function updatePreview() {
 
 // ====== GAME UI ======
 function resetDuelUI() {
-  // ✅ invalide tout chargement en cours (comme Tournament)
   LOAD_SESSION++;
 
   stopVideo(leftVid);
@@ -1059,7 +1108,6 @@ async function renderDuel() {
   leftTitle.textContent = currentMode === "songs" ? formatSongTitle(leftItem) : (leftItem?.title || "");
   rightTitle.textContent = currentMode === "songs" ? formatSongTitle(rightItem) : (rightItem?.title || "");
 
-  // anime: images
   if (currentMode === "anime") {
     stopVideo(leftVid);
     stopVideo(rightVid);
@@ -1072,10 +1120,8 @@ async function renderDuel() {
     return;
   }
 
-  // songs: gestion type Tournament
   const session = LOAD_SESSION;
 
-  // reset players
   stopVideo(leftVid);
   stopVideo(rightVid);
   applyVolume();
@@ -1096,7 +1142,6 @@ async function renderDuel() {
     try { await rightVid.play(); } catch {}
   };
 
-  // quand LEFT finit -> start RIGHT
   const onLeftDone = () => {
     if (session !== LOAD_SESSION) return;
     leftFinished = true;
@@ -1106,7 +1151,6 @@ async function renderDuel() {
   leftVid.addEventListener("snippetended", onLeftDone, { once: true });
   leftVid.addEventListener("ended", onLeftDone, { once: true });
 
-  // charge RIGHT (sans autoplay)
   const rightPromise = (rightItem?.url)
     ? loadVideoWithRetry(rightVid, rightItem.url, { autoplay: false, session, snippet: true })
     : Promise.resolve(false);
@@ -1117,12 +1161,9 @@ async function renderDuel() {
     startRightIfPossible();
   });
 
-  // charge LEFT + autoplay
   if (leftItem?.url) {
     const okLeft = await loadVideoWithRetry(leftVid, leftItem.url, { autoplay: true, session, snippet: true });
     if (session !== LOAD_SESSION) return;
-
-    // si la gauche ne charge pas, on la considère "finie" pour pouvoir lancer la droite
     if (!okLeft) onLeftDone();
   } else {
     onLeftDone();
@@ -1134,14 +1175,61 @@ async function renderDuel() {
   rightPick.disabled = false;
 }
 
+/* =======================
+   ✅ PARCOURS: Abort UI
+   ======================= */
+function parcoursAbort(message, score = 0, total = 1) {
+  // force écran jeu (sans impacter standard)
+  if (IS_PARCOURS) {
+    document.body.classList.add("parcours");
+    const backBtn = document.getElementById("back-to-menu");
+    if (backBtn) backBtn.style.display = "none";
+  }
+
+  LOAD_SESSION++;
+  stopVideo(leftVid);
+  stopVideo(rightVid);
+
+  showGame();
+  setupModeUI();
+
+  // message visible
+  resultDiv.textContent = message;
+  nextBtn.style.display = "block";
+  nextBtn.textContent = "Continuer le parcours";
+  nextBtn.onclick = () => {
+    nextBtn.disabled = true;
+    sendParcoursScore(score, total);
+  };
+
+  // verrouille les choix
+  leftPick.disabled = true;
+  rightPick.disabled = true;
+}
+
+/* =======================
+   FIN DE JEU
+   ======================= */
 function finishGame(message) {
-  // stop tout
   LOAD_SESSION++;
   stopVideo(leftVid);
   stopVideo(rightVid);
 
   resultDiv.textContent = message;
   nextBtn.style.display = "block";
+
+  if (IS_PARCOURS) {
+    nextBtn.textContent = "Continuer le parcours";
+    nextBtn.onclick = () => {
+      nextBtn.disabled = true;
+      sendParcoursScore(1, 1);
+    };
+    // pas de retour réglages en parcours
+    showGame();
+    return;
+  }
+
+  // Standard : inchangé
   nextBtn.textContent = "Retour réglages";
   nextBtn.onclick = () => {
     showCustomization();
@@ -1160,6 +1248,10 @@ function startGame() {
 
   const ok = generateNewDuelPair();
   if (!ok) {
+    if (IS_PARCOURS) {
+      parcoursAbort("❌ Pas assez d’items (min 2) avec ces réglages.", 0, 1);
+      return;
+    }
     finishGame("❌ Pas assez d’items (min 2) avec ces réglages.");
     return;
   }
@@ -1184,7 +1276,6 @@ function handlePick(side) {
   otherBtn.classList.add("lor-loser");
 
   if (currentMode === "songs") {
-    // stop juste la lecture + enlève limiter (sans relancer réseau)
     try { leftVid.pause(); } catch {}
     try { rightVid.pause(); } catch {}
     if (typeof leftVid._cleanupSnippet === "function") { try { leftVid._cleanupSnippet(); } catch {} }
@@ -1203,6 +1294,7 @@ function handlePick(side) {
 
   nextBtn.style.display = "block";
   nextBtn.textContent = "Suivant";
+  nextBtn.disabled = false;
   nextBtn.onclick = () => {
     duelIndex++;
 
@@ -1210,12 +1302,144 @@ function handlePick(side) {
 
     const ok = generateNewDuelPair();
     if (!ok) {
+      // en pratique rare si pool >= 2 ; on considère terminé
+      if (IS_PARCOURS) {
+        finishGame("✅ Terminé (pas assez d’items pour continuer).");
+        return;
+      }
       finishGame("✅ Terminé (pas assez d’items pour continuer).");
       return;
     }
 
     renderDuel();
   };
+}
+
+/* =======================
+   ✅ PARCOURS: appliquer params à l'UI
+   ======================= */
+function applyParcoursParamsToUI() {
+  if (!IS_PARCOURS) return;
+
+  const cfg = loadParcoursCfg();
+  const has = (x) => x != null && x !== "";
+
+  // --- Mode (URL > cfg) ---
+  const modeFromCfg = (cfg && (cfg.mode || cfg.leftOrRightMode)) || null;
+  const wantedMode =
+    (FORCED_MODE === "anime" || FORCED_MODE === "songs")
+      ? FORCED_MODE
+      : (modeFromCfg === "anime" || modeFromCfg === "songs")
+      ? modeFromCfg
+      : null;
+
+  if (wantedMode) {
+    currentMode = wantedMode;
+    document.querySelectorAll("#modePills .pill").forEach((b) => {
+      const on = b.dataset.mode === wantedMode;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // --- Sliders (URL > cfg) ---
+  const trySetInt = (el, val, min, max) => {
+    if (!el || !has(val)) return;
+    const n = parseInt(val, 10);
+    if (!Number.isFinite(n)) return;
+    el.value = String(Math.max(min, Math.min(max, n)));
+  };
+
+  trySetInt(popEl, has(PARAM_POP) ? PARAM_POP : cfg?.popPercent, 1, 100);
+  trySetInt(scoreEl, has(PARAM_SCORE) ? PARAM_SCORE : cfg?.scorePercent, 1, 100);
+  trySetInt(yearMinEl, has(PARAM_YMIN) ? PARAM_YMIN : cfg?.yearMin, 1900, 2100);
+  trySetInt(yearMaxEl, has(PARAM_YMAX) ? PARAM_YMAX : cfg?.yearMax, 1900, 2100);
+  trySetInt(roundCountEl, has(PARAM_DUELS) ? PARAM_DUELS : cfg?.duels, 1, 100);
+
+  // --- Types pills (URL > cfg.types) ---
+  const typesList = has(PARAM_TYPES)
+    ? PARAM_TYPES.split(",").map((s) => s.trim()).filter(Boolean)
+    : Array.isArray(cfg?.types)
+    ? cfg.types
+    : null;
+
+  if (typesList && typesList.length) {
+    const want = new Set(typesList);
+    const pills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
+    pills.forEach((p) => {
+      const t = p.dataset.type;
+      const on = want.has(t);
+      p.classList.toggle("active", on);
+      p.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // assure au moins 1 type
+  const typeActive = document.querySelectorAll("#typePills .pill.active").length;
+  if (!typeActive) {
+    document.querySelectorAll("#typePills .pill[data-type]").forEach((p) => {
+      const t = p.dataset.type;
+      const on = t === "TV" || t === "Movie";
+      p.classList.toggle("active", on);
+      p.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // --- Songs pills (URL > cfg.songs) ---
+  const normalizeSongsTokenToCode = (x) => {
+    const s = String(x || "").trim().toLowerCase();
+    if (!s) return null;
+    if (s === "op" || s === "opening") return "OP";
+    if (s === "ed" || s === "ending") return "ED";
+    if (s === "in" || s === "insert") return "IN";
+    // déjà au bon format ?
+    if (s === "op" || s === "ed" || s === "in") return s.toUpperCase();
+    return null;
+  };
+
+  const songsListRaw = has(PARAM_SONGS)
+    ? PARAM_SONGS.split(",").map((s) => s.trim()).filter(Boolean)
+    : Array.isArray(cfg?.songs)
+    ? cfg.songs
+    : null;
+
+  if (songsListRaw && songsListRaw.length) {
+    const wantCodes = new Set(
+      songsListRaw.map(normalizeSongsTokenToCode).filter(Boolean)
+    );
+
+    const pills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
+    pills.forEach((p) => {
+      const code = String(p.dataset.song || "").toUpperCase(); // OP/ED/IN
+      const on = wantCodes.has(code);
+      p.classList.toggle("active", on);
+      p.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // assure au moins 1 song si mode songs
+  if (currentMode === "songs") {
+    const songActive = document.querySelectorAll("#songPills .pill.active").length;
+    if (!songActive) {
+      document.querySelectorAll("#songPills .pill[data-song]").forEach((p) => {
+        const code = String(p.dataset.song || "").toUpperCase();
+        const on = code === "OP";
+        p.classList.toggle("active", on);
+        p.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    }
+  }
+
+  // clamp + labels + preview
+  clampYearSliders();
+  updateModeVisibility();
+
+  popValEl.textContent = popEl.value;
+  scoreValEl.textContent = scoreEl.value;
+  yearMinValEl.textContent = yearMinEl.value;
+  yearMaxValEl.textContent = yearMaxEl.value;
+
+  updatePreview();
 }
 
 // ====== LOAD DATA ======
@@ -1250,8 +1474,26 @@ fetch("../data/licenses_only.json")
 
     initCustomUI();
     updatePreview();
-    showCustomization();
     applyVolume();
+
+    if (IS_PARCOURS) {
+      // applique params + autostart
+      applyParcoursParamsToUI();
+
+      // check pool
+      const pool = applyFilters();
+      totalDuels = clampInt(parseInt(roundCountEl.value || "10", 10), 1, 100);
+
+      if (!pool || pool.length < 2) {
+        parcoursAbort("❌ Pool insuffisant : min 2 items avec ces réglages.", 0, 1);
+        return;
+      }
+
+      startGame();
+    } else {
+      // Standard : inchangé
+      showCustomization();
+    }
   })
   .catch((e) => {
     previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
@@ -1259,4 +1501,8 @@ fetch("../data/licenses_only.json")
     applyBtn.disabled = true;
     applyBtn.classList.add("disabled");
     console.error(e);
+
+    if (IS_PARCOURS) {
+      parcoursAbort("❌ Erreur chargement base : " + e.message, 0, 1);
+    }
   });
