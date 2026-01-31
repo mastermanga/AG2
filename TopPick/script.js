@@ -1401,22 +1401,44 @@ confirmBtn.addEventListener("click", () => {
   const n = currentRule.required;
   resultDiv.textContent = `✅ Validé — tu as ${verb} ${n} item${n > 1 ? "s" : ""}.`;
 
-  nextBtn.style.display = "inline-block";
-  const isLast = currentRound >= totalRounds;
-  nextBtn.textContent = isLast ? "Retour réglages" : "Round suivant";
-  nextBtn.onclick = () => {
-    if (!isLast) {
-      currentRound++;
-      startRound();
-    } else {
-      showCustomization();
-      updatePreview();
-      if (isParcours) {
-        try { parent.postMessage({ parcoursScore: { label: "TopPick", score: 0, total: 0 } }, "*"); } catch {}
-      }
-    }
-  };
-});
+nextBtn.style.display = "inline-block";
+
+const isLast = currentRound >= totalRounds;
+
+// ✅ Texte du bouton (parcours vs normal)
+if (isLast) {
+  nextBtn.textContent = isParcours ? "Continuer le parcours" : "Retour réglages";
+} else {
+  nextBtn.textContent = "Round suivant";
+}
+
+nextBtn.onclick = () => {
+  if (!isLast) {
+    currentRound++;
+    startRound();
+    return;
+  }
+
+  // ✅ Fin du mini-jeu
+  if (isParcours) {
+    // On laisse le parent enchaîner le parcours
+    try {
+      parent.postMessage(
+        { parcoursScore: { label: "TopPick", score: 0, total: 0 } },
+        "*"
+      );
+    } catch {}
+
+    // (optionnel) si tu veux un fallback quand la page n'est pas dans une iframe :
+    // if (window.self === window.top) { showCustomization(); updatePreview(); }
+    return;
+  }
+
+  // Mode normal : retour aux réglages
+  showCustomization();
+  updatePreview();
+};
+
 
 // ====== ROUND FLOW ======
 function startRound() {
