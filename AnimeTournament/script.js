@@ -312,100 +312,30 @@ function updateThemeStrip() {
 }
 
 // =======================
-// ✅ END ACTIONS (Rejouer / Réglages / Continuer parcours)
-// - corrige le "bouton invisible" + ajoute un bouton Réglages en standard
+// ✅ END BUTTON (unique)
+// - Parcours: "Continuer le parcours"
+// - Standard: "✅ Terminer" => retourne aux réglages
 // =======================
-let END_ACTIONS_READY = false;
-
-function ensureEndActions() {
-  if (END_ACTIONS_READY) return;
-
-  const replay = document.getElementById("next-match-btn");
-  if (!replay) return;
-
-  let wrap = document.getElementById("end-actions");
-  if (!wrap) {
-    wrap = document.createElement("div");
-    wrap.id = "end-actions";
-    wrap.style.display = "none";
-    wrap.style.justifyContent = "center";
-    wrap.style.gap = "12px";
-    wrap.style.flexWrap = "wrap";
-    wrap.style.margin = "0.2rem auto 2rem auto";
-    wrap.style.zIndex = "2";
-    wrap.style.position = "relative";
-
-    // place le wrapper à la place du bouton, puis on met le bouton dedans
-    replay.insertAdjacentElement("beforebegin", wrap);
-    wrap.appendChild(replay);
-  }
-
-  // normalise le bouton replay
-  replay.style.margin = "0";
-  replay.style.display = "none"; // caché par défaut (on le montre en fin)
-
-  // bouton réglages (créé dynamiquement)
-  let settings = document.getElementById("back-to-settings-btn");
-  if (!settings) {
-    settings = document.createElement("button");
-    settings.id = "back-to-settings-btn";
-    settings.type = "button";
-    settings.className = "menu-btn";
-    settings.textContent = "⚙️ Réglages";
-    wrap.appendChild(settings);
-  }
-  settings.style.margin = "0";
-  settings.style.display = "none";
-
-  END_ACTIONS_READY = true;
+function getEndBtn() {
+  return document.getElementById("next-match-btn");
 }
-
-function hideEndActions() {
-  const wrap = document.getElementById("end-actions");
-  const replay = document.getElementById("next-match-btn");
-  const settings = document.getElementById("back-to-settings-btn");
-
-  if (wrap) wrap.style.display = "none";
-  if (replay) replay.style.display = "none";
-  if (settings) settings.style.display = "none";
+function hideEndBtn() {
+  const btn = getEndBtn();
+  if (!btn) return;
+  btn.style.display = "none";
+  btn.onclick = null;
+  btn.disabled = false;
 }
+function showEndBtn(label, onClick) {
+  const btn = getEndBtn();
+  if (!btn) return;
 
-function showEndActions({
-  replayLabel = "Rejouer",
-  onReplay = null,
-  showSettings = false,
-} = {}) {
-  ensureEndActions();
+  btn.textContent = label;
+  btn.disabled = false;
 
-  const wrap = document.getElementById("end-actions");
-  const replay = document.getElementById("next-match-btn");
-  const settings = document.getElementById("back-to-settings-btn");
-
-  if (wrap) wrap.style.display = "flex";
-
-  if (replay) {
-    replay.textContent = replayLabel;
-    replay.disabled = false;
-    // ✅ IMPORTANT: forcer un display qui override le CSS (#next-match-btn { display:none })
-    replay.style.display = "inline-flex";
-    replay.onclick = typeof onReplay === "function" ? onReplay : null;
-  }
-
-  if (settings) {
-    settings.style.display = showSettings ? "inline-flex" : "none";
-    settings.disabled = false;
-
-    if (showSettings) {
-      settings.onclick = () => {
-        resetTournament();
-        showCustomization();
-        refreshPreview();
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      };
-    } else {
-      settings.onclick = null;
-    }
-  }
+  // ✅ important: ton CSS met display:none, donc on force inline-flex
+  btn.style.display = "inline-flex";
+  btn.onclick = typeof onClick === "function" ? onClick : null;
 }
 
 // =======================
@@ -428,7 +358,7 @@ function showCustomization() {
   if (classement) classement.style.display = "none";
 
   updateVolumeVisibility();
-  hideEndActions();
+  hideEndBtn();
 }
 
 function showGame() {
@@ -451,7 +381,7 @@ function showGame() {
 
   updateVolumeVisibility();
   updateThemeStrip();
-  hideEndActions();
+  hideEndBtn();
 }
 
 // =======================
@@ -567,9 +497,11 @@ function applyParcoursParamsToUI() {
   // mode forcé (URL > localStorage)
   const modeFromCfg = (cfg && (cfg.mode || cfg.tournamentMode)) || null;
   const wantedMode =
-    (FORCED_MODE === "anime" || FORCED_MODE === "songs") ? FORCED_MODE :
-    (modeFromCfg === "anime" || modeFromCfg === "songs") ? modeFromCfg :
-    null;
+    FORCED_MODE === "anime" || FORCED_MODE === "songs"
+      ? FORCED_MODE
+      : modeFromCfg === "anime" || modeFromCfg === "songs"
+      ? modeFromCfg
+      : null;
 
   if (wantedMode) {
     mode = wantedMode;
@@ -596,16 +528,17 @@ function applyParcoursParamsToUI() {
   trySetInt(yMaxEl, has(PARAM_YMAX) ? PARAM_YMAX : cfg?.yearMax, 1900, 2100);
 
   // types pills (URL > cfg.types)
-  const typesList =
-    has(PARAM_TYPES) ? PARAM_TYPES.split(",").map(s => s.trim()).filter(Boolean)
-    : Array.isArray(cfg?.types) ? cfg.types
+  const typesList = has(PARAM_TYPES)
+    ? PARAM_TYPES.split(",").map((s) => s.trim()).filter(Boolean)
+    : Array.isArray(cfg?.types)
+    ? cfg.types
     : null;
 
   if (typesList && typesList.length) {
     const want = new Set(typesList);
     const pills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
     if (pills.length) {
-      pills.forEach(p => {
+      pills.forEach((p) => {
         const t = p.dataset.type;
         const on = want.has(t);
         p.classList.toggle("active", on);
@@ -615,16 +548,17 @@ function applyParcoursParamsToUI() {
   }
 
   // songs pills (URL > cfg.songs)
-  const songsList =
-    has(PARAM_SONGS) ? PARAM_SONGS.split(",").map(s => s.trim().toLowerCase()).filter(Boolean)
-    : Array.isArray(cfg?.songs) ? cfg.songs.map(x => String(x).toLowerCase())
+  const songsList = has(PARAM_SONGS)
+    ? PARAM_SONGS.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+    : Array.isArray(cfg?.songs)
+    ? cfg.songs.map((x) => String(x).toLowerCase())
     : null;
 
   if (songsList && songsList.length) {
     const want = new Set(songsList);
     const pills = Array.from(document.querySelectorAll("#songPills .pill[data-song]"));
     if (pills.length) {
-      pills.forEach(p => {
+      pills.forEach((p) => {
         const s = (p.dataset.song || "").toLowerCase();
         const on = want.has(s);
         p.classList.toggle("active", on);
@@ -1114,7 +1048,8 @@ function pickContentTheme64(basePool, modeLocal) {
       const built = buildPopPercentBandPool(basePool, getPop, globalSortedMembersDesc, pop, THEME_POOL_SIZE);
       if (!built || built.pool.length < THEME_POOL_SIZE) continue;
 
-      const label = built.lo === 1 && built.hi === 5 ? `Popularité : Top 1–5%` : `Popularité : Top ${built.lo}–${built.hi}%`;
+      const label =
+        built.lo === 1 && built.hi === 5 ? `Popularité : Top 1–5%` : `Popularité : Top ${built.lo}–${built.hi}%`;
       return { crit, label, pool: built.pool };
     }
   }
@@ -1232,8 +1167,6 @@ fetch(DATA_URL)
       };
     });
 
-    ensureEndActions(); // ✅ prépare les boutons de fin
-
     initVolumeUI();
     setDefaultUI();
     initModePillsIfAny();
@@ -1242,6 +1175,7 @@ fetch(DATA_URL)
     refreshPreview();
     updateVolumeVisibility();
     updateThemeStrip();
+    hideEndBtn(); // ✅ sécurité
 
     // ✅ Parcours: cacher le bouton menu + autostart
     if (IS_PARCOURS) {
@@ -1280,14 +1214,10 @@ function parcoursAbort(message, score = 0, total = 1) {
   const roundBox = document.getElementById("round-indicator");
   if (roundBox) roundBox.textContent = message;
 
-  showEndActions({
-    replayLabel: "Continuer le parcours",
-    showSettings: false,
-    onReplay: () => {
-      const btn = document.getElementById("next-match-btn");
-      if (btn) btn.disabled = true;
-      sendParcoursScore(score, total);
-    },
+  showEndBtn("Continuer le parcours", () => {
+    const btn = getEndBtn();
+    if (btn) btn.disabled = true;
+    sendParcoursScore(score, total);
   });
 }
 
@@ -1756,7 +1686,7 @@ async function renderMatch() {
 
   updateVolumeVisibility();
   updateThemeStrip();
-  hideEndActions();
+  hideEndBtn();
 
   if (mode === "songs") {
     const left = cardEls.find((c) => c.idx === currentMatch.a);
@@ -1857,25 +1787,18 @@ function finishTournament() {
   if (roundBox) roundBox.textContent = "🏁 Tournoi terminé !";
 
   if (IS_PARCOURS) {
-    showEndActions({
-      replayLabel: "Continuer le parcours",
-      showSettings: false,
-      onReplay: () => {
-        const btn = document.getElementById("next-match-btn");
-        if (btn) btn.disabled = true;
-        sendParcoursScore(1, 1);
-      },
+    showEndBtn("Continuer le parcours", () => {
+      const btn = getEndBtn();
+      if (btn) btn.disabled = true;
+      sendParcoursScore(1, 1);
     });
   } else {
-    // ✅ Standard: Rejouer + Réglages
-    showEndActions({
-      replayLabel: "Rejouer",
-      showSettings: true,
-      onReplay: () => {
-        // relance direct avec la config actuelle
-        startGame();
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      },
+    // ✅ Standard: 1 seul bouton => retourne réglages
+    showEndBtn("✅ Terminer", () => {
+      resetTournament();
+      showCustomization();
+      refreshPreview();
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
   }
 
@@ -1972,5 +1895,5 @@ function resetTournament() {
 
   updateVolumeVisibility();
   updateThemeStrip();
-  hideEndActions();
+  hideEndBtn();
 }
