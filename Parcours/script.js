@@ -86,15 +86,8 @@ const parcoursIframe = document.getElementById("parcours-iframe");
 const parcoursScore = document.getElementById("parcours-score");
 const parcoursFinish = document.getElementById("parcours-finish");
 
-// Loader iframe
-let parcoursLoader = document.getElementById("parcours-loader");
-if (!parcoursLoader && parcoursContainer) {
-  parcoursLoader = document.createElement("div");
-  parcoursLoader.id = "parcours-loader";
-  parcoursLoader.textContent = "Chargement du jeu…";
-  parcoursLoader.style.cssText = "display:none;text-align:center;margin:1.3rem;font-size:1.3rem;font-weight:900;";
-  parcoursContainer.insertBefore(parcoursLoader, parcoursIframe);
-}
+// ✅ Loader désormais dans le HTML
+const parcoursLoader = document.getElementById("parcours-loader");
 
 // =====================
 // MAPPING JEUX
@@ -157,7 +150,7 @@ const FIXED_GAME_MODE = {
   anidle: "anime",
   openingquizz: "songs",
   characterquizz: "anime",
-  higherorlower: "anime", // "stat" mais basé sur la base anime
+  higherorlower: "anime",
   fakeortruth: "songs",
   clue: "anime",
   fusion: "anime",
@@ -192,7 +185,6 @@ function showCustomization() {
   if (parcoursContainer) parcoursContainer.style.display = "none";
   if (customPanel) customPanel.style.display = "block";
 
-  // refresh preview pour être sûr
   syncLabels();
   updatePreview();
 }
@@ -276,7 +268,6 @@ function syncLabels() {
 }
 
 function parcoursNeeds() {
-  // Déduit ce qui est nécessaire à partir des étapes choisies
   let needAnime = false;
   let needSongs = false;
 
@@ -288,11 +279,10 @@ function parcoursNeeds() {
 
     if (MODE_CAPABLE.has(t)) {
       if (step.mode === "songs") needSongs = true;
-      else needAnime = true; // défaut
+      else needAnime = true;
     }
   }
 
-  // sécurité si parcours vide (normalement impossible d'arriver ici)
   if (!parcoursSteps.length) {
     needAnime = true;
     needSongs = true;
@@ -469,7 +459,6 @@ function initCustomPanel() {
     const cfg = collectParcoursConfig();
     localStorage.setItem(PARCOURS_CFG_KEY, JSON.stringify(cfg));
 
-    // on (re)stocke les étapes au cas où
     localStorage.setItem(PARCOURS_STEPS_KEY, JSON.stringify(parcoursSteps));
     localStorage.setItem(PARCOURS_INPROGRESS_KEY, "1");
     localStorage.setItem(PARCOURS_INDEX_KEY, "0");
@@ -486,7 +475,6 @@ function initCustomPanel() {
     if (recapSection) recapSection.style.display = "block";
   });
 
-  // restore cfg if exists
   const saved = loadParcoursConfig();
   if (saved) applyConfigToUI(saved);
 
@@ -529,7 +517,6 @@ addStepBtn?.addEventListener("click", () => {
   renderSteps();
 
   if (startParcoursBtn) startParcoursBtn.style.display = parcoursSteps.length > 0 ? "block" : "none";
-  // preview dépend du parcours
   updatePreview();
 });
 
@@ -616,11 +603,8 @@ editParcoursBtn?.addEventListener("click", () => {
   if (recapSection) recapSection.style.display = "none";
 });
 
-// IMPORTANT : maintenant, ce bouton envoie vers la PERSONNALISATION (pas lancement direct)
 launchConfirmedBtn?.addEventListener("click", () => {
-  // on stocke les étapes maintenant
   localStorage.setItem(PARCOURS_STEPS_KEY, JSON.stringify(parcoursSteps));
-  // ensuite on va vers la personnalisation globale
   showCustomization();
 });
 
@@ -628,12 +612,12 @@ launchConfirmedBtn?.addEventListener("click", () => {
 // IFRAME FLOW
 // =====================
 function startIframeParcours() {
-  // hide tout sauf iframe
   if (container) container.style.display = "none";
   if (customPanel) customPanel.style.display = "none";
   if (recapSection) recapSection.style.display = "none";
 
   document.body.classList.add("parcours-fullscreen");
+  document.documentElement.classList.add("parcours-fullscreen"); // ✅ bonus propre
 
   if (parcoursContainer) {
     parcoursContainer.style.display = "flex";
@@ -671,7 +655,7 @@ function launchIframeStep(idx) {
   params.set("count", String(step.count || 1));
 
   const m = resolveStepMode(step);
-  if (m) params.set("mode", m); // anime|songs
+  if (m) params.set("mode", m);
 
   const url = `${urlBase}?${params.toString()}`;
 
@@ -679,7 +663,7 @@ function launchIframeStep(idx) {
     parcoursIframe.style.display = "none";
     parcoursIframe.classList.remove("active");
   }
-  if (parcoursLoader) parcoursLoader.style.display = "block";
+  if (parcoursLoader) parcoursLoader.style.display = "flex"; // ✅ en fullscreen, le CSS le centre
 
   if (parcoursIframe) {
     parcoursIframe.onload = () => {
@@ -722,6 +706,7 @@ function showFinalRecap() {
   if (parcoursLoader) parcoursLoader.style.display = "none";
 
   document.body.classList.remove("parcours-fullscreen");
+  document.documentElement.classList.remove("parcours-fullscreen");
 
   if (parcoursContainer) {
     parcoursContainer.style.display = "flex";
@@ -802,7 +787,6 @@ fetch("../data/licenses_only.json")
 
     initCustomPanel();
 
-    // builder d'abord
     if (customPanel) customPanel.style.display = "none";
     if (container) container.style.display = "flex";
     if (builderSection) builderSection.style.display = "block";
