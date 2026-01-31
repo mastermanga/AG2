@@ -21,7 +21,7 @@
         <span class="info-wrap header-help">
           <span class="info-icon" tabindex="0" aria-label="Aide" aria-describedby="help-lor2">
             <svg class="info-svg" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 1 0 0 1-2 0v-6Z" />
+              <path fill="currentColor" d="M12 2a10 10 0 1 0 0 20a10 10 0 0 0 0-20Zm0 4.9a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5ZM10.9 11a1 1 0 0 1 1-1h.2a1 1 0 0 1 1 1v6a1 0 0 1-2 0v-6Z" />
             </svg>
           </span>
           <span class="info-tip" id="help-lor2" role="tooltip">
@@ -114,7 +114,8 @@
     <div class="opt-row">
       <div class="opt-label">Duels</div>
       <div class="opt-col opt-rounds">
-        <input id="roundCount" class="round-input" type="number" min="1" max="100" step="1" value="10" />
+        <!-- ✅ défaut = 1 -->
+        <input id="roundCount" class="round-input" type="number" min="1" max="100" step="1" value="1" />
         <div class="opt-hint">(1 à 100) — Duel indépendant : thème aléatoire à chaque duel.</div>
       </div>
     </div>
