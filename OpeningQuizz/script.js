@@ -6,6 +6,7 @@
  * - MODE PARCOURS:
  *    - lit AG_parcours_filters (personnalisation globale)
  *    - lit ?count= pour le nombre de rounds
+ *    - en parcours: ne montre jamais la personnalisation (anti-flicker)
  *    - en fin de série => bouton "Continuer le parcours" => postMessage score
  **********************/
 
@@ -22,11 +23,11 @@ const MIN_REQUIRED_SONGS = 64;
 
 // retry / anti-bug
 const RETRY_DELAYS = [0, 2000, 6000]; // 3 tentatives
-const STALL_TIMEOUT_MS = 6000;        // relance si ça buffer trop longtemps
+const STALL_TIMEOUT_MS = 6000; // relance si ça buffer trop longtemps
 
 // Segments
 const TRY_DURATIONS = [30, 30, null]; // 3e écoute complète
-const REFRAIN_START = 45;             // refrain ~50s
+const REFRAIN_START = 45; // refrain ~50s
 
 // =====================
 // PARCOURS MODE
@@ -78,15 +79,22 @@ function sendParcoursScore() {
       "*"
     );
   } catch (e) {
-    // si jamais parent indispo
     console.warn("postMessage parcours failed:", e);
   }
 }
 
 // ====== UI: menu + theme ======
-document.getElementById("back-to-menu")?.addEventListener("click", () => {
-  window.location.href = "../index.html";
-});
+const backBtn = document.getElementById("back-to-menu");
+if (backBtn) {
+  if (IS_PARCOURS) {
+    // ✅ en parcours: on cache direct (évite sortie du parcours)
+    backBtn.style.display = "none";
+  } else {
+    backBtn.addEventListener("click", () => {
+      window.location.href = "../index.html";
+    });
+  }
+}
 
 document.getElementById("themeToggle")?.addEventListener("click", () => {
   document.body.classList.toggle("light");
@@ -139,67 +147,6 @@ function clampInt(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-function clampYearSliders() {
-  if (!yearMinEl || !yearMaxEl) return;
-  let a = parseInt(yearMinEl.value, 10);
-  let b = parseInt(yearMaxEl.value, 10);
-  if (a > b) {
-    [a, b] = [b, a];
-    yearMinEl.value = a;
-    yearMaxEl.value = b;
-  }
-}
-
-// ====== Songs extraction ======
-function extractSongsFromAnime(anime) {
-  const songs = [];
-  const song = anime.song || {};
-  const buckets = [
-    { key: "openings", type: "OP" },
-    { key: "endings", type: "ED" },
-    { key: "inserts", type: "IN" },
-  ];
-
-  for (const b of buckets) {
-    const arr = Array.isArray(song[b.key]) ? song[b.key] : [];
-    for (const it of arr) {
-      const url = it.video || it.url || "";
-      if (!url || typeof url !== "string" || url.length < 6) continue;
-
-      const artistsArr = Array.isArray(it.artists) ? it.artists : [];
-      const artist = artistsArr.join(", ");
-
-      songs.push({
-        animeMalId: anime.mal_id ?? null,
-        animeTitle: anime._title,
-        animeTitleLower: anime._titleLower,
-        animeImage: anime.image || "",
-        animeType: anime._type,
-        animeYear: anime._year,
-        animeMembers: anime._members,
-        animeScore: anime._score,
-
-        songType: b.type, // OP/ED/IN
-        songNumber: safeNum(it.number) || 1,
-        songName: it.name || "",
-        songArtist: artist || "",
-        songSeason: it.season || anime.season || "",
-
-        url,
-      });
-    }
-  }
-  return songs;
-}
-
-function formatRevealLine(s) {
-  const typeLabel = s.songType === "OP" ? "Opening" : s.songType === "ED" ? "Ending" : "Insert";
-  const num = s.songNumber ? ` ${s.songNumber}` : "";
-  const partName = s.songName ? ` : ${s.songName}` : "";
-  const by = s.songArtist ? ` - ${s.songArtist}` : "";
-  return `${s.animeTitle} ${typeLabel}${num}${partName}${by}`;
-}
-
 // ====== DOM refs ======
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
@@ -240,6 +187,31 @@ const audioPlayer = document.getElementById("audioPlayer");
 
 const volumeSlider = document.getElementById("volumeSlider");
 const volumeVal = document.getElementById("volumeVal");
+
+function clampYearSliders() {
+  if (!yearMinEl || !yearMaxEl) return;
+  let a = parseInt(yearMinEl.value, 10);
+  let b = parseInt(yearMaxEl.value, 10);
+  if (a > b) {
+    [a, b] = [b, a];
+    yearMinEl.value = a;
+    yearMaxEl.value = b;
+  }
+}
+
+// ====== UI show/hide ======
+function showCustomization() {
+  if (customPanel) customPanel.style.display = "block";
+  if (gamePanel) gamePanel.style.display = "none";
+}
+function showGame() {
+  if (customPanel) customPanel.style.display = "none";
+  if (gamePanel) gamePanel.style.display = "block";
+}
+
+// ✅ ANTI-FLICKER / PARCOURS: on force l'écran jeu immédiatement
+if (IS_PARCOURS) showGame();
+else showCustomization();
 
 // ====== Status “anti-bug” ======
 let mediaStatusEl = document.getElementById("mediaStatus");
@@ -301,14 +273,54 @@ let indiceActive = false;
 let roundToken = 0;
 let mediaToken = 0;
 
-// ====== UI show/hide ======
-function showCustomization() {
-  if (customPanel) customPanel.style.display = "block";
-  if (gamePanel) gamePanel.style.display = "none";
+// ====== Songs extraction ======
+function extractSongsFromAnime(anime) {
+  const songs = [];
+  const song = anime.song || {};
+  const buckets = [
+    { key: "openings", type: "OP" },
+    { key: "endings", type: "ED" },
+    { key: "inserts", type: "IN" },
+  ];
+
+  for (const b of buckets) {
+    const arr = Array.isArray(song[b.key]) ? song[b.key] : [];
+    for (const it of arr) {
+      const url = it.video || it.url || "";
+      if (!url || typeof url !== "string" || url.length < 6) continue;
+
+      const artistsArr = Array.isArray(it.artists) ? it.artists : [];
+      const artist = artistsArr.join(", ");
+
+      songs.push({
+        animeMalId: anime.mal_id ?? null,
+        animeTitle: anime._title,
+        animeTitleLower: anime._titleLower,
+        animeImage: anime.image || "",
+        animeType: anime._type,
+        animeYear: anime._year,
+        animeMembers: anime._members,
+        animeScore: anime._score,
+
+        songType: b.type, // OP/ED/IN
+        songNumber: safeNum(it.number) || 1,
+        songName: it.name || "",
+        songArtist: artist || "",
+        songSeason: it.season || anime.season || "",
+
+        url,
+      });
+    }
+  }
+  return songs;
 }
-function showGame() {
-  if (customPanel) customPanel.style.display = "none";
-  if (gamePanel) gamePanel.style.display = "block";
+
+function formatRevealLine(s) {
+  const typeLabel = s.songType === "OP" ? "Opening" : s.songType === "ED" ? "Ending" : "Insert";
+  const num = s.songNumber ? ` ${s.songNumber}` : "";
+  const partName = s.songName ? ` : ${s.songName}` : "";
+  const by = s.songArtist ? ` - ${s.songArtist}` : "";
+  return `${s.animeTitle} ${typeLabel}${num}${partName}${by}`;
 }
 
 // ====== Score bar ======
@@ -385,7 +397,9 @@ function armSegmentLimiter(startTime, durationSec) {
   const onTimeUpdate = () => {
     if (!segmentLimiter.active) return;
     if (audioPlayer.currentTime >= segmentLimiter.endTime - 0.05) {
-      try { audioPlayer.pause(); } catch {}
+      try {
+        audioPlayer.pause();
+      } catch {}
       clearSegmentLimiter();
       setMediaStatus("");
     }
@@ -394,7 +408,9 @@ function armSegmentLimiter(startTime, durationSec) {
   const onSeeked = () => {
     if (!segmentLimiter.active) return;
     if (audioPlayer.currentTime >= segmentLimiter.endTime - 0.05) {
-      try { audioPlayer.pause(); } catch {}
+      try {
+        audioPlayer.pause();
+      } catch {}
       clearSegmentLimiter();
       setMediaStatus("");
     }
@@ -410,7 +426,9 @@ function armSegmentLimiter(startTime, durationSec) {
 // ====== MEDIA loader (retries + anti-stall) ======
 function hardResetMedia() {
   clearSegmentLimiter();
-  try { audioPlayer.pause(); } catch {}
+  try {
+    audioPlayer.pause();
+  } catch {}
   audioPlayer.removeAttribute("src");
   audioPlayer.load();
 }
@@ -481,7 +499,9 @@ function loadMediaWithRetries(url, localRound, localMedia, onReady, onFail, { pr
 
     const src = attemptIndex === 0 ? url : withCacheBuster(url);
 
-    try { hardResetMedia(); } catch {}
+    try {
+      hardResetMedia();
+    } catch {}
 
     setMediaStatus(attemptIndex === 0 ? "⏳ Chargement..." : `🔄 Nouvelle tentative (${attemptIndex + 1}/${RETRY_DELAYS.length})...`);
 
@@ -617,7 +637,9 @@ function updatePreview() {
 // ====== Playback helpers ======
 function stopPlayback() {
   clearSegmentLimiter();
-  try { audioPlayer.pause(); } catch {}
+  try {
+    audioPlayer.pause();
+  } catch {}
 }
 
 function hidePlayerDuringGame() {
@@ -865,7 +887,9 @@ function playSegment(tryNum) {
     () => {
       if (localRound !== roundToken || localMedia !== mediaToken) return;
 
-      try { audioPlayer.currentTime = startTime; } catch {}
+      try {
+        audioPlayer.currentTime = startTime;
+      } catch {}
       applyVolume();
 
       const dur = TRY_DURATIONS[tries - 1];
@@ -1186,7 +1210,6 @@ function bootParcoursMode() {
       nextBtn.textContent = "Continuer le parcours";
       nextBtn.onclick = () => {
         nextBtn.disabled = true;
-        // score 0/total
         totalScore = 0;
         sendParcoursScore();
       };
@@ -1222,13 +1245,16 @@ fetch("../data/licenses_only.json")
     allSongs = [];
     for (const a of allAnimes) allSongs.push(...extractSongsFromAnime(a));
 
-    initCustomUI();
-    updatePreview();
-    showCustomization();
+    // ✅ volume OK dans tous les modes
     applyVolume();
 
+    // ✅ IMPORTANT: en parcours, on ne touche PAS à la personnalisation (pas de listeners, pas de preview)
     if (IS_PARCOURS) {
       bootParcoursMode();
+    } else {
+      initCustomUI();
+      updatePreview();
+      showCustomization();
     }
   })
   .catch((e) => {
