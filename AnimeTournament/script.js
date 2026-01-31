@@ -333,10 +333,16 @@ function showEndBtn(label, onClick) {
   btn.textContent = label;
   btn.disabled = false;
 
-  // ✅ important: ton CSS met display:none, donc on force inline-flex
-  btn.style.display = "inline-flex";
+  // ✅ display:flex => élément "block-level" => margin auto centre
+  btn.style.display = "flex";
+  btn.style.width = "fit-content";
+  btn.style.margin = "0 auto 2rem auto";
+  btn.style.justifyContent = "center";
+  btn.style.alignItems = "center";
+
   btn.onclick = typeof onClick === "function" ? onClick : null;
 }
+
 
 // =======================
 // PANEL vs GAME
