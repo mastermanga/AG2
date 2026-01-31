@@ -634,18 +634,25 @@ body.light .volume-right { color: #0b1a2a; }
 #next-match-btn {
   display: none;
   margin: 0 auto 2.0rem auto;
-  padding: 0.95rem 2.2rem;
-  font-size: 1.12rem;
-  border-radius: 12px;
-  font-weight: 900;
+  padding: 1rem 2.5rem;
+  font-size: 1.17rem;
+  border-radius: 10px;
+  background: #00bcd4;
+  color: #121212;
+  font-weight: bold;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 16px #00bcd444;
+  transition: background 0.2s, color 0.2s, box-shadow 0.18s;
   z-index: 2;
   position: relative;
 
-  /* rendu propre si tu mets une icône + texte */
-  align-items: center;
+  /* ✅ centrage robuste quand affiché */
+  width: fit-content;
   justify-content: center;
-  gap: 0.65rem;
+  align-items: center;
 }
+
 
 /* =========================================
    CLASSEMENT
