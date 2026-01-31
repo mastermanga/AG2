@@ -57,6 +57,7 @@ function loadParcoursCfg() {
   }
 }
 
+// ✅ Pour parcours: Tournament = 1 étape (1/1 si terminé, 0/1 si abort)
 function sendParcoursScore(score = 1, total = 1) {
   if (parcoursSent) return;
   parcoursSent = true;
@@ -311,6 +312,103 @@ function updateThemeStrip() {
 }
 
 // =======================
+// ✅ END ACTIONS (Rejouer / Réglages / Continuer parcours)
+// - corrige le "bouton invisible" + ajoute un bouton Réglages en standard
+// =======================
+let END_ACTIONS_READY = false;
+
+function ensureEndActions() {
+  if (END_ACTIONS_READY) return;
+
+  const replay = document.getElementById("next-match-btn");
+  if (!replay) return;
+
+  let wrap = document.getElementById("end-actions");
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = "end-actions";
+    wrap.style.display = "none";
+    wrap.style.justifyContent = "center";
+    wrap.style.gap = "12px";
+    wrap.style.flexWrap = "wrap";
+    wrap.style.margin = "0.2rem auto 2rem auto";
+    wrap.style.zIndex = "2";
+    wrap.style.position = "relative";
+
+    // place le wrapper à la place du bouton, puis on met le bouton dedans
+    replay.insertAdjacentElement("beforebegin", wrap);
+    wrap.appendChild(replay);
+  }
+
+  // normalise le bouton replay
+  replay.style.margin = "0";
+  replay.style.display = "none"; // caché par défaut (on le montre en fin)
+
+  // bouton réglages (créé dynamiquement)
+  let settings = document.getElementById("back-to-settings-btn");
+  if (!settings) {
+    settings = document.createElement("button");
+    settings.id = "back-to-settings-btn";
+    settings.type = "button";
+    settings.className = "menu-btn";
+    settings.textContent = "⚙️ Réglages";
+    wrap.appendChild(settings);
+  }
+  settings.style.margin = "0";
+  settings.style.display = "none";
+
+  END_ACTIONS_READY = true;
+}
+
+function hideEndActions() {
+  const wrap = document.getElementById("end-actions");
+  const replay = document.getElementById("next-match-btn");
+  const settings = document.getElementById("back-to-settings-btn");
+
+  if (wrap) wrap.style.display = "none";
+  if (replay) replay.style.display = "none";
+  if (settings) settings.style.display = "none";
+}
+
+function showEndActions({
+  replayLabel = "Rejouer",
+  onReplay = null,
+  showSettings = false,
+} = {}) {
+  ensureEndActions();
+
+  const wrap = document.getElementById("end-actions");
+  const replay = document.getElementById("next-match-btn");
+  const settings = document.getElementById("back-to-settings-btn");
+
+  if (wrap) wrap.style.display = "flex";
+
+  if (replay) {
+    replay.textContent = replayLabel;
+    replay.disabled = false;
+    // ✅ IMPORTANT: forcer un display qui override le CSS (#next-match-btn { display:none })
+    replay.style.display = "inline-flex";
+    replay.onclick = typeof onReplay === "function" ? onReplay : null;
+  }
+
+  if (settings) {
+    settings.style.display = showSettings ? "inline-flex" : "none";
+    settings.disabled = false;
+
+    if (showSettings) {
+      settings.onclick = () => {
+        resetTournament();
+        showCustomization();
+        refreshPreview();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      };
+    } else {
+      settings.onclick = null;
+    }
+  }
+}
+
+// =======================
 // PANEL vs GAME
 // =======================
 function showCustomization() {
@@ -319,17 +417,18 @@ function showCustomization() {
   const custom = document.getElementById("custom-panel");
   if (custom) custom.style.display = "";
 
-  const gameEls = [
-    document.getElementById("round-indicator"),
-    getThemeEl(),
-    document.getElementById("volumeBar"),
-    document.getElementById("duel-container"),
-    document.getElementById("next-match-btn"),
-    document.getElementById("classement"),
-  ];
-  gameEls.forEach((el) => {
-    if (el) el.style.display = "none";
-  });
+  const duel = document.getElementById("duel-container");
+  const roundBox = document.getElementById("round-indicator");
+  const themeEl = getThemeEl();
+  const classement = document.getElementById("classement");
+
+  if (duel) duel.style.display = "none";
+  if (roundBox) roundBox.style.display = "none";
+  if (themeEl) themeEl.style.display = "none";
+  if (classement) classement.style.display = "none";
+
+  updateVolumeVisibility();
+  hideEndActions();
 }
 
 function showGame() {
@@ -350,11 +449,9 @@ function showGame() {
   const classement = document.getElementById("classement");
   if (classement) classement.style.display = "none";
 
-  const replay = document.getElementById("next-match-btn");
-  if (replay) replay.style.display = "none";
-
   updateVolumeVisibility();
   updateThemeStrip();
+  hideEndActions();
 }
 
 // =======================
@@ -465,7 +562,6 @@ function ensureDefaultSongs() {
 // =======================
 function applyParcoursParamsToUI() {
   const cfg = loadParcoursCfg();
-
   const has = (x) => x != null && x !== "";
 
   // mode forcé (URL > localStorage)
@@ -574,7 +670,6 @@ function readOptions() {
   if (yMaxVal) yMaxVal.textContent = String(yMax);
 
   const types = new Set([...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type));
-
   const songKinds = new Set([...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song));
 
   return {
@@ -1137,6 +1232,8 @@ fetch(DATA_URL)
       };
     });
 
+    ensureEndActions(); // ✅ prépare les boutons de fin
+
     initVolumeUI();
     setDefaultUI();
     initModePillsIfAny();
@@ -1169,7 +1266,10 @@ function parcoursAbort(message, score = 0, total = 1) {
   updateThemeStrip();
 
   const duel = document.getElementById("duel-container");
-  if (duel) duel.innerHTML = "";
+  if (duel) {
+    duel.innerHTML = "";
+    duel.style.display = "none"; // ✅ évite le gros bloc vide
+  }
 
   const classement = document.getElementById("classement");
   if (classement) {
@@ -1180,15 +1280,15 @@ function parcoursAbort(message, score = 0, total = 1) {
   const roundBox = document.getElementById("round-indicator");
   if (roundBox) roundBox.textContent = message;
 
-  const btn = document.getElementById("next-match-btn");
-  if (btn) {
-    btn.style.display = "";
-    btn.textContent = "Continuer le parcours";
-    btn.onclick = () => {
-      btn.disabled = true;
+  showEndActions({
+    replayLabel: "Continuer le parcours",
+    showSettings: false,
+    onReplay: () => {
+      const btn = document.getElementById("next-match-btn");
+      if (btn) btn.disabled = true;
       sendParcoursScore(score, total);
-    };
-  }
+    },
+  });
 }
 
 // =======================
@@ -1607,6 +1707,9 @@ async function renderMatch() {
   const box = document.getElementById("duel-container");
   if (!box) return;
 
+  // ✅ en jeu: duel visible
+  box.style.display = "";
+
   cleanupCurrentMedia();
   box.innerHTML = "";
 
@@ -1653,6 +1756,7 @@ async function renderMatch() {
 
   updateVolumeVisibility();
   updateThemeStrip();
+  hideEndActions();
 
   if (mode === "songs") {
     const left = cardEls.find((c) => c.idx === currentMatch.a);
@@ -1740,34 +1844,40 @@ function finishTournament() {
   if (winner !== null) ranking.push(winner);
   ranking.push(...eliminationOrder.slice().reverse());
 
-  renderClassement(ranking);
-
-  const replay = document.getElementById("next-match-btn");
-  if (replay) {
-    replay.style.display = "";
-
-    if (IS_PARCOURS) {
-      replay.textContent = "Continuer le parcours";
-      replay.onclick = () => {
-        replay.disabled = true;
-        sendParcoursScore(1, 1);
-      };
-    } else {
-      replay.textContent = "Rejouer";
-      replay.onclick = () => {
-        resetTournament();
-        showCustomization();
-        refreshPreview();
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      };
-    }
+  // ✅ cache le duel pour éviter le gros bloc vide
+  const duel = document.getElementById("duel-container");
+  if (duel) {
+    duel.innerHTML = "";
+    duel.style.display = "none";
   }
 
-  const duel = document.getElementById("duel-container");
-  if (duel) duel.innerHTML = "";
+  renderClassement(ranking);
 
   const roundBox = document.getElementById("round-indicator");
   if (roundBox) roundBox.textContent = "🏁 Tournoi terminé !";
+
+  if (IS_PARCOURS) {
+    showEndActions({
+      replayLabel: "Continuer le parcours",
+      showSettings: false,
+      onReplay: () => {
+        const btn = document.getElementById("next-match-btn");
+        if (btn) btn.disabled = true;
+        sendParcoursScore(1, 1);
+      },
+    });
+  } else {
+    // ✅ Standard: Rejouer + Réglages
+    showEndActions({
+      replayLabel: "Rejouer",
+      showSettings: true,
+      onReplay: () => {
+        // relance direct avec la config actuelle
+        startGame();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      },
+    });
+  }
 
   updateVolumeVisibility();
   updateThemeStrip();
@@ -1833,16 +1943,17 @@ function resetTournament() {
 
   const duel = document.getElementById("duel-container");
   const classement = document.getElementById("classement");
-  const replay = document.getElementById("next-match-btn");
   const roundBox = document.getElementById("round-indicator");
   const themeStrip = getThemeEl();
 
-  if (duel) duel.innerHTML = "";
+  if (duel) {
+    duel.innerHTML = "";
+    duel.style.display = "none";
+  }
   if (classement) {
     classement.innerHTML = "";
     classement.style.display = "none";
   }
-  if (replay) replay.style.display = "none";
   if (roundBox) roundBox.textContent = "";
   if (themeStrip) themeStrip.style.display = "none";
 
@@ -1861,4 +1972,5 @@ function resetTournament() {
 
   updateVolumeVisibility();
   updateThemeStrip();
+  hideEndActions();
 }
