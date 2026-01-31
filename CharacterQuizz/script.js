@@ -71,6 +71,24 @@ function sendParcoursScore() {
   }
 }
 
+/**
+ * ✅ (1) + (2) Anti-flash Parcours :
+ * - On masque immédiatement le custom-panel
+ * - On affiche le game-panel
+ * - On cache immédiatement le bouton Menu
+ * (Le script est chargé en bas du body => DOM déjà présent)
+ */
+if (IS_PARCOURS) {
+  const cp = document.getElementById("custom-panel");
+  if (cp) cp.style.display = "none";
+
+  const gp = document.getElementById("game-panel");
+  if (gp) gp.style.display = "block";
+
+  const backBtn = document.getElementById("back-to-menu");
+  if (backBtn) backBtn.style.display = "none";
+}
+
 // ====== UI: menu + theme ======
 document.getElementById("back-to-menu")?.addEventListener("click", () => {
   window.location.href = "../index.html";
@@ -510,15 +528,27 @@ function endRound(roundScore, won, messageHtml) {
   if (!restartBtn) return;
 
   restartBtn.style.display = "inline-block";
-  restartBtn.textContent = currentRound < totalRounds ? "Round suivant" : (IS_PARCOURS ? "Continuer le parcours" : "Voir le score total");
+  restartBtn.textContent =
+    currentRound < totalRounds
+      ? "Round suivant"
+      : IS_PARCOURS
+      ? "Continuer le parcours"
+      : "Voir le score total";
 
   restartBtn.onclick = () => {
     if (currentRound >= totalRounds) {
+      // ✅ (3) En Parcours: 1 seul clic -> envoi direct du score
+      if (IS_PARCOURS) {
+        restartBtn.disabled = true;
+        sendParcoursScore();
+        return;
+      }
       showFinalRecap();
-    } else {
-      currentRound += 1;
-      startNewRound();
+      return;
     }
+
+    currentRound += 1;
+    startNewRound();
   };
 }
 
@@ -707,7 +737,7 @@ function launchFireworks() {
 
 // ====== Boot Parcours ======
 function bootParcoursMode() {
-  // on évite de sortir du parcours
+  // on évite de sortir du parcours (sécurité)
   const backBtn = document.getElementById("back-to-menu");
   if (backBtn) backBtn.style.display = "none";
 
@@ -761,12 +791,15 @@ fetch("../data/licenses_only.json")
       };
     });
 
+    if (IS_PARCOURS) {
+      // ✅ (1) pas de showCustomization() en Parcours => pas de flash
+      bootParcoursMode();
+      return;
+    }
+
+    // mode standard (inchangé)
     initCustomUI();
     updatePreview();
     showCustomization();
-
-    if (IS_PARCOURS) {
-      bootParcoursMode();
-    }
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
