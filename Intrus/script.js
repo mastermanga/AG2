@@ -1166,7 +1166,9 @@ function onPick(index) {
 
   nextBtn.style.display = "inline-block";
   const isLast = currentRound >= totalRounds;
-  nextBtn.textContent = isLast ? "Retour réglages" : "Round suivant";
+  nextBtn.textContent = isLast
+    ? (isParcours ? "Continuer le parcours" : "Retour réglages")
+    : "Round suivant";
   nextBtn.onclick = () => {
     if (!isLast) {
       currentRound++;
