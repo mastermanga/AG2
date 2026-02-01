@@ -14,18 +14,12 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// ========== RESET PERSONNALISATIONS (MINI-JEUX) ==========
+// ========== RESET PERSONNALISATIONS (MINI-JEUX + PARCOURS) ==========
 // Objectif : quand on repasse par le hub, on reset les configs "v1" des mini-jeux
-// sans casser le thème et sans toucher au Parcours.
+// et on reset aussi tout le Parcours, sans casser le thème.
 function resetMiniGamesPersonalisation() {
-  const KEEP_EXACT = new Set([
-    "theme",
-    "AG_parcours_filters", // on garde la config globale du parcours
-  ]);
-
-  const KEEP_PREFIXES = [
-    "AG_parcours_", // tout ce qui commence par ce préfixe = parcours
-  ];
+  // On garde uniquement le thème
+  const KEEP_EXACT = new Set(["theme"]);
 
   // Ciblage des clés de config des mini-jeux (versions v1)
   const PERSONAL_KEYS_SUFFIX = [
@@ -36,18 +30,22 @@ function resetMiniGamesPersonalisation() {
 
   Object.keys(localStorage).forEach((k) => {
     if (KEEP_EXACT.has(k)) return;
-    if (KEEP_PREFIXES.some((p) => k.startsWith(p))) return;
 
     const lower = k.toLowerCase();
-    const isPersonal = PERSONAL_KEYS_SUFFIX.some((s) => lower.endsWith(s));
+    const isPersonalV1 = PERSONAL_KEYS_SUFFIX.some((s) => lower.endsWith(s));
 
-    if (isPersonal) localStorage.removeItem(k);
+    // ✅ Nouveau : on reset aussi toutes les clés du Parcours
+    const isParcours = k.startsWith("AG_parcours_");
+
+    if (isPersonalV1 || isParcours) {
+      localStorage.removeItem(k);
+    }
   });
 }
 
 // ========== INITIALISATION ==========
 window.addEventListener("DOMContentLoaded", () => {
-  // Reset des personnalisations des mini-jeux à chaque passage sur le hub
+  // Reset des personnalisations des mini-jeux + Parcours à chaque passage sur le hub
   resetMiniGamesPersonalisation();
 
   const savedTheme = localStorage.getItem("theme");
