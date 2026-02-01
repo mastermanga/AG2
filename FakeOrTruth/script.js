@@ -9,6 +9,7 @@
  * ✅ MODE PARCOURS (comme Anime Tournament)
  * - ?parcours=1 => auto-start, cache Menu + cache réglages
  * - Paramètres via URL (prioritaire) sinon localStorage "AG_parcours_filters"
+ * - ✅ Rounds : URL ?rounds=... / cfg.rounds / cfg.roundCount / fallback localStorage "parcoursSteps[count]"
  * - Fin: bouton "Continuer le parcours" + postMessage score/total
  * - Pool insuffisant: écran abort + "Continuer le parcours" (score 0)
  **********************/
@@ -52,9 +53,10 @@ const PARAM_POP = urlParams.get("popPercent") || urlParams.get("pop") || urlPara
 const PARAM_SCORE = urlParams.get("scorePercent") || urlParams.get("score");
 const PARAM_YMIN = urlParams.get("yearMin") || urlParams.get("yMin");
 const PARAM_YMAX = urlParams.get("yearMax") || urlParams.get("yMax");
-const PARAM_ROUNDS = urlParams.get("rounds") || urlParams.get("roundCount");
+const PARAM_ROUNDS = urlParams.get("rounds") || urlParams.get("roundCount"); // ✅ URL
 
 const PARCOURS_CFG_KEY = "AG_parcours_filters";
+const PARCOURS_STEPS_KEY = "parcoursSteps"; // ✅ NEW (ton localStorage du parcours)
 let parcoursSent = false;
 
 function loadParcoursCfg() {
@@ -171,6 +173,51 @@ function safeNum(x) {
 function clampInt(n, a, b) {
   n = Number.isFinite(n) ? n : a;
   return Math.max(a, Math.min(b, n));
+}
+
+/* =======================
+   ✅ NEW: Rounds Parcours
+   - priorité : URL ?rounds= / ?roundCount=
+   - puis cfg.rounds / cfg.roundCount
+   - puis localStorage parcoursSteps[count]
+======================= */
+function getRoundsFromStepsFallback() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_STEPS_KEY);
+    if (!raw) return null;
+    const steps = JSON.parse(raw);
+    if (!Array.isArray(steps) || !steps.length) return null;
+
+    // si ton launcher met step=..., on l'utilise. Sinon on prend 0.
+    const idx = clampInt(parseInt(urlParams.get("step") || "0", 10), 0, steps.length - 1);
+    const n = parseInt(steps[idx]?.count, 10);
+    return Number.isFinite(n) ? clampInt(n, 1, 100) : null;
+  } catch {
+    return null;
+  }
+}
+
+function getParcoursRounds(cfg = null) {
+  const has = (x) => x != null && x !== "";
+
+  // 1) URL
+  if (has(PARAM_ROUNDS)) {
+    const n = parseInt(PARAM_ROUNDS, 10);
+    if (Number.isFinite(n)) return clampInt(n, 1, 100);
+  }
+
+  // 2) cfg (AG_parcours_filters)
+  const cfgVal = cfg?.rounds ?? cfg?.roundCount ?? cfg?.roundsCount ?? null;
+  if (has(cfgVal)) {
+    const n = parseInt(cfgVal, 10);
+    if (Number.isFinite(n)) return clampInt(n, 1, 100);
+  }
+
+  // 3) fallback parcoursSteps[count]
+  const fromSteps = getRoundsFromStepsFallback();
+  if (Number.isFinite(fromSteps) && fromSteps >= 1) return fromSteps;
+
+  return 1;
 }
 
 function clampYearSliders() {
@@ -1176,11 +1223,9 @@ function applyParcoursParamsToUI() {
   trySetInt(yearMinEl, has(PARAM_YMIN) ? PARAM_YMIN : cfg?.yearMin, 1950, 2026);
   trySetInt(yearMaxEl, has(PARAM_YMAX) ? PARAM_YMAX : cfg?.yearMax, 1950, 2026);
 
-  // rounds
+  // ✅ rounds (URL > cfg.rounds/roundCount > parcoursSteps[count] > 1)
   if (roundCountEl) {
-    const src = has(PARAM_ROUNDS) ? PARAM_ROUNDS : cfg?.rounds;
-    const n = parseInt(src, 10);
-    if (Number.isFinite(n)) roundCountEl.value = String(clampInt(n, 1, 100));
+    roundCountEl.value = String(getParcoursRounds(cfg));
   }
 
   // types pills
@@ -1410,7 +1455,9 @@ fetch("../data/licenses_only.json")
 
       applyParcoursParamsToUI();
 
-      totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
+      // ✅ IMPORTANT: totalRounds vient de URL/cfg/parcoursSteps (pas seulement de l'input)
+      const cfg = loadParcoursCfg();
+      totalRounds = getParcoursRounds(cfg);
       currentRound = 1;
       totalScore = 0;
 
