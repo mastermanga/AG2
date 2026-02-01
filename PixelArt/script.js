@@ -1,11 +1,15 @@
 /**********************
- * Pixel Art
+ * Pixel Art (standalone + parcours)
  * - 3 manches : difficile -> moyen -> facile
  * - Avance sur guess raté OU bouton "Suivant"
  * - Effet aléatoire au début de chaque round
  * - Poster: moyen + dur (moins simple)
  * - Glitch: layout random par round + bandes plus fines
  * - Timer: 10s par manche => manche suivante (ou perdu si déjà en facile)
+ *
+ * ✅ Parcours:
+ *   - ?parcours=1 => cache "Menu", applique filtres (URL + localStorage), auto-start
+ *   - Fin => bouton "Continuer le parcours" => postMessage({ parcoursScore: {label, score, total}})
  **********************/
 
 const MAX_SCORE = 3000;
@@ -25,12 +29,59 @@ const EFFECTS = [
   { id: "glitch",   label: "Glitch" },
 ];
 
+// =======================
+// PARCOURS (URL PARAMS)
+// =======================
+const urlParams = new URLSearchParams(window.location.search);
+const IS_PARCOURS = urlParams.get("parcours") === "1";
+
+const PARAM_TYPES  = urlParams.get("types"); // ex: "TV,Movie"
+const PARAM_POP    = urlParams.get("popPercent") || urlParams.get("pop") || urlParams.get("popularity");
+const PARAM_SCORE  = urlParams.get("scorePercent") || urlParams.get("score");
+const PARAM_YMIN   = urlParams.get("yearMin") || urlParams.get("yMin");
+const PARAM_YMAX   = urlParams.get("yearMax") || urlParams.get("yMax");
+const PARAM_ROUNDS = urlParams.get("rounds") || urlParams.get("roundCount");
+
+// fallback config globale si tu l'utilises ailleurs
+const PARCOURS_CFG_KEY = "AG_parcours_filters";
+let parcoursSent = false;
+
+function loadParcoursCfg() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_CFG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Pixel Art : on renvoie un score "réel" (totalScore / totalMax)
+function sendParcoursScore(score = 0, total = MAX_SCORE) {
+  if (parcoursSent) return;
+  parcoursSent = true;
+
+  try {
+    parent.postMessage(
+      {
+        parcoursScore: {
+          label: "Pixel Art",
+          score,
+          total,
+        },
+      },
+      "*"
+    );
+  } catch (e) {
+    console.warn("postMessage parcours failed:", e);
+  }
+}
+
 // ====== UI: menu + theme ======
-document.getElementById("back-to-menu").addEventListener("click", () => {
+document.getElementById("back-to-menu")?.addEventListener("click", () => {
   window.location.href = "../index.html";
 });
 
-document.getElementById("themeToggle").addEventListener("click", () => {
+document.getElementById("themeToggle")?.addEventListener("click", () => {
   document.body.classList.toggle("light");
   localStorage.setItem(
     "theme",
@@ -142,6 +193,14 @@ function rInt(rng, min, max) { return Math.floor(rRange(rng, min, max + 1)); }
 // ====== DOM refs ======
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
+
+// ✅ Anti-flash + UI Parcours (script en bas => DOM déjà présent)
+if (IS_PARCOURS) {
+  const backBtn = document.getElementById("back-to-menu");
+  if (backBtn) backBtn.style.display = "none";
+  if (customPanel) customPanel.style.display = "none";
+  if (gamePanel) gamePanel.style.display = "block";
+}
 
 const popEl = document.getElementById("popPercent");
 const scoreEl = document.getElementById("scorePercent");
@@ -278,6 +337,22 @@ function setRangePct(el) {
   el.style.setProperty("--pct", `${Math.max(0, Math.min(100, pct))}%`);
 }
 
+// ====== ✅ Sync Custom UI (global, utile pour parcours) ======
+function syncCustomUI() {
+  clampYearSliders();
+  popValEl.textContent = popEl.value;
+  scoreValEl.textContent = scoreEl.value;
+  yearMinValEl.textContent = yearMinEl.value;
+  yearMaxValEl.textContent = yearMaxEl.value;
+
+  setRangePct(popEl);
+  setRangePct(scoreEl);
+  setRangePct(yearMinEl);
+  setRangePct(yearMaxEl);
+
+  updatePreview();
+}
+
 // ====== Score bar ======
 function getScoreBarColor(score) {
   if (score >= 2500) return "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
@@ -344,22 +419,7 @@ function updatePreview() {
 
 // ====== Custom UI init ======
 function initCustomUI() {
-  function syncLabels() {
-    clampYearSliders();
-    popValEl.textContent = popEl.value;
-    scoreValEl.textContent = scoreEl.value;
-    yearMinValEl.textContent = yearMinEl.value;
-    yearMaxValEl.textContent = yearMaxEl.value;
-
-    setRangePct(popEl);
-    setRangePct(scoreEl);
-    setRangePct(yearMinEl);
-    setRangePct(yearMaxEl);
-
-    updatePreview();
-  }
-
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncLabels));
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncCustomUI));
 
   document.querySelectorAll("#typePills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -384,7 +444,98 @@ function initCustomUI() {
     startNewRound();
   });
 
-  syncLabels();
+  syncCustomUI();
+}
+
+// =======================
+// PARCOURS helpers
+// =======================
+function ensureDefaultTypes() {
+  const pills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
+  if (!pills.length) return;
+
+  const active = pills.filter(p => p.classList.contains("active"));
+  if (active.length) return;
+
+  pills.forEach(p => {
+    const t = p.dataset.type;
+    const on = (t === "TV" || t === "Movie");
+    p.classList.toggle("active", on);
+    p.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+
+function applyParcoursParamsToUI() {
+  const cfg = loadParcoursCfg();
+  const has = (x) => x != null && x !== "";
+
+  const setInt = (el, val, min, max) => {
+    if (!el || !has(val)) return;
+    const n = parseInt(val, 10);
+    if (!Number.isFinite(n)) return;
+    el.value = String(clampInt(n, min, max));
+  };
+
+  // URL > cfg
+  setInt(popEl,     has(PARAM_POP)   ? PARAM_POP   : cfg?.popPercent,   5, 100);
+  setInt(scoreEl,   has(PARAM_SCORE) ? PARAM_SCORE : cfg?.scorePercent, 5, 100);
+  setInt(yearMinEl, has(PARAM_YMIN)  ? PARAM_YMIN  : cfg?.yearMin,      1950, 2026);
+  setInt(yearMaxEl, has(PARAM_YMAX)  ? PARAM_YMAX  : cfg?.yearMax,      1950, 2026);
+
+  // rounds
+  const roundsVal = has(PARAM_ROUNDS) ? PARAM_ROUNDS : cfg?.roundCount;
+  if (roundCountEl && has(roundsVal)) {
+    const n = parseInt(roundsVal, 10);
+    if (Number.isFinite(n)) roundCountEl.value = String(clampInt(n, 1, 100));
+  }
+
+  // types pills
+  const typesList =
+    has(PARAM_TYPES)
+      ? PARAM_TYPES.split(",").map(s => s.trim()).filter(Boolean)
+      : Array.isArray(cfg?.types)
+        ? cfg.types
+        : null;
+
+  if (typesList && typesList.length) {
+    const want = new Set(typesList);
+    const pills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
+    pills.forEach(p => {
+      const t = p.dataset.type;
+      const on = want.has(t);
+      p.classList.toggle("active", on);
+      p.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  ensureDefaultTypes();
+  syncCustomUI();
+}
+
+function parcoursAbort(message, score = 0, total = 1) {
+  showGame();
+
+  const gameContainer = document.getElementById("container");
+  if (!gameContainer) return;
+
+  gameContainer.innerHTML = `
+    <div style="width:100%;max-width:520px;text-align:center;">
+      <div style="font-size:1.2rem;font-weight:900;opacity:0.95;margin-bottom:14px;">
+        ${message}
+      </div>
+      <button id="parcoursContinue" class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
+        Continuer le parcours
+      </button>
+    </div>
+  `;
+
+  const btn = document.getElementById("parcoursContinue");
+  if (btn) {
+    btn.onclick = () => {
+      btn.disabled = true;
+      sendParcoursScore(score, total);
+    };
+  }
 }
 
 // ====== Art DOM ======
@@ -532,6 +683,11 @@ async function startNewRound() {
     clearStageTimer();
     stageInfoBase = "";
     renderInfoLine();
+
+    if (IS_PARCOURS) {
+      parcoursAbort("❌ Erreur: impossible de charger l'image.", 0, 1);
+      return;
+    }
 
     feedback.textContent = "❌ Erreur: impossible de charger l'image.";
     feedback.className = "error";
@@ -854,7 +1010,7 @@ function endRound(roundScore, won, messageHtml) {
   totalScore += roundScore;
 
   nextBtn.disabled = false;
-  nextBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
+  nextBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : (IS_PARCOURS ? "Voir le résultat" : "Voir le score total");
   nextBtn.onclick = () => {
     if (currentRound >= totalRounds) showFinalRecap();
     else { currentRound += 1; startNewRound(); }
@@ -879,18 +1035,34 @@ function loseRound(prefix) {
 
 function showFinalRecap() {
   const gameContainer = document.getElementById("container");
+  const totalMax = totalRounds * MAX_SCORE;
+  if (!gameContainer) return;
+
+  const isParcours = IS_PARCOURS;
+
   gameContainer.innerHTML = `
     <div style="width:100%;max-width:520px;text-align:center;">
       <div style="font-size:1.35rem;font-weight:900;opacity:0.95;margin-bottom:10px;">🏆 Série terminée !</div>
       <div style="font-size:1.15rem;font-weight:900;margin-bottom:14px;">
-        Score total : <b>${totalScore}</b> / <b>${totalRounds * MAX_SCORE}</b>
+        Score total : <b>${totalScore}</b> / <b>${totalMax}</b>
       </div>
-      <button id="backToSettings" class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
-        Retour réglages
+
+      <button id="${isParcours ? "parcoursContinue" : "backToSettings"}"
+              class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
+        ${isParcours ? "Continuer le parcours" : "Retour réglages"}
       </button>
     </div>
   `;
-  document.getElementById("backToSettings").onclick = () => window.location.reload();
+
+  if (isParcours) {
+    document.getElementById("parcoursContinue").onclick = () => {
+      const btn = document.getElementById("parcoursContinue");
+      if (btn) btn.disabled = true;
+      sendParcoursScore(totalScore, totalMax);
+    };
+  } else {
+    document.getElementById("backToSettings").onclick = () => window.location.reload();
+  }
 }
 
 // ====== Guess logic ======
@@ -1282,7 +1454,30 @@ fetch("../data/licenses_only.json")
     });
 
     initCustomUI();
-    updatePreview();
-    showCustomization();
+
+    if (IS_PARCOURS) {
+      applyParcoursParamsToUI();
+
+      filteredAnimes = applyFilters();
+      if (filteredAnimes.length < MIN_TITLES_TO_START) {
+        parcoursAbort(`❌ Pool insuffisant : ${filteredAnimes.length} titres (min ${MIN_TITLES_TO_START}).`, 0, 1);
+        return;
+      }
+
+      totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
+      currentRound = 1;
+      totalScore = 0;
+
+      showGame();
+      startNewRound();
+    } else {
+      showCustomization();
+    }
   })
-  .catch((e) => alert("Erreur chargement dataset: " + e.message));
+  .catch((e) => {
+    if (IS_PARCOURS) {
+      parcoursAbort("❌ Erreur chargement dataset.", 0, 1);
+    } else {
+      alert("Erreur chargement dataset: " + e.message);
+    }
+  });
