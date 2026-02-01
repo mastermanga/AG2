@@ -3,8 +3,14 @@
  * ✅ 25% Truth / 75% Fake
  * ✅ Truth = match parfait (A === B : même song)
  * ✅ Fake = sinon (même anime autre song OU anime différent)
- * ✅ Reveal = Vidéo A si Truth, sinon Vidéo B
+ * ✅ Reveal = Vidéo A si Truth, sinon Vidéo B (tooltip laissé tel quel)
  * ✅ Robust audio load/seek/buffer + autoplay fallback click
+ *
+ * ✅ MODE PARCOURS (comme Anime Tournament)
+ * - ?parcours=1 => auto-start, cache Menu + cache réglages
+ * - Paramètres via URL (prioritaire) sinon localStorage "AG_parcours_filters"
+ * - Fin: bouton "Continuer le parcours" + postMessage score/total
+ * - Pool insuffisant: écran abort + "Continuer le parcours" (score 0)
  **********************/
 
 const MAX_SCORE = 3000;
@@ -34,6 +40,56 @@ const MAX_REROLLS_PER_ROUND = 5;
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/* =======================
+   PARCOURS (URL PARAMS)
+======================= */
+const urlParams = new URLSearchParams(window.location.search);
+const IS_PARCOURS = urlParams.get("parcours") === "1";
+
+const PARAM_TYPES = urlParams.get("types"); // ex: "TV,Movie"
+const PARAM_SONGS = urlParams.get("songs"); // ex: "OP,ED" ou "opening,ending"
+const PARAM_POP = urlParams.get("popPercent") || urlParams.get("pop") || urlParams.get("popularity");
+const PARAM_SCORE = urlParams.get("scorePercent") || urlParams.get("score");
+const PARAM_YMIN = urlParams.get("yearMin") || urlParams.get("yMin");
+const PARAM_YMAX = urlParams.get("yearMax") || urlParams.get("yMax");
+const PARAM_ROUNDS = urlParams.get("rounds") || urlParams.get("roundCount");
+
+const PARCOURS_CFG_KEY = "AG_parcours_filters";
+let parcoursSent = false;
+
+function loadParcoursCfg() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_CFG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// ✅ Fake Or Truth: score = totalScore, total = totalRounds * MAX_SCORE
+function sendParcoursScore(score = 0, total = MAX_SCORE) {
+  if (parcoursSent) return;
+  parcoursSent = true;
+
+  try {
+    parent.postMessage(
+      {
+        parcoursScore: {
+          label: "Fake Or Truth",
+          score,
+          total,
+        },
+      },
+      "*"
+    );
+  } catch (e) {
+    console.warn("postMessage parcours failed:", e);
+  }
+}
+
+/* =======================
+   FALLBACK IMAGE
+======================= */
 const FALLBACK_IMAGE = (() => {
   const svg = `
   <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720">
@@ -51,7 +107,9 @@ const FALLBACK_IMAGE = (() => {
   return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg.trim());
 })();
 
-// ====== UI: menu + theme ======
+/* =======================
+   UI: menu + theme
+======================= */
 document.getElementById("back-to-menu").addEventListener("click", () => {
   window.location.href = "../index.html";
 });
@@ -65,7 +123,9 @@ window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
 });
 
-// ====== Helpers ======
+/* =======================
+   Helpers
+======================= */
 function normalizeAnimeList(json) {
   if (Array.isArray(json)) return json;
   if (json && Array.isArray(json.animes)) return json.animes;
@@ -149,7 +209,7 @@ async function waitBufferAhead(el, baseT, aheadSec, maxWaitMs, localToken) {
     if (el.readyState >= 3 && isTimeBuffered(el, baseT, aheadSec)) return true;
     await delay(120);
   }
-  return el.readyState >= 3 && isTimeBuffered(el, baseT, Math.min(0.20, aheadSec));
+  return el.readyState >= 3 && isTimeBuffered(el, baseT, Math.min(0.2, aheadSec));
 }
 
 function isNotAllowedError(reason) {
@@ -163,7 +223,9 @@ function normStr(s) {
   return String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-// ====== Songs extraction ======
+/* =======================
+   Songs extraction
+======================= */
 function extractSongsFromAnime(anime) {
   const songs = [];
   const song = anime.song || {};
@@ -217,7 +279,9 @@ function formatAnimeLineFromSong(s) {
   return `${s.animeTitle}${y}${t}`;
 }
 
-// ====== DOM refs ======
+/* =======================
+   DOM refs
+======================= */
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
 
@@ -253,7 +317,17 @@ const btnFake = document.getElementById("btnFake");
 const volumeSlider = document.getElementById("volumeSlider");
 const volumeVal = document.getElementById("volumeVal");
 
-// ====== Support WebM (pour reveal vidéo) ======
+// ✅ Anti-flash parcours (script chargé en bas => DOM déjà présent)
+if (IS_PARCOURS) {
+  const backBtn = document.getElementById("back-to-menu");
+  if (backBtn) backBtn.style.display = "none";
+  if (customPanel) customPanel.style.display = "none";
+  if (gamePanel) gamePanel.style.display = "block";
+}
+
+/* =======================
+   Support WebM (reveal)
+======================= */
 const CAN_PLAY_WEBM_VIDEO = (() => {
   const v = document.createElement("video");
   if (!v.canPlayType) return false;
@@ -263,20 +337,26 @@ const CAN_PLAY_WEBM_VIDEO = (() => {
   return (t1 && t1 !== "") || (t2 && t2 !== "") || (t3 && t3 !== "");
 })();
 
-// ====== Data ======
+/* =======================
+   Data
+======================= */
 let allAnimes = [];
 let allSongs = [];
 let filteredSongs = [];
 
-// ====== Session ======
+/* =======================
+   Session
+======================= */
 let totalRounds = 1;
 let currentRound = 1;
 let totalScore = 0;
 
-// ====== Round state ======
+/* =======================
+   Round state
+======================= */
 let imageSong = null; // A
 let audioSong = null; // B
-let isMatch = false;  // Truth = match parfait (A=B)
+let isMatch = false; // Truth = match parfait (A=B)
 
 // extra: utile pour feedback Fake
 let fakeIsSameAnime = false;
@@ -284,12 +364,16 @@ let fakeIsSameAnime = false;
 let roundToken = 0;
 let rerollsLeft = MAX_REROLLS_PER_ROUND;
 
-// ====== Status ======
+/* =======================
+   Status
+======================= */
 function setMediaStatus(msg) {
   mediaStatusEl.textContent = msg || "";
 }
 
-// ====== UI show/hide ======
+/* =======================
+   UI show/hide
+======================= */
 function showCustomization() {
   customPanel.style.display = "block";
   gamePanel.style.display = "none";
@@ -299,7 +383,9 @@ function showGame() {
   gamePanel.style.display = "block";
 }
 
-// ====== Score bar ======
+/* =======================
+   Score bar
+======================= */
 function getScoreBarColor(score) {
   if (score >= 2500) return "linear-gradient(90deg,#70ffba,#3b82f6 90%)";
   if (score >= 1500) return "linear-gradient(90deg,#fff96a,#ffc34b 90%)";
@@ -317,7 +403,9 @@ function updateScoreBar(forceScore = null) {
   bar.style.background = getScoreBarColor(score);
 }
 
-// ====== Volume ======
+/* =======================
+   Volume
+======================= */
 function applyVolume() {
   const v = Math.max(0, Math.min(100, parseInt(volumeSlider.value || "50", 10)));
   const vol = v / 100;
@@ -327,16 +415,24 @@ function applyVolume() {
 }
 volumeSlider.addEventListener("input", applyVolume);
 
-// ====== Media primitives ======
+/* =======================
+   Media primitives
+======================= */
 function hardReset(el) {
-  try { el.pause(); } catch {}
+  try {
+    el.pause();
+  } catch {}
   el.removeAttribute("src");
   el.load();
 }
 
 function stopPlayback() {
-  try { audioPlayer.pause(); } catch {}
-  try { videoPlayer.pause(); } catch {}
+  try {
+    audioPlayer.pause();
+  } catch {}
+  try {
+    videoPlayer.pause();
+  } catch {}
 }
 
 function resetVisualsForRound() {
@@ -361,7 +457,9 @@ function setImageForA(songA) {
   };
 }
 
-// ====== waitEvent ======
+/* =======================
+   waitEvent
+======================= */
 function waitEvent(el, okEvent, badEvents, timeoutMs, localToken) {
   return new Promise((resolve, reject) => {
     let timer = null;
@@ -398,23 +496,33 @@ function waitEvent(el, okEvent, badEvents, timeoutMs, localToken) {
   });
 }
 
-// ====== Seek & load audio ======
+/* =======================
+   Seek & load audio
+======================= */
 async function ensurePinnedAt(el, t, localToken) {
   if (localToken !== roundToken) return false;
 
-  if (el.readyState >= 3 && isTimeBuffered(el, t, 0.20)) {
-    try { el.pause(); } catch {}
+  if (el.readyState >= 3 && isTimeBuffered(el, t, 0.2)) {
+    try {
+      el.pause();
+    } catch {}
     return true;
   }
 
-  try { el.currentTime = t; } catch {}
+  try {
+    el.currentTime = t;
+  } catch {}
 
-  try { await waitEvent(el, "seeked", ["error"], SEEK_TIMEOUT_MS, localToken); } catch {}
+  try {
+    await waitEvent(el, "seeked", ["error"], SEEK_TIMEOUT_MS, localToken);
+  } catch {}
 
   if (localToken !== roundToken) return false;
 
   if (el.readyState >= 3 && isTimeBuffered(el, t, 0.12)) {
-    try { el.pause(); } catch {}
+    try {
+      el.pause();
+    } catch {}
     return true;
   }
 
@@ -425,7 +533,9 @@ async function ensurePinnedAt(el, t, localToken) {
   }
 
   if (localToken !== roundToken) return false;
-  try { el.pause(); } catch {}
+  try {
+    el.pause();
+  } catch {}
   return el.readyState >= 3;
 }
 
@@ -455,11 +565,15 @@ async function loadAndPinAudio(url, attempt, localToken) {
   const okPin = await ensurePinnedAt(audioPlayer, LISTEN_START, localToken);
   if (!okPin || localToken !== roundToken) return false;
 
-  try { audioPlayer.pause(); } catch {}
+  try {
+    audioPlayer.pause();
+  } catch {}
   return true;
 }
 
-// ====== Segment + Stall watchdog (audio only) ======
+/* =======================
+   Segment + Stall watchdog (audio only)
+======================= */
 let segmentActive = false;
 let segmentEnd = 0;
 let stallWatchId = null;
@@ -557,7 +671,9 @@ function armSegment(localToken) {
 
     const t = audioPlayer.currentTime || 0;
     if (t >= segmentEnd - 0.05) {
-      try { audioPlayer.pause(); } catch {}
+      try {
+        audioPlayer.pause();
+      } catch {}
       clearSegment();
       setMediaStatus("✅ À toi : Truth (match parfait A=B) ou Fake (sinon) ?");
       btnTruth.disabled = false;
@@ -566,7 +682,9 @@ function armSegment(localToken) {
   }, 120);
 }
 
-// ====== Pair selection (25/75) ======
+/* =======================
+   Pair selection (25/75)
+======================= */
 function sameAnime(a, b) {
   if (!a || !b) return false;
   if (a.animeMalId && b.animeMalId) return a.animeMalId === b.animeMalId;
@@ -584,15 +702,11 @@ function sameSong(a, b) {
   const nA = safeNum(a.songNumber) || 1;
   const nB = safeNum(b.songNumber) || 1;
 
-  return (
-    a.songType === b.songType &&
-    nA === nB &&
-    normStr(a.songName) === normStr(b.songName)
-  );
+  return a.songType === b.songType && nA === nB && normStr(a.songName) === normStr(b.songName);
 }
 
 function pickSongSameAnimeDifferentSong(base) {
-  const same = filteredSongs.filter(s => sameAnime(s, base) && !sameSong(s, base) && s?.url);
+  const same = filteredSongs.filter((s) => sameAnime(s, base) && !sameSong(s, base) && s?.url);
   return same.length ? pickRandom(same) : null;
 }
 
@@ -618,7 +732,7 @@ function choosePair() {
   }
 
   // Fake = soit même anime mais autre song, soit anime différent (50/50)
-  const sameAnimeButWrong = Math.random() < 0.50;
+  const sameAnimeButWrong = Math.random() < 0.5;
 
   let B = null;
   let fakeSame = false;
@@ -648,13 +762,16 @@ function choosePair() {
   return { A, B, isMatch: false, fakeIsSameAnime: fakeSame };
 }
 
-// ====== Round flow ======
+/* =======================
+   Round flow
+======================= */
 function resetControls() {
   btnTruth.disabled = true;
   btnFake.disabled = true;
 
   nextBtn.style.display = "none";
   nextBtn.onclick = null;
+  nextBtn.disabled = false;
 
   resultDiv.textContent = "";
   resultDiv.className = "";
@@ -745,7 +862,9 @@ async function autoStartRound(localToken) {
   clearSegment();
   resetVisualsForRound();
 
-  try { audioPlayer.currentTime = LISTEN_START; } catch {}
+  try {
+    audioPlayer.currentTime = LISTEN_START;
+  } catch {}
 
   applyVolume();
   armSegment(localToken);
@@ -753,7 +872,7 @@ async function autoStartRound(localToken) {
   const playRes = await Promise.allSettled([audioPlayer.play()]);
   if (localToken !== roundToken) return;
 
-  const reasons = playRes.filter(r => r.status === "rejected").map(r => r.reason);
+  const reasons = playRes.filter((r) => r.status === "rejected").map((r) => r.reason);
   if (reasons.some(isNotAllowedError)) {
     setMediaStatus("▶️ Clique dans la carte pour lancer");
     const onTap = async () => {
@@ -784,14 +903,16 @@ async function autoStartRound(localToken) {
   setMediaStatus("▶️ Lecture…");
 }
 
-// ====== Reveal : Vidéo A si Truth, sinon Vidéo B ======
+/* =======================
+   Reveal (inchangé ici)
+======================= */
 async function revealVideoWithAudio(localToken) {
   if (localToken !== roundToken) return;
 
   stopPlayback();
   clearSegment();
 
-  const revealSong = imageSong; // ✅ toujours A
+  const revealSong = imageSong; // (tooltip laissé tel quel)
 
   // cache-buster pour éviter vieux cache si tu spam
   hardReset(videoPlayer);
@@ -817,12 +938,14 @@ async function revealVideoWithAudio(localToken) {
   }
   if (localToken !== roundToken) return;
 
-  try { videoPlayer.currentTime = LISTEN_START; } catch {}
+  try {
+    videoPlayer.currentTime = LISTEN_START;
+  } catch {}
 
   const res = await Promise.allSettled([videoPlayer.play()]);
   if (localToken !== roundToken) return;
 
-  const reasons = res.filter(r => r.status === "rejected").map(r => r.reason);
+  const reasons = res.filter((r) => r.status === "rejected").map((r) => r.reason);
   if (reasons.some(isNotAllowedError)) {
     setMediaStatus("▶️ Clique pour lancer le reveal");
     const onTap = async () => {
@@ -844,30 +967,45 @@ async function revealVideoWithAudio(localToken) {
   }
 }
 
-// ====== Answer ======
+/* =======================
+   Answer / End (✅ Parcours)
+======================= */
 function endRoundAndMaybeNext(roundScore) {
   totalScore += roundScore;
+
+  const totalMax = totalRounds * MAX_SCORE;
 
   if (currentRound >= totalRounds) {
     resultDiv.innerHTML += `
       <div style="margin-top:10px; font-weight:900; opacity:0.95;">
         ✅ Série terminée !<br>
-        Score total : <b>${totalScore}</b> / <b>${totalRounds * 3000}</b>
+        Score total : <b>${totalScore}</b> / <b>${totalMax}</b>
       </div>
     `;
 
     nextBtn.style.display = "block";
-    nextBtn.textContent = "Retour réglages";
-    nextBtn.onclick = () => {
-      showCustomization();
-      stopPlayback();
-      setMediaStatus("");
-      resultDiv.textContent = "";
-    };
+    nextBtn.disabled = false;
+
+    if (IS_PARCOURS) {
+      nextBtn.textContent = "Continuer le parcours";
+      nextBtn.onclick = () => {
+        nextBtn.disabled = true;
+        sendParcoursScore(totalScore, totalMax);
+      };
+    } else {
+      nextBtn.textContent = "Retour réglages";
+      nextBtn.onclick = () => {
+        showCustomization();
+        stopPlayback();
+        setMediaStatus("");
+        resultDiv.textContent = "";
+      };
+    }
     return;
   }
 
   nextBtn.style.display = "block";
+  nextBtn.disabled = false;
   nextBtn.textContent = "Round suivant";
   nextBtn.onclick = () => {
     currentRound += 1;
@@ -881,9 +1019,9 @@ function checkAnswer(userSaysTruth) {
   const localToken = roundToken;
 
   // Truth = match parfait A=B
-  const good = (userSaysTruth === isMatch);
+  const good = userSaysTruth === isMatch;
 
-  // reveal demandé: vidéo A si Truth, sinon vidéo B
+  // reveal demandé
   revealVideoWithAudio(localToken);
 
   btnTruth.disabled = true;
@@ -891,7 +1029,9 @@ function checkAnswer(userSaysTruth) {
 
   const verdict = isMatch
     ? "✅ TRUTH (MATCH PARFAIT A=B)"
-    : (fakeIsSameAnime ? "❌ FAKE (même anime, song différent)" : "❌ FAKE (anime différent)");
+    : fakeIsSameAnime
+    ? "❌ FAKE (même anime, song différent)"
+    : "❌ FAKE (anime différent)";
 
   if (good) {
     const score = MAX_SCORE;
@@ -922,7 +1062,9 @@ function checkAnswer(userSaysTruth) {
 btnTruth.addEventListener("click", () => checkAnswer(true));
 btnFake.addEventListener("click", () => checkAnswer(false));
 
-// ====== Tooltip help ======
+/* =======================
+   Tooltip help (inchangé)
+======================= */
 document.addEventListener("click", (e) => {
   const icon = e.target.closest(".info-icon");
   if (!icon) return;
@@ -937,7 +1079,9 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// ====== Fireworks ======
+/* =======================
+   Fireworks
+======================= */
 function launchFireworks() {
   const canvas = document.getElementById("fireworks");
   if (!canvas) return;
@@ -978,7 +1122,145 @@ function launchFireworks() {
   animate();
 }
 
-// ====== Custom UI init ======
+/* =======================
+   PARCOURS helpers (UI apply + abort)
+======================= */
+function ensureAtLeastOneActive(selector, fallbackDataAttr, fallbackValues = []) {
+  const pills = Array.from(document.querySelectorAll(selector));
+  if (!pills.length) return;
+
+  const active = pills.filter((p) => p.classList.contains("active"));
+  if (active.length) return;
+
+  let did = false;
+  if (fallbackValues.length) {
+    pills.forEach((p) => {
+      const v = p.dataset[fallbackDataAttr];
+      const on = fallbackValues.includes(v);
+      if (on) {
+        p.classList.add("active");
+        p.setAttribute("aria-pressed", "true");
+        did = true;
+      }
+    });
+  }
+  if (!did && pills[0]) {
+    pills[0].classList.add("active");
+    pills[0].setAttribute("aria-pressed", "true");
+  }
+}
+
+function normalizeSongParamToken(tok) {
+  const t = String(tok || "").trim().toLowerCase();
+  if (!t) return "";
+  if (t === "op" || t === "opening") return "OP";
+  if (t === "ed" || t === "ending") return "ED";
+  if (t === "in" || t === "insert") return "IN";
+  return "";
+}
+
+function applyParcoursParamsToUI() {
+  const cfg = loadParcoursCfg();
+  const has = (x) => x != null && x !== "";
+
+  const trySetInt = (el, val, min, max) => {
+    if (!el || !has(val)) return;
+    const n = parseInt(val, 10);
+    if (!Number.isFinite(n)) return;
+    el.value = String(Math.max(min, Math.min(max, n)));
+  };
+
+  // sliders (URL > localStorage)
+  trySetInt(popEl, has(PARAM_POP) ? PARAM_POP : cfg?.popPercent, 5, 100);
+  trySetInt(scoreEl, has(PARAM_SCORE) ? PARAM_SCORE : cfg?.scorePercent, 5, 100);
+  trySetInt(yearMinEl, has(PARAM_YMIN) ? PARAM_YMIN : cfg?.yearMin, 1950, 2026);
+  trySetInt(yearMaxEl, has(PARAM_YMAX) ? PARAM_YMAX : cfg?.yearMax, 1950, 2026);
+
+  // rounds
+  if (roundCountEl) {
+    const src = has(PARAM_ROUNDS) ? PARAM_ROUNDS : cfg?.rounds;
+    const n = parseInt(src, 10);
+    if (Number.isFinite(n)) roundCountEl.value = String(clampInt(n, 1, 100));
+  }
+
+  // types pills
+  const typesList = has(PARAM_TYPES)
+    ? PARAM_TYPES.split(",").map((s) => s.trim()).filter(Boolean)
+    : Array.isArray(cfg?.types)
+    ? cfg.types
+    : null;
+
+  if (typesList && typesList.length) {
+    const want = new Set(typesList);
+    document.querySelectorAll("#typePills .pill[data-type]").forEach((p) => {
+      const t = p.dataset.type;
+      const on = want.has(t);
+      p.classList.toggle("active", on);
+      p.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // songs pills
+  const rawSongs = has(PARAM_SONGS)
+    ? PARAM_SONGS.split(",").map((s) => s.trim()).filter(Boolean)
+    : Array.isArray(cfg?.songs)
+    ? cfg.songs.map((x) => String(x))
+    : null;
+
+  if (rawSongs && rawSongs.length) {
+    const mapped = rawSongs.map(normalizeSongParamToken).filter(Boolean);
+    const want = new Set(mapped);
+
+    document.querySelectorAll("#songPills .pill[data-song]").forEach((p) => {
+      const s = String(p.dataset.song || "").toUpperCase(); // OP/ED/IN
+      const on = want.has(s);
+      p.classList.toggle("active", on);
+      p.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // sécurité
+  ensureAtLeastOneActive("#typePills .pill[data-type]", "type", ["TV", "Movie"]);
+  ensureAtLeastOneActive("#songPills .pill[data-song]", "song", ["OP"]);
+
+  // clamp année + refresh labels + preview
+  clampYearSliders();
+  if (popValEl) popValEl.textContent = popEl.value;
+  if (scoreValEl) scoreValEl.textContent = scoreEl.value;
+  if (yearMinValEl) yearMinValEl.textContent = yearMinEl.value;
+  if (yearMaxValEl) yearMaxValEl.textContent = yearMaxEl.value;
+
+  updatePreview();
+}
+
+function parcoursAbort(message, score = 0, total = MAX_SCORE) {
+  showGame();
+  stopPlayback();
+  clearSegment();
+
+  btnTruth.disabled = true;
+  btnFake.disabled = true;
+
+  setMediaStatus(message || "❌ Impossible de démarrer.");
+  resultDiv.className = "incorrect";
+  resultDiv.innerHTML = `
+    ❌ ${message || "Impossible de démarrer."}<br>
+    <div style="margin-top:8px;">Score : <b>${score}</b> / <b>${total}</b></div>
+  `;
+  updateScoreBar(0);
+
+  nextBtn.style.display = "block";
+  nextBtn.textContent = "Continuer le parcours";
+  nextBtn.disabled = false;
+  nextBtn.onclick = () => {
+    nextBtn.disabled = true;
+    sendParcoursScore(score, total);
+  };
+}
+
+/* =======================
+   Custom UI init
+======================= */
 function initCustomUI() {
   function syncLabels() {
     clampYearSliders();
@@ -996,7 +1278,10 @@ function initCustomUI() {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
       const any = document.querySelectorAll("#typePills .pill.active").length > 0;
-      if (!any) { btn.classList.add("active"); btn.setAttribute("aria-pressed", "true"); }
+      if (!any) {
+        btn.classList.add("active");
+        btn.setAttribute("aria-pressed", "true");
+      }
       updatePreview();
     });
   });
@@ -1006,7 +1291,10 @@ function initCustomUI() {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
       const any = document.querySelectorAll("#songPills .pill.active").length > 0;
-      if (!any) { btn.classList.add("active"); btn.setAttribute("aria-pressed", "true"); }
+      if (!any) {
+        btn.classList.add("active");
+        btn.setAttribute("aria-pressed", "true");
+      }
       updatePreview();
     });
   });
@@ -1026,7 +1314,9 @@ function initCustomUI() {
   syncLabels();
 }
 
-// ====== Filters + Preview ======
+/* =======================
+   Filters + Preview
+======================= */
 function applyFilters() {
   const popPercent = parseInt(popEl.value, 10);
   const scorePercent = parseInt(scoreEl.value, 10);
@@ -1038,12 +1328,13 @@ function applyFilters() {
 
   if (!allowedTypes.length || !allowedSongs.length) return [];
 
-  let pool = allSongs.filter((s) => (
-    s.animeYear >= yearMin &&
-    s.animeYear <= yearMax &&
-    allowedTypes.includes(s.animeType) &&
-    allowedSongs.includes(s.songType)
-  ));
+  let pool = allSongs.filter(
+    (s) =>
+      s.animeYear >= yearMin &&
+      s.animeYear <= yearMax &&
+      allowedTypes.includes(s.animeType) &&
+      allowedSongs.includes(s.songType)
+  );
 
   pool.sort((a, b) => b.animeMembers - a.animeMembers);
   pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
@@ -1077,7 +1368,9 @@ function updatePreview() {
   applyBtn.classList.toggle("disabled", !ok);
 }
 
-// ====== Load dataset ======
+/* =======================
+   Load dataset
+======================= */
 fetch("../data/licenses_only.json")
   .then((r) => {
     if (!r.ok) throw new Error("HTTP " + r.status);
@@ -1105,11 +1398,35 @@ fetch("../data/licenses_only.json")
 
     initCustomUI();
     updatePreview();
-    showCustomization();
 
     resetVisualsForRound();
     applyVolume();
     updateScoreBar(MAX_SCORE);
+
+    // ✅ Parcours: applique params + autostart
+    if (IS_PARCOURS) {
+      const backBtn = document.getElementById("back-to-menu");
+      if (backBtn) backBtn.style.display = "none";
+
+      applyParcoursParamsToUI();
+
+      totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
+      currentRound = 1;
+      totalScore = 0;
+
+      filteredSongs = applyFilters();
+      const totalMax = totalRounds * MAX_SCORE;
+
+      if (filteredSongs.length < MIN_REQUIRED_SONGS) {
+        parcoursAbort(`Pool insuffisant : ${filteredSongs.length} songs (min ${MIN_REQUIRED_SONGS}).`, 0, totalMax);
+        return;
+      }
+
+      showGame();
+      startNewRound();
+    } else {
+      showCustomization();
+    }
   })
   .catch((e) => {
     previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
