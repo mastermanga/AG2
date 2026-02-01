@@ -1530,22 +1530,46 @@ confirmBtn.addEventListener("click", () => {
 
   resultDiv.textContent = "✅ Validé — tu as choisi la meilleure ligne.";
 
+  // =========================
+  // ✅ MODIF: bouton "Suivant" dynamique
+  // - pas dernier round -> "Round suivant"
+  // - dernier round :
+  //     - en parcours -> "Continuer le parcours" (+ postMessage au parent)
+  //     - hors parcours -> "Retour réglages"
+  // =========================
   nextBtn.style.display = "inline-block";
+
   const isLast = currentRound >= totalRounds;
-  nextBtn.textContent = isLast ? "Retour réglages" : "Round suivant";
+
+  nextBtn.textContent = !isLast
+    ? "Round suivant"
+    : (isParcours ? "Continuer le parcours" : "Retour réglages");
+
   nextBtn.onclick = () => {
     if (!isLast) {
       currentRound++;
       startRound();
-    } else {
-      showCustomization();
-      updatePreview();
-      if (isParcours) {
-        try {
-          parent.postMessage({ parcoursScore: { label: "TopPick 3v3", score: 0, total: 0 } }, "*");
-        } catch {}
-      }
+      return;
     }
+
+    // ✅ FIN : comportement différent si on est dans un parcours
+    if (isParcours) {
+      try {
+        // (optionnel) score global, tu le gardes comme avant
+        parent.postMessage(
+          { parcoursScore: { label: "TopPick 3v3", score: 0, total: 0 } },
+          "*"
+        );
+
+        // 🔥 signal "continue" au parent (à gérer côté parent)
+        parent.postMessage({ parcoursNext: true }, "*");
+      } catch {}
+      return; // on ne revient pas aux réglages
+    }
+
+    // ✅ mode normal : retour aux réglages
+    showCustomization();
+    updatePreview();
   };
 });
 
