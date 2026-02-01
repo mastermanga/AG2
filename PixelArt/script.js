@@ -8,7 +8,8 @@
  * - Timer: 10s par manche => manche suivante (ou perdu si déjà en facile)
  *
  * ✅ Parcours:
- *   - ?parcours=1 => cache "Menu", applique filtres (URL + localStorage), auto-start
+ *   - ?parcours=1 => cache "Menu", applique filtres (URL + localStorage + parcoursSteps), auto-start
+ *   - Rounds parcours => localStorage.parcoursSteps (count pour type "pixelart")
  *   - Fin => bouton "Continuer le parcours" => postMessage({ parcoursScore: {label, score, total}})
  **********************/
 
@@ -42,8 +43,16 @@ const PARAM_YMIN   = urlParams.get("yearMin") || urlParams.get("yMin");
 const PARAM_YMAX   = urlParams.get("yearMax") || urlParams.get("yMax");
 const PARAM_ROUNDS = urlParams.get("rounds") || urlParams.get("roundCount");
 
-// fallback config globale si tu l'utilises ailleurs
+// (optionnel) si ton parcours passe un index de step
+const PARAM_STEP_INDEX = urlParams.get("step") || urlParams.get("stepIndex") || urlParams.get("idx");
+
+// ✅ fallback config globale si tu l'utilises ailleurs
 const PARCOURS_CFG_KEY = "AG_parcours_filters";
+
+// ✅ la clé que tu viens de préciser
+const PARCOURS_STEPS_KEY = "parcoursSteps";
+const PARCOURS_THIS_TYPE = "pixelart";
+
 let parcoursSent = false;
 
 function loadParcoursCfg() {
@@ -53,6 +62,41 @@ function loadParcoursCfg() {
   } catch {
     return null;
   }
+}
+
+function loadParcoursSteps() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_STEPS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function getParcoursStepForThisGame() {
+  const steps = loadParcoursSteps();
+  if (!steps || !steps.length) return null;
+
+  // 1) si index fourni et cohérent
+  const idx = parseInt(PARAM_STEP_INDEX || "", 10);
+  if (Number.isFinite(idx) && idx >= 0 && idx < steps.length) {
+    const st = steps[idx];
+    if (st && String(st.type || "").toLowerCase() === PARCOURS_THIS_TYPE) return st;
+    // sinon on continue en recherche
+  }
+
+  // 2) sinon, premier step dont type === "pixelart"
+  return steps.find(st => String(st?.type || "").toLowerCase() === PARCOURS_THIS_TYPE) || null;
+}
+
+function getParcoursRoundsFromSteps() {
+  const st = getParcoursStepForThisGame();
+  if (!st) return null;
+  const n = parseInt(st.count, 10);
+  if (!Number.isFinite(n)) return null;
+  return n;
 }
 
 // Pixel Art : on renvoie un score "réel" (totalScore / totalMax)
@@ -194,7 +238,7 @@ function rInt(rng, min, max) { return Math.floor(rRange(rng, min, max + 1)); }
 const customPanel = document.getElementById("custom-panel");
 const gamePanel = document.getElementById("game-panel");
 
-// ✅ Anti-flash + UI Parcours (script en bas => DOM déjà présent)
+// ✅ Anti-flash + UI Parcours
 if (IS_PARCOURS) {
   const backBtn = document.getElementById("back-to-menu");
   if (backBtn) backBtn.style.display = "none";
@@ -337,7 +381,7 @@ function setRangePct(el) {
   el.style.setProperty("--pct", `${Math.max(0, Math.min(100, pct))}%`);
 }
 
-// ====== ✅ Sync Custom UI (global, utile pour parcours) ======
+// ====== Sync Custom UI ======
 function syncCustomUI() {
   clampYearSliders();
   popValEl.textContent = popEl.value;
@@ -417,6 +461,112 @@ function updatePreview() {
   applyBtn.setAttribute("aria-disabled", (!ok).toString());
 }
 
+// ====== Parcours UI helpers ======
+function ensureDefaultTypes() {
+  const pills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
+  if (!pills.length) return;
+
+  const active = pills.filter(p => p.classList.contains("active"));
+  if (active.length) return;
+
+  pills.forEach(p => {
+    const t = p.dataset.type;
+    const on = (t === "TV" || t === "Movie");
+    p.classList.toggle("active", on);
+    p.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+
+// ====== Apply parcours params ======
+function applyParcoursParamsToUI() {
+  const cfg = loadParcoursCfg();
+  const has = (x) => x != null && x !== "";
+
+  const setInt = (el, val, min, max) => {
+    if (!el || !has(val)) return;
+    const n = parseInt(val, 10);
+    if (!Number.isFinite(n)) return;
+    el.value = String(clampInt(n, min, max));
+  };
+
+  // sliders (URL > cfg)
+  setInt(popEl,     has(PARAM_POP)   ? PARAM_POP   : cfg?.popPercent,   5, 100);
+  setInt(scoreEl,   has(PARAM_SCORE) ? PARAM_SCORE : cfg?.scorePercent, 5, 100);
+  setInt(yearMinEl, has(PARAM_YMIN)  ? PARAM_YMIN  : cfg?.yearMin,      1950, 2026);
+  setInt(yearMaxEl, has(PARAM_YMAX)  ? PARAM_YMAX  : cfg?.yearMax,      1950, 2026);
+
+  // types pills (URL > cfg.types)
+  const typesList =
+    has(PARAM_TYPES)
+      ? PARAM_TYPES.split(",").map(s => s.trim()).filter(Boolean)
+      : Array.isArray(cfg?.types)
+        ? cfg.types
+        : null;
+
+  if (typesList && typesList.length) {
+    const want = new Set(typesList);
+    const pills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
+    pills.forEach(p => {
+      const t = p.dataset.type;
+      const on = want.has(t);
+      p.classList.toggle("active", on);
+      p.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // ✅ rounds (URL > cfg.roundCount > parcoursSteps.count)
+  const roundsFromSteps = getParcoursRoundsFromSteps();
+  const roundsVal =
+    has(PARAM_ROUNDS) ? PARAM_ROUNDS :
+    (cfg?.roundCount != null ? cfg.roundCount : null);
+
+  let finalRounds = null;
+
+  if (has(roundsVal)) {
+    const n = parseInt(roundsVal, 10);
+    if (Number.isFinite(n)) finalRounds = n;
+  }
+  if (finalRounds == null && roundsFromSteps != null) {
+    finalRounds = roundsFromSteps;
+  }
+
+  if (roundCountEl && finalRounds != null) {
+    roundCountEl.value = String(clampInt(finalRounds, 1, 100));
+  }
+
+  ensureDefaultTypes();
+  syncCustomUI();
+}
+
+// =======================
+// Parcours abort (no alert)
+// =======================
+function parcoursAbort(message, score = 0, total = 1) {
+  showGame();
+
+  const gameContainer = document.getElementById("container");
+  if (!gameContainer) return;
+
+  gameContainer.innerHTML = `
+    <div style="width:100%;max-width:520px;text-align:center;">
+      <div style="font-size:1.2rem;font-weight:900;opacity:0.95;margin-bottom:14px;">
+        ${message}
+      </div>
+      <button id="parcoursContinue" class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
+        Continuer le parcours
+      </button>
+    </div>
+  `;
+
+  const btn = document.getElementById("parcoursContinue");
+  if (btn) {
+    btn.onclick = () => {
+      btn.disabled = true;
+      sendParcoursScore(score, total);
+    };
+  }
+}
+
 // ====== Custom UI init ======
 function initCustomUI() {
   [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncCustomUI));
@@ -445,97 +595,6 @@ function initCustomUI() {
   });
 
   syncCustomUI();
-}
-
-// =======================
-// PARCOURS helpers
-// =======================
-function ensureDefaultTypes() {
-  const pills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
-  if (!pills.length) return;
-
-  const active = pills.filter(p => p.classList.contains("active"));
-  if (active.length) return;
-
-  pills.forEach(p => {
-    const t = p.dataset.type;
-    const on = (t === "TV" || t === "Movie");
-    p.classList.toggle("active", on);
-    p.setAttribute("aria-pressed", on ? "true" : "false");
-  });
-}
-
-function applyParcoursParamsToUI() {
-  const cfg = loadParcoursCfg();
-  const has = (x) => x != null && x !== "";
-
-  const setInt = (el, val, min, max) => {
-    if (!el || !has(val)) return;
-    const n = parseInt(val, 10);
-    if (!Number.isFinite(n)) return;
-    el.value = String(clampInt(n, min, max));
-  };
-
-  // URL > cfg
-  setInt(popEl,     has(PARAM_POP)   ? PARAM_POP   : cfg?.popPercent,   5, 100);
-  setInt(scoreEl,   has(PARAM_SCORE) ? PARAM_SCORE : cfg?.scorePercent, 5, 100);
-  setInt(yearMinEl, has(PARAM_YMIN)  ? PARAM_YMIN  : cfg?.yearMin,      1950, 2026);
-  setInt(yearMaxEl, has(PARAM_YMAX)  ? PARAM_YMAX  : cfg?.yearMax,      1950, 2026);
-
-  // rounds
-  const roundsVal = has(PARAM_ROUNDS) ? PARAM_ROUNDS : cfg?.roundCount;
-  if (roundCountEl && has(roundsVal)) {
-    const n = parseInt(roundsVal, 10);
-    if (Number.isFinite(n)) roundCountEl.value = String(clampInt(n, 1, 100));
-  }
-
-  // types pills
-  const typesList =
-    has(PARAM_TYPES)
-      ? PARAM_TYPES.split(",").map(s => s.trim()).filter(Boolean)
-      : Array.isArray(cfg?.types)
-        ? cfg.types
-        : null;
-
-  if (typesList && typesList.length) {
-    const want = new Set(typesList);
-    const pills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
-    pills.forEach(p => {
-      const t = p.dataset.type;
-      const on = want.has(t);
-      p.classList.toggle("active", on);
-      p.setAttribute("aria-pressed", on ? "true" : "false");
-    });
-  }
-
-  ensureDefaultTypes();
-  syncCustomUI();
-}
-
-function parcoursAbort(message, score = 0, total = 1) {
-  showGame();
-
-  const gameContainer = document.getElementById("container");
-  if (!gameContainer) return;
-
-  gameContainer.innerHTML = `
-    <div style="width:100%;max-width:520px;text-align:center;">
-      <div style="font-size:1.2rem;font-weight:900;opacity:0.95;margin-bottom:14px;">
-        ${message}
-      </div>
-      <button id="parcoursContinue" class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
-        Continuer le parcours
-      </button>
-    </div>
-  `;
-
-  const btn = document.getElementById("parcoursContinue");
-  if (btn) {
-    btn.onclick = () => {
-      btn.disabled = true;
-      sendParcoursScore(score, total);
-    };
-  }
 }
 
 // ====== Art DOM ======
@@ -660,8 +719,8 @@ async function startNewRound() {
   // grid counts random par round (HARD plus dur)
   const rng = mulberry32(seedBase);
   gridCounts = {
-    v: [rInt(rng, 1, 2), rInt(rng, 3, 5),  rInt(rng, 6, 9)], // HARD durci
-    h: [rInt(rng, 1, 2), rInt(rng, 3, 4),  rInt(rng, 5, 8)], // HARD durci
+    v: [rInt(rng, 1, 2), rInt(rng, 3, 5),  rInt(rng, 6, 9)],
+    h: [rInt(rng, 1, 2), rInt(rng, 3, 4),  rInt(rng, 5, 8)],
   };
 
   feedback.textContent = "⏳ Chargement de l'image...";
@@ -831,7 +890,7 @@ function applyStage(resetTimer = true) {
     renderPixelated(artWrap._loadedImage, samples);
   }
 
-  // BlurZoom (MEDIUM plus dur)
+  // BlurZoom
   if (id === "blurzoom") {
     const blur  = [12, 7.4, 2.2][stage];
     const scale = [2.65, 1.85, 1.10][stage];
@@ -938,16 +997,13 @@ function applyStage(resetTimer = true) {
     }
   }
 
-  // Glitch (MEDIUM plus dur)
+  // Glitch
   if (id === "glitch") {
     artWrap.classList.add("use-canvas");
 
     const opts = [
-      // HARD
       { slices: 20, maxShift: 72, blur: 0.9,  sat: 0.60, contrast: 1.40, brightness: 0.92, hueJitter: 70, masks: 12, vMasks: 3, pixel: 24, scanlineEvery: 3, scanAlpha: 0.14 },
-      // MEDIUM (durci)
       { slices: 16, maxShift: 52, blur: 0.70, sat: 0.72, contrast: 1.30, brightness: 0.95, hueJitter: 55, masks: 10, vMasks: 2, pixel: 16, scanlineEvery: 3, scanAlpha: 0.13 },
-      // EASY
       { slices: 7,  maxShift: 16, blur: 0.25, sat: 1.00, contrast: 1.06, brightness: 1.03, hueJitter: 16, masks: 2,  vMasks: 0, pixel: 0,  scanlineEvery: 6, scanAlpha: 0.06 },
     ][stage];
 
@@ -1038,8 +1094,6 @@ function showFinalRecap() {
   const totalMax = totalRounds * MAX_SCORE;
   if (!gameContainer) return;
 
-  const isParcours = IS_PARCOURS;
-
   gameContainer.innerHTML = `
     <div style="width:100%;max-width:520px;text-align:center;">
       <div style="font-size:1.35rem;font-weight:900;opacity:0.95;margin-bottom:10px;">🏆 Série terminée !</div>
@@ -1047,14 +1101,14 @@ function showFinalRecap() {
         Score total : <b>${totalScore}</b> / <b>${totalMax}</b>
       </div>
 
-      <button id="${isParcours ? "parcoursContinue" : "backToSettings"}"
+      <button id="${IS_PARCOURS ? "parcoursContinue" : "backToSettings"}"
               class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
-        ${isParcours ? "Continuer le parcours" : "Retour réglages"}
+        ${IS_PARCOURS ? "Continuer le parcours" : "Retour réglages"}
       </button>
     </div>
   `;
 
-  if (isParcours) {
+  if (IS_PARCOURS) {
     document.getElementById("parcoursContinue").onclick = () => {
       const btn = document.getElementById("parcoursContinue");
       if (btn) btn.disabled = true;
@@ -1268,7 +1322,7 @@ function renderPosterMystery(img, opts) {
   ctx.restore();
 }
 
-// ====== Glitch layout (random par round) ======
+// ====== Glitch layout ======
 function createGlitchLayout(w, h, seed) {
   const rng = mulberry32(seed);
 
@@ -1390,7 +1444,6 @@ function renderGlitchCanvas(img, opts) {
 
 window.addEventListener("resize", () => {
   if (!gameEnded && currentAnime && currentEffect && artWrap?.classList.contains("use-canvas")) {
-    // on ne reset pas le timer sur un resize
     applyStage(false);
   }
 });
