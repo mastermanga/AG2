@@ -254,9 +254,7 @@ const suggestions = document.getElementById("suggestions");
 const roundLabel = document.getElementById("roundLabel");
 
 const revealList = document.getElementById("revealList");
-const clueStep = document.get
-
-ElementById("clueStep");
+const clueStep = document.getElementById("clueStep");
 
 // score bar
 const scoreBar = document.getElementById("score-bar");
