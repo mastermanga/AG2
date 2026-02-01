@@ -1,6 +1,7 @@
 /**********************
  * TopPick 3v3 (Anime / Songs)
- * - Règle UNIQUE: choisir la meilleure ligne
+ * - ✅ 4 RÈGLES aléatoires :
+ *   - Garde 1 / Garde 3 / Supprime 1 / Supprime 3
  * - ✅ Thème “contenu” ÉLASTIQUE (aligné Tournament)
  *   - "Libre" a la même chance que les autres
  *   - YEAR / SONG_YEAR / ANIME_YEAR: fenêtre ±0, ±1, ±2...
@@ -8,7 +9,6 @@
  *   - POP: bande Top A–B% (bins 5%) + élargissement
  *   - STUDIO / TAG / ARTIST / ANIME / FIRST_LETTER: cumul de valeurs jusqu’à avoir ≥ 6
  *   - fallback "Libre" en dernier recours
- * - + FIRST_LETTER (smart)
  * - Reveal alterné : L1#1 → L2#1 → L1#2 → L2#2 → L1#3 → L2#3
  * - Anime: 1 item / 1s
  * - Songs: play auto non mute à 45s pendant 30s
@@ -24,10 +24,7 @@ document.getElementById("back-to-menu").addEventListener("click", () => {
 });
 document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
-  localStorage.setItem(
-    "theme",
-    document.body.classList.contains("light") ? "light" : "dark"
-  );
+  localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
 });
 window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
@@ -44,7 +41,7 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
+    document.querySelectorAll(".info-wrap.open").forEach(w => w.classList.remove("open"));
   }
 });
 
@@ -62,14 +59,15 @@ const STALL_TIMEOUT_MS = 6000;
 // sécurité anti-blocage total
 const MAX_WALL_SNIPPET_MS = 60000;
 
-// ✅ RÈGLE UNIQUE
-const RULE = {
-  key: "BEST_LINE",
-  label: "Choisis la meilleure ligne",
-  desc: "Choisis la meilleure ligne.",
-  required: 1,
-  mode: "keep",
-};
+// ✅ 4 RÈGLES
+const RULES = [
+  { key: "KEEP_1",   label: "Garde 1",    required: 1, mode: "keep" },
+  { key: "KEEP_3",   label: "Garde 3",    required: 3, mode: "keep" },
+  { key: "DELETE_1", label: "Supprime 1", required: 1, mode: "delete" },
+  { key: "DELETE_3", label: "Supprime 3", required: 3, mode: "delete" },
+];
+
+let currentRule = RULES[0];
 
 // ====== HELPERS ======
 function normalizeAnimeList(json) {
@@ -88,14 +86,14 @@ function getDisplayTitle(a) {
   );
 }
 function getYear(a) {
-  const s = (a && a.season ? String(a.season) : "").trim();
+  const s = ((a && a.season) ? String(a.season) : "").trim();
   const m = s.match(/(\d{4})/);
   return m ? parseInt(m[1], 10) : 0;
 }
 function getYearFromSeasonStr(seasonStr, fallback = 0) {
   const s = (seasonStr ? String(seasonStr) : "").trim();
   const m = s.match(/(\d{4})/);
-  return m ? parseInt(m[1], 10) : fallback || 0;
+  return m ? parseInt(m[1], 10) : (fallback || 0);
 }
 function clampYearSliders() {
   const minEl = document.getElementById("yearMin");
@@ -130,9 +128,9 @@ function songTypeLabel(t) {
 }
 function formatSongTitle(s) {
   const type = songTypeLabel(s.songType);
-  const num = s.songNumber ? ` ${s.songNumber}` : "";
-  const name = s.songName ? ` — ${s.songName}` : "";
-  const art = s.songArtists ? ` — ${s.songArtists}` : "";
+  const num = (s.songNumber ? ` ${s.songNumber}` : "");
+  const name = (s.songName ? ` — ${s.songName}` : "");
+  const art = (s.songArtists ? ` — ${s.songArtists}` : "");
   return `${s.animeTitle || "Anime"} ${type}${num}${name}${art}`;
 }
 function formatItemLabel(it) {
@@ -156,25 +154,13 @@ function removeLeadingArticles(s) {
   t = stripLeadingPunctAndSpaces(t);
 
   const patterns = [
-    /^the\s+/i,
-    /^a\s+/i,
-    /^an\s+/i,
-    /^le\s+/i,
-    /^la\s+/i,
-    /^les\s+/i,
-    /^un\s+/i,
-    /^une\s+/i,
-    /^des\s+/i,
-    /^l'\s*/i,
-    /^d'\s*/i,
-    /^du\s+/i,
-    /^de\s+/i,
-    /^der\s+/i,
-    /^die\s+/i,
-    /^das\s+/i,
-    /^el\s+/i,
-    /^los\s+/i,
-    /^las\s+/i,
+    /^the\s+/i, /^a\s+/i, /^an\s+/i,
+    /^le\s+/i, /^la\s+/i, /^les\s+/i,
+    /^un\s+/i, /^une\s+/i, /^des\s+/i,
+    /^l'\s*/i, /^d'\s*/i,
+    /^du\s+/i, /^de\s+/i,
+    /^der\s+/i, /^die\s+/i, /^das\s+/i,
+    /^el\s+/i, /^los\s+/i, /^las\s+/i,
   ];
 
   let changed = true;
@@ -284,7 +270,7 @@ function groupSongsByAnime(pool) {
 const DUP_PHASES = [
   { p2: 0.18, p3: 0.04 },
   { p2: 0.28, p3: 0.08 },
-  { p2: 0.4, p3: 0.12 },
+  { p2: 0.40, p3: 0.12 },
   { p2: 0.55, p3: 0.18 },
 ];
 function acceptDup(nextCount, phase) {
@@ -319,7 +305,7 @@ function tryPickSongsNo4(pool, n) {
   for (const phase of DUP_PHASES) {
     let safety = 0;
     while (picked.length < n && safety++ < 900) {
-      const candidates = keys.filter((k) => {
+      const candidates = keys.filter(k => {
         const c = counts.get(k) || 0;
         const arr = by.get(k);
         return c < 3 && arr && arr.length > 0;
@@ -340,10 +326,7 @@ function tryPickSongsNo4(pool, n) {
         let it = null;
         while (arr && arr.length) {
           const cand = arr.shift();
-          if (cand && !usedKeys.has(cand._key)) {
-            it = cand;
-            break;
-          }
+          if (cand && !usedKeys.has(cand._key)) { it = cand; break; }
         }
         if (!it) continue;
 
@@ -364,14 +347,7 @@ function tryPickSongsNo4(pool, n) {
 /* ==========================
    THEME CONTENU (ÉLASTIQUE, aligné Tournament)
    ========================== */
-function norm(s) {
-  return (s || "").toString().trim().toLowerCase();
-}
-function hasTag(it, tag) {
-  const t = norm(tag);
-  const arr = Array.isArray(it.tags) ? it.tags : [];
-  return arr.some((x) => norm(x) === t);
-}
+function norm(s){ return (s || "").toString().trim().toLowerCase(); }
 function includesStudio(studio, needle) {
   const s = norm(studio);
   const n = norm(needle);
@@ -382,7 +358,7 @@ function round1(x) {
   return Math.round((Number.isFinite(x) ? x : 0) * 10) / 10;
 }
 function summarizeForLabel(arr, max = 3) {
-  const clean = (arr || []).map((x) => String(x || "").trim()).filter(Boolean);
+  const clean = (arr || []).map(x => String(x || "").trim()).filter(Boolean);
   if (clean.length <= max) return clean.join(" + ");
   return clean.slice(0, max).join(" + ") + ` + ${clean.length - max} autres`;
 }
@@ -392,13 +368,11 @@ function buildYearWindowPool(basePool, getYearFn, centerYear, minSize = 6) {
   if (!y0) return null;
 
   for (let delta = 0; delta <= 120; delta++) {
-    const pool = basePool.filter((it) => {
+    const pool = basePool.filter(it => {
       const y = +getYearFn(it) || 0;
       return y && Math.abs(y - y0) <= delta;
     });
-    if (pool.length >= minSize || pool.length === basePool.length) {
-      return { pool, delta };
-    }
+    if (pool.length >= minSize || pool.length === basePool.length) return { pool, delta };
   }
   return null;
 }
@@ -409,13 +383,11 @@ function buildScoreWindowPool(basePool, getScoreFn, centerScore, minSize = 6) {
 
   for (let step = 0; step <= 10.0; step += 0.1) {
     const delta = Math.round(step * 10) / 10;
-    const pool = basePool.filter((it) => {
+    const pool = basePool.filter(it => {
       const sc = +getScoreFn(it) || 0;
       return sc && Math.abs(sc - sc0) <= delta;
     });
-    if (pool.length >= minSize || pool.length === basePool.length) {
-      return { pool, delta };
-    }
+    if (pool.length >= minSize || pool.length === basePool.length) return { pool, delta };
   }
   return null;
 }
@@ -426,8 +398,7 @@ function topPercentFromValue(sortedDesc, value) {
   const v = +value || 0;
   if (!n || !v) return 100;
 
-  let lo = 0,
-    hi = n;
+  let lo = 0, hi = n;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
     if (vals[mid] > v) lo = mid + 1;
@@ -439,7 +410,6 @@ function topPercentFromValue(sortedDesc, value) {
 
 function buildPopPercentBandPool(basePool, getPopFn, globalSortedDesc, seedValue, minSize = 6) {
   const seedP = topPercentFromValue(globalSortedDesc, seedValue);
-
   const baseStart = Math.floor((seedP - 1) / 5) * 5;
   const baseEnd = baseStart + 5;
 
@@ -455,29 +425,20 @@ function buildPopPercentBandPool(basePool, getPopFn, globalSortedDesc, seedValue
   for (let expand = 0; expand <= 100; expand += 5) {
     const s0 = Math.max(0, Math.min(95, baseStart - expand));
     const e0 = Math.max(5, Math.min(100, baseEnd + expand));
-    const lo = s0 === 0 ? 1 : s0;
+    const lo = (s0 === 0) ? 1 : s0;
     const hi = e0;
 
-    const pool = basePool.filter((it) => {
+    const pool = basePool.filter(it => {
       const p = getP(it);
       return p >= lo && p <= hi;
     });
 
-    if (pool.length >= minSize || pool.length === basePool.length) {
-      return { pool, lo, hi };
-    }
+    if (pool.length >= minSize || pool.length === basePool.length) return { pool, lo, hi };
   }
   return null;
 }
 
-function buildCumulativePool(
-  basePool,
-  getValueFromItem,
-  matchesValueFn,
-  seedValue,
-  minSize = 6,
-  safetyMax = 600
-) {
+function buildCumulativePool(basePool, getValueFromItem, matchesValueFn, seedValue, minSize = 6, safetyMax = 600) {
   const usedValues = [];
   const usedKey = new Set();
   const mapByKey = new Map();
@@ -523,7 +484,7 @@ function buildTagCumulativePool(basePool, getTagsFn, seedTag, minSize = 6) {
   };
   const matches = (it, v, key) => {
     const tags = getTagsFn(it);
-    return Array.isArray(tags) && tags.some((x) => norm(x) === key);
+    return Array.isArray(tags) && tags.some(x => norm(x) === key);
   };
   return buildCumulativePool(basePool, getValueFromItem, matches, seedTag, minSize, 900);
 }
@@ -536,7 +497,7 @@ function buildArtistCumulativePool(basePool, getArtistsFn, seedArtist, minSize =
   };
   const matches = (it, v, key) => {
     const arr = getArtistsFn(it);
-    return Array.isArray(arr) && arr.some((x) => norm(x) === key);
+    return Array.isArray(arr) && arr.some(x => norm(x) === key);
   };
   return buildCumulativePool(basePool, getValueFromItem, matches, seedArtist, minSize, 1200);
 }
@@ -603,38 +564,25 @@ function pickRoundContentThemeElastic(basePool, mode) {
     return { label: "Libre", pool: Array.isArray(basePool) ? basePool : [], crit: "FREE" };
   }
 
-  const getAnimeYear = (it) => (mode === "songs" ? it.animeYear || 0 : it.year || 0);
-  const getSongYear = (it) => it.songYear || it.animeYear || 0;
-  const getStudio = (it) => (mode === "songs" ? it.animeStudio || "" : it.studio || "");
-  const getScore = (it) => (mode === "songs" ? it.animeScore || 0 : it.score || 0);
-  const getPop = (it) => (mode === "songs" ? it.animeMembers || 0 : it.members || 0);
-  const getTagsArr = (it) => (Array.isArray(it.tags) ? it.tags : []);
-  const getArtistsArr = (it) => (Array.isArray(it.artistsArr) ? it.artistsArr : []);
-  const getTitleForLetter = (it) => (mode === "songs" ? it.animeTitle || "" : it.title || "");
+  const getAnimeYear = (it) => mode === "songs" ? (it.animeYear || 0) : (it.year || 0);
+  const getSongYear  = (it) => (it.songYear || it.animeYear || 0);
+  const getStudio    = (it) => mode === "songs" ? (it.animeStudio || "") : (it.studio || "");
+  const getScore     = (it) => mode === "songs" ? (it.animeScore || 0) : (it.score || 0);
+  const getPop       = (it) => mode === "songs" ? (it.animeMembers || 0) : (it.members || 0);
+  const getTagsArr   = (it) => Array.isArray(it.tags) ? it.tags : [];
+  const getArtistsArr = (it) => Array.isArray(it.artistsArr) ? it.artistsArr : [];
+  const getTitleForLetter = (it) => mode === "songs" ? (it.animeTitle || "") : (it.title || "");
 
   const criteriaAnime = ["FREE", "YEAR", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "FIRST_LETTER"];
-  const criteriaSongs = [
-    "FREE",
-    "SONG_YEAR",
-    "ANIME_YEAR",
-    "ANIME",
-    "STUDIO",
-    "TAG",
-    "SCORE_NEAR",
-    "POP_NEAR",
-    "ARTIST",
-    "FIRST_LETTER",
-  ];
-  const criteria = mode === "songs" ? criteriaSongs : criteriaAnime;
+  const criteriaSongs = ["FREE", "SONG_YEAR", "ANIME_YEAR", "ANIME", "STUDIO", "TAG", "SCORE_NEAR", "POP_NEAR", "ARTIST", "FIRST_LETTER"];
+  const criteria = (mode === "songs") ? criteriaSongs : criteriaAnime;
 
   const globalSortedMembersDesc = Array.isArray(GLOBAL_MEMBERS_DESC) ? GLOBAL_MEMBERS_DESC : [];
 
   for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
     const crit = criteria[Math.floor(Math.random() * criteria.length)];
 
-    if (crit === "FREE") {
-      return { label: "Libre", pool: basePool, crit: "FREE" };
-    }
+    if (crit === "FREE") return { label: "Libre", pool: basePool, crit: "FREE" };
 
     const seed = basePool[Math.floor(Math.random() * basePool.length)];
     if (!seed) continue;
@@ -720,8 +668,7 @@ function pickRoundContentThemeElastic(basePool, mode) {
       const built = buildScoreWindowPool(basePool, getScore, sc, MIN);
       if (!built || built.pool.length < MIN) continue;
 
-      const label =
-        built.delta === 0 ? `Score : ${round1(sc)}` : `Score : ${round1(sc)} ± ${built.delta}`;
+      const label = built.delta === 0 ? `Score : ${round1(sc)}` : `Score : ${round1(sc)} ± ${built.delta}`;
       return { label, pool: built.pool, crit };
     }
 
@@ -733,7 +680,7 @@ function pickRoundContentThemeElastic(basePool, mode) {
       if (!built || built.pool.length < MIN) continue;
 
       const label =
-        built.lo === 1 && built.hi === 5
+        (built.lo === 1 && built.hi === 5)
           ? `Popularité : Top 1–5%`
           : `Popularité : Top ${built.lo}–${built.hi}%`;
 
@@ -744,10 +691,8 @@ function pickRoundContentThemeElastic(basePool, mode) {
       const L = smartFirstLetter(getTitleForLetter(seed));
       if (!String(L || "").trim()) continue;
 
-      const strict = basePool.filter((it) => smartFirstLetter(getTitleForLetter(it)) === L);
-      if (strict.length >= MIN) {
-        return { label: `Lettre : ${L}`, pool: strict, crit };
-      }
+      const strict = basePool.filter(it => smartFirstLetter(getTitleForLetter(it)) === L);
+      if (strict.length >= MIN) return { label: `Lettre : ${L}`, pool: strict, crit };
 
       const built = buildLetterCumulativePool(basePool, getTitleForLetter, L, MIN);
       if (!built || built.pool.length < MIN) continue;
@@ -783,8 +728,6 @@ const roundCountEl = document.getElementById("roundCount");
 
 const roundLabel = document.getElementById("roundLabel");
 
-const teamRowA = document.getElementById("teamRowA");
-const teamRowB = document.getElementById("teamRowB");
 const teamAList = document.getElementById("teamAList");
 const teamBList = document.getElementById("teamBList");
 
@@ -814,7 +757,7 @@ const forcedMode = urlParams.get("mode"); // "anime" | "songs"
 // ====== DATA ======
 let allAnimes = [];
 let allSongs = [];
-let GLOBAL_MEMBERS_DESC = []; // ✅ ref pop globale (members titres)
+let GLOBAL_MEMBERS_DESC = [];
 
 // ====== SETTINGS ======
 let currentMode = "anime";
@@ -831,8 +774,10 @@ let teamItemsB = [];
 
 let revealDone = false;
 let selectionEnabled = false;
-let selectedTeam = null;
 let lockedAfterValidate = false;
+
+// ✅ sélection sur items
+let selectedKeys = new Set();
 
 // tokens
 let roundToken = 0;
@@ -851,25 +796,6 @@ function showGame() {
   gamePanel.style.display = "block";
 }
 
-/* =========================================================
-   ✅ AJOUT: gestion unique "fin / sortie" (parcours vs normal)
-   ========================================================= */
-function exitToSettingsOrContinueParcours() {
-  if (isParcours) {
-    try {
-      parent.postMessage({ parcoursScore: { label: "TopPick 3v3", score: 0, total: 0 } }, "*");
-    } catch {}
-    return;
-  }
-  showCustomization();
-  updatePreview();
-}
-function configureExitButton() {
-  nextBtn.style.display = "inline-block";
-  nextBtn.textContent = isParcours ? "Continuer le parcours" : "Retour réglages";
-  nextBtn.onclick = exitToSettingsOrContinueParcours;
-}
-
 // ====== VOLUME ======
 function applyVolume() {
   if (!songPlayer) return;
@@ -882,9 +808,7 @@ if (volumeSlider) volumeSlider.addEventListener("input", applyVolume);
 
 // ====== MEDIA LOADER (retries + anti-stall) ======
 function hardResetMedia() {
-  try {
-    songPlayer.pause();
-  } catch {}
+  try { songPlayer.pause(); } catch {}
   songPlayer.removeAttribute("src");
   songPlayer.load();
 }
@@ -898,10 +822,7 @@ function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
   let done = false;
 
   const cleanup = () => {
-    if (stallTimer) {
-      clearTimeout(stallTimer);
-      stallTimer = null;
-    }
+    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
     songPlayer.onloadedmetadata = null;
     songPlayer.oncanplay = null;
     songPlayer.onplaying = null;
@@ -910,7 +831,7 @@ function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
     songPlayer.onerror = null;
   };
 
-  const isStillValid = () => localRound === roundToken && localMedia === mediaToken;
+  const isStillValid = () => (localRound === roundToken && localMedia === mediaToken);
 
   const startStallTimer = () => {
     if (stallTimer) clearTimeout(stallTimer);
@@ -933,9 +854,7 @@ function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
     attemptIndex++;
     if (attemptIndex >= RETRY_DELAYS.length) {
       done = true;
-      try {
-        songPlayer.pause();
-      } catch {}
+      try { songPlayer.pause(); } catch {}
       return;
     }
     setTimeout(() => {
@@ -948,41 +867,21 @@ function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
     if (!isStillValid() || done) return;
     const src = attemptIndex === 0 ? url : withCacheBuster(url);
 
-    try {
-      hardResetMedia();
-    } catch {}
+    try { hardResetMedia(); } catch {}
     songPlayer.preload = "metadata";
     songPlayer.muted = false;
     songPlayer.src = src;
     songPlayer.load();
 
-    songPlayer.onloadedmetadata = () => {
-      if (!isStillValid() || done) return;
-      markReady();
-    };
-    songPlayer.oncanplay = () => {
-      if (!isStillValid() || done) return;
-      markReady();
-    };
-    songPlayer.onwaiting = () => {
-      if (!isStillValid() || done) return;
-      startStallTimer();
-    };
-    songPlayer.onstalled = () => {
-      if (!isStillValid() || done) return;
-      startStallTimer();
-    };
+    songPlayer.onloadedmetadata = () => { if (!isStillValid() || done) return; markReady(); };
+    songPlayer.oncanplay = () => { if (!isStillValid() || done) return; markReady(); };
+    songPlayer.onwaiting = () => { if (!isStillValid() || done) return; startStallTimer(); };
+    songPlayer.onstalled = () => { if (!isStillValid() || done) return; startStallTimer(); };
     songPlayer.onplaying = () => {
       if (!isStillValid() || done) return;
-      if (stallTimer) {
-        clearTimeout(stallTimer);
-        stallTimer = null;
-      }
+      if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
     };
-    songPlayer.onerror = () => {
-      if (!isStillValid() || done) return;
-      triggerRetry();
-    };
+    songPlayer.onerror = () => { if (!isStillValid() || done) return; triggerRetry(); };
 
     startStallTimer();
   };
@@ -994,9 +893,9 @@ function loadMediaWithRetries(url, localRound, localMedia, { onReady } = {}) {
 
 // ====== UI INIT ======
 function initCustomUI() {
-  document.querySelectorAll("#modePills .pill").forEach((btn) => {
+  document.querySelectorAll("#modePills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("#modePills .pill").forEach((b) => {
+      document.querySelectorAll("#modePills .pill").forEach(b => {
         b.classList.remove("active");
         b.setAttribute("aria-pressed", "false");
       });
@@ -1008,7 +907,7 @@ function initCustomUI() {
     });
   });
 
-  document.querySelectorAll("#typePills .pill").forEach((btn) => {
+  document.querySelectorAll("#typePills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
@@ -1016,7 +915,7 @@ function initCustomUI() {
     });
   });
 
-  document.querySelectorAll("#songPills .pill").forEach((btn) => {
+  document.querySelectorAll("#songPills .pill").forEach(btn => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
       btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
@@ -1032,7 +931,7 @@ function initCustomUI() {
     yearMaxValEl.textContent = yearMaxEl.value;
     updatePreview();
   }
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach(el => el.addEventListener("input", syncLabels));
 
   applyBtn.addEventListener("click", () => {
     filteredPool = applyFilters();
@@ -1062,7 +961,7 @@ function initCustomUI() {
 }
 
 function updateModePillsFromState() {
-  document.querySelectorAll("#modePills .pill").forEach((b) => {
+  document.querySelectorAll("#modePills .pill").forEach(b => {
     const active = b.dataset.mode === currentMode;
     b.classList.toggle("active", active);
     b.setAttribute("aria-pressed", active ? "true" : "false");
@@ -1070,7 +969,7 @@ function updateModePillsFromState() {
   updateModeVisibility();
 }
 function updateModeVisibility() {
-  songsRow.style.display = currentMode === "songs" ? "flex" : "none";
+  songsRow.style.display = (currentMode === "songs") ? "flex" : "none";
 }
 
 // ====== FILTERS ======
@@ -1080,18 +979,18 @@ function applyFilters() {
   const yearMin = parseInt(yearMinEl.value, 10);
   const yearMax = parseInt(yearMaxEl.value, 10);
 
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map(b => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
   if (currentMode === "anime") {
-    let pool = allAnimes.filter((a) => a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type));
+    let pool = allAnimes.filter(a => a._year >= yearMin && a._year <= yearMax && allowedTypes.includes(a._type));
     pool.sort((a, b) => b._members - a._members);
     pool = pool.slice(0, Math.ceil(pool.length * (popPercent / 100)));
 
     pool.sort((a, b) => b._score - a._score);
     pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-    return pool.map((a) => ({
+    return pool.map(a => ({
       kind: "anime",
       _key: `anime|${a.mal_id}`,
       title: a._title,
@@ -1104,15 +1003,13 @@ function applyFilters() {
     }));
   }
 
-  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map((b) => b.dataset.song);
+  const allowedSongs = [...document.querySelectorAll("#songPills .pill.active")].map(b => b.dataset.song);
   if (allowedSongs.length === 0) return [];
 
-  let pool = allSongs.filter(
-    (s) =>
-      s.animeYear >= yearMin &&
-      s.animeYear <= yearMax &&
-      allowedTypes.includes(s.animeType) &&
-      allowedSongs.includes(s.songType)
+  let pool = allSongs.filter(s =>
+    s.animeYear >= yearMin && s.animeYear <= yearMax &&
+    allowedTypes.includes(s.animeType) &&
+    allowedSongs.includes(s.songType)
   );
 
   pool.sort((a, b) => b.animeMembers - a.animeMembers);
@@ -1121,7 +1018,7 @@ function applyFilters() {
   pool.sort((a, b) => b.animeScore - a.animeScore);
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
-  return pool.map((s) => ({
+  return pool.map(s => ({
     kind: "song",
     _key: `song|${s._key}`,
     animeMalId: s.animeMalId || 0,
@@ -1156,7 +1053,7 @@ function updatePreview() {
   const pool = applyFilters();
   const minNeeded = Math.max(6, MIN_REQUIRED);
   const ok = pool.length >= minNeeded;
-  const label = currentMode === "songs" ? "Songs" : "Titres";
+  const label = (currentMode === "songs") ? "Songs" : "Titres";
 
   previewCountEl.textContent = ok
     ? `📚 ${label} disponibles : ${pool.length} (OK)`
@@ -1170,27 +1067,26 @@ function updatePreview() {
 
 // ====== ROUND UI ======
 function clearRevealTimer() {
-  if (revealTimer) {
-    clearInterval(revealTimer);
-    revealTimer = null;
-  }
+  if (revealTimer) { clearInterval(revealTimer); revealTimer = null; }
 }
 function clearWallTimer() {
-  if (wallTimer) {
-    clearTimeout(wallTimer);
-    wallTimer = null;
-  }
+  if (wallTimer) { clearTimeout(wallTimer); wallTimer = null; }
 }
 function stopMedia() {
   mediaToken++;
-  try {
-    songPlayer.pause();
-  } catch {}
+  try { songPlayer.pause(); } catch {}
   songPlayer.removeAttribute("src");
   songPlayer.load();
 }
-function clearTeamBadges() {
-  [teamRowA, teamRowB].forEach((row) => row.querySelectorAll(".tp-badge").forEach((b) => b.remove()));
+
+function clearPickBadgesAndClasses() {
+  document
+    .querySelectorAll("#teamAList .tp-badge, #teamBList .tp-badge")
+    .forEach(b => b.remove());
+
+  document
+    .querySelectorAll("#teamAList li, #teamBList li")
+    .forEach(li => li.classList.remove("tp-selected-keep", "tp-selected-delete"));
 }
 
 function resetRoundUI() {
@@ -1200,31 +1096,24 @@ function resetRoundUI() {
 
   revealDone = false;
   selectionEnabled = false;
-  selectedTeam = null;
   lockedAfterValidate = false;
 
-  clearTeamBadges();
-
-  teamRowA.classList.remove("selected-keep", "tp-row-locked");
-  teamRowB.classList.remove("selected-keep", "tp-row-locked");
+  selectedKeys = new Set();
+  clearPickBadgesAndClasses();
 
   resultDiv.textContent = "";
 
   themeNameEl.style.display = "none";
   themeDescEl.style.display = "none";
-
   revealStatusEl.style.display = "none";
-  revealStatusEl.textContent = "";
-  revealStatusEl.classList.remove("good", "bad");
-
   pickStatusEl.style.display = "none";
 
   confirmBtn.disabled = true;
   confirmBtn.classList.add("disabled");
   nextBtn.style.display = "none";
 
-  playerZone.style.display = currentMode === "songs" ? "block" : "none";
-  volumeRow.style.display = currentMode === "songs" ? "flex" : "none";
+  playerZone.style.display = (currentMode === "songs") ? "block" : "none";
+  volumeRow.style.display = (currentMode === "songs") ? "flex" : "none";
   if (currentMode === "songs") applyVolume();
 }
 
@@ -1233,6 +1122,10 @@ function makePlaceholderLi(team, pos) {
   li.classList.add("tp-item", "tp-locked");
   li.dataset.team = String(team);
   li.dataset.pos = String(pos);
+
+  // clavier
+  li.tabIndex = 0;
+  li.setAttribute("role", "button");
 
   const ph = document.createElement("div");
   ph.className = "placeholder";
@@ -1254,18 +1147,22 @@ function renderPlaceholders() {
   }
 }
 
-// UI règle + filtre
+// ✅ règle + thème
 function setThemeUI(contentTheme) {
   const cLabel = contentTheme?.label || "Libre";
-  themeNameEl.textContent = `✅ ${RULE.label}`;
+  themeNameEl.textContent = `✅ Règle : ${currentRule.label}`;
   themeDescEl.textContent = `🎯 Filtre : ${cLabel}`;
+  themeNameEl.style.display = "block";
+  themeDescEl.style.display = "block";
 }
 
 function updatePickStatus() {
-  const got = selectedTeam === 0 || selectedTeam === 1 ? 1 : 0;
-  pickStatusEl.textContent = `✅ Ligne choisie : ${got} / 1`;
+  const got = selectedKeys.size;
+  const need = currentRule.required;
 
-  const ok = got === 1;
+  pickStatusEl.textContent = `✅ Sélection : ${got} / ${need}`;
+
+  const ok = got === need;
   pickStatusEl.classList.toggle("good", ok);
   pickStatusEl.classList.toggle("bad", !ok);
 
@@ -1277,13 +1174,10 @@ function markRevealDone() {
   revealDone = true;
   selectionEnabled = true;
 
-  themeNameEl.style.display = "block";
-  themeDescEl.style.display = "block";
-
   revealStatusEl.style.display = "block";
   revealStatusEl.classList.remove("bad");
   revealStatusEl.classList.add("good");
-  revealStatusEl.textContent = "✅ Révélation terminée — choisis la meilleure ligne !";
+  revealStatusEl.textContent = "✅ Révélation terminée !";
 
   pickStatusEl.style.display = "block";
   updatePickStatus();
@@ -1314,7 +1208,7 @@ function revealCard(team, pos, item, localRound) {
 
   const img = document.createElement("img");
   img.src = item.image || "";
-  img.alt = item.kind === "song" ? item.animeTitle || "Cover" : item.title || "Cover";
+  img.alt = (item.kind === "song") ? (item.animeTitle || "Cover") : (item.title || "Cover");
   img.loading = "lazy";
   img.decoding = "async";
   li.appendChild(img);
@@ -1330,15 +1224,8 @@ function revealAnimeProgressively(localRound) {
   let i = 0;
 
   const step = () => {
-    if (localRound !== roundToken) {
-      clearRevealTimer();
-      return;
-    }
-    if (i >= order.length) {
-      clearRevealTimer();
-      markRevealDone();
-      return;
-    }
+    if (localRound !== roundToken) { clearRevealTimer(); return; }
+    if (i >= order.length) { clearRevealTimer(); markRevealDone(); return; }
 
     const { team, pos } = order[i];
     const item = team === 0 ? teamItemsA[pos] : teamItemsB[pos];
@@ -1354,10 +1241,7 @@ function revealAnimeProgressively(localRound) {
 // ====== SONG SNIPPET ======
 function playSongSnippet(item, localRound) {
   return new Promise((resolve) => {
-    if (currentMode !== "songs" || !item?.url) {
-      resolve();
-      return;
-    }
+    if (currentMode !== "songs" || !item?.url) { resolve(); return; }
 
     clearWallTimer();
     stopMedia();
@@ -1386,9 +1270,7 @@ function playSongSnippet(item, localRound) {
       clearWallTimer();
       songPlayer.removeEventListener("timeupdate", onTimeUpdate);
       songPlayer.removeEventListener("ended", onEnded);
-      try {
-        songPlayer.pause();
-      } catch {}
+      try { songPlayer.pause(); } catch {}
       cleanupLoad?.();
     };
 
@@ -1421,11 +1303,9 @@ function playSongSnippet(item, localRound) {
         songPlayer.addEventListener("timeupdate", onTimeUpdate);
         songPlayer.addEventListener("ended", onEnded);
 
-        try {
-          songPlayer.currentTime = start;
-        } catch {}
+        try { songPlayer.currentTime = start; } catch {}
         songPlayer.play?.().catch(() => {});
-      },
+      }
     });
   });
 }
@@ -1446,45 +1326,65 @@ async function revealSongsSequence(localRound) {
   markRevealDone();
 }
 
-// ====== SELECTION (ligne) ======
-function refreshRowSelectionUI() {
-  teamRowA.classList.remove("selected-keep");
-  teamRowB.classList.remove("selected-keep");
+// ====== SELECTION (items) ======
+function togglePickOnLi(li) {
+  if (!selectionEnabled || lockedAfterValidate) return;
+  if (!revealDone) return;
+  if (li.dataset.revealed !== "1") return;
 
-  if (selectedTeam === 0) teamRowA.classList.add("selected-keep");
-  if (selectedTeam === 1) teamRowB.classList.add("selected-keep");
+  const key = li.dataset.key;
+  if (!key) return;
 
+  const isSelected = selectedKeys.has(key);
+  const need = currentRule.required;
+
+  if (isSelected) {
+    selectedKeys.delete(key);
+    li.classList.remove("tp-selected-keep", "tp-selected-delete");
+    li.querySelectorAll(".tp-badge").forEach(b => b.remove());
+    updatePickStatus();
+    return;
+  }
+
+  if (selectedKeys.size >= need) return;
+
+  selectedKeys.add(key);
+
+  const badge = document.createElement("div");
+  badge.className = "tp-badge";
+
+  if (currentRule.mode === "keep") {
+    li.classList.add("tp-selected-keep");
+    badge.textContent = "✅ GARDÉ";
+  } else {
+    li.classList.add("tp-selected-delete");
+    badge.textContent = "❌ SUPPRIMÉ";
+  }
+
+  li.appendChild(badge);
   updatePickStatus();
 }
 
-function onTeamClick(team) {
-  if (!selectionEnabled || lockedAfterValidate) return;
-  if (!revealDone) return;
+[teamAList, teamBList].forEach(list => {
+  list.addEventListener("click", (e) => {
+    const li = e.target.closest("li.tp-item");
+    if (li) togglePickOnLi(li);
+  });
 
-  selectedTeam = selectedTeam === team ? null : team;
-  refreshRowSelectionUI();
-}
-
-teamRowA.addEventListener("click", () => onTeamClick(0));
-teamRowB.addEventListener("click", () => onTeamClick(1));
-teamRowA.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === " ") {
+  list.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const li = e.target.closest("li.tp-item");
+    if (!li) return;
     e.preventDefault();
-    onTeamClick(0);
-  }
-});
-teamRowB.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === " ") {
-    e.preventDefault();
-    onTeamClick(1);
-  }
+    togglePickOnLi(li);
+  });
 });
 
 // ====== CONFIRM ======
 confirmBtn.addEventListener("click", () => {
   if (lockedAfterValidate) return;
   if (!selectionEnabled || !revealDone) return;
-  if (!(selectedTeam === 0 || selectedTeam === 1)) return;
+  if (selectedKeys.size !== currentRule.required) return;
 
   lockedAfterValidate = true;
   confirmBtn.disabled = true;
@@ -1494,34 +1394,27 @@ confirmBtn.addEventListener("click", () => {
   clearWallTimer();
   stopMedia();
 
-  teamRowA.classList.add("tp-row-locked");
-  teamRowB.classList.add("tp-row-locked");
+  // lock visuel
+  document.querySelectorAll("#teamAList li, #teamBList li").forEach(li => li.classList.add("tp-locked"));
 
-  const chosenRow = selectedTeam === 0 ? teamRowA : teamRowB;
-  const badge = document.createElement("div");
-  badge.className = "tp-badge";
-  badge.textContent = "✅ CHOISIE";
-  chosenRow.appendChild(badge);
+  const verb = (currentRule.mode === "keep") ? "gardé" : "supprimé";
+  const n = currentRule.required;
+  resultDiv.textContent = `✅ Validé — tu as ${verb} ${n} item${n > 1 ? "s" : ""}.`;
 
-  resultDiv.textContent = "✅ Validé — tu as choisi la meilleure ligne.";
-
-  // ✅ MODIF: bouton suivant / fin parcours
   nextBtn.style.display = "inline-block";
   const isLast = currentRound >= totalRounds;
-
-  if (isLast) {
-    nextBtn.textContent = isParcours ? "Continuer le parcours" : "Retour réglages";
-  } else {
-    nextBtn.textContent = "Round suivant";
-  }
-
+  nextBtn.textContent = isLast ? "Retour réglages" : "Round suivant";
   nextBtn.onclick = () => {
     if (!isLast) {
       currentRound++;
       startRound();
-      return;
+    } else {
+      showCustomization();
+      updatePreview();
+      if (isParcours) {
+        try { parent.postMessage({ parcoursScore: { label: "TopPick", score: 0, total: 0 } }, "*"); } catch {}
+      }
     }
-    exitToSettingsOrContinueParcours();
   };
 });
 
@@ -1530,27 +1423,24 @@ function startRound() {
   roundToken++;
   resetRoundUI();
 
+  // ✅ règle aléatoire à chaque round
+  currentRule = RULES[Math.floor(Math.random() * RULES.length)];
+
   const minNeeded = Math.max(6, MIN_REQUIRED);
   if (!filteredPool || filteredPool.length < minNeeded) {
     resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
-    configureExitButton(); // ✅ MODIF parcours
+    nextBtn.style.display = "inline-block";
+    nextBtn.textContent = "Retour réglages";
+    nextBtn.onclick = () => { showCustomization(); updatePreview(); };
     return;
   }
 
   currentContentTheme = pickRoundContentThemeElastic(filteredPool, currentMode);
   setThemeUI(currentContentTheme);
 
-  themeNameEl.style.display = "block";
-  themeDescEl.style.display = "block";
-
-  revealStatusEl.style.display = "none";
-  revealStatusEl.textContent = "";
-  revealStatusEl.classList.remove("good", "bad");
-
-  const themePool =
-    currentContentTheme?.pool && currentContentTheme.pool.length >= 6
-      ? currentContentTheme.pool
-      : filteredPool;
+  const themePool = (currentContentTheme?.pool && currentContentTheme.pool.length >= 6)
+    ? currentContentTheme.pool
+    : filteredPool;
 
   let picks = null;
 
@@ -1561,8 +1451,6 @@ function startRound() {
       if (picks) {
         currentContentTheme = { label: "Libre", pool: filteredPool, crit: "FREE_FALLBACK" };
         setThemeUI(currentContentTheme);
-        themeNameEl.style.display = "block";
-        themeDescEl.style.display = "block";
       }
     }
 
@@ -1570,7 +1458,9 @@ function startRound() {
       resultDiv.textContent =
         "❌ Impossible de créer un round de 6 songs sans dépasser 3 songs du même anime.\n" +
         "👉 Conseil: élargis tes filtres (Songs/Types/Années ou Top% Popularité/Score).";
-      configureExitButton(); // ✅ MODIF parcours
+      nextBtn.style.display = "inline-block";
+      nextBtn.textContent = "Retour réglages";
+      nextBtn.onclick = () => { showCustomization(); updatePreview(); };
       return;
     }
   } else {
@@ -1580,15 +1470,15 @@ function startRound() {
       if (picks && picks.length >= 6) {
         currentContentTheme = { label: "Libre", pool: filteredPool, crit: "FREE_FALLBACK" };
         setThemeUI(currentContentTheme);
-        themeNameEl.style.display = "block";
-        themeDescEl.style.display = "block";
       }
     }
   }
 
   if (!picks || picks.length < 6) {
     resultDiv.textContent = "❌ Impossible de sélectionner 6 items uniques avec ces filtres.";
-    configureExitButton(); // ✅ MODIF parcours
+    nextBtn.style.display = "inline-block";
+    nextBtn.textContent = "Retour réglages";
+    nextBtn.onclick = () => { showCustomization(); updatePreview(); };
     return;
   }
 
@@ -1599,20 +1489,25 @@ function startRound() {
   roundLabel.textContent = `Round ${currentRound} / ${totalRounds}`;
   renderPlaceholders();
 
+  revealStatusEl.style.display = "block";
+  revealStatusEl.classList.add("bad");
+  revealStatusEl.classList.remove("good");
+  revealStatusEl.textContent = "⏳ Révélation en cours…";
+
   if (currentMode === "songs") revealSongsSequence(roundToken);
   else revealAnimeProgressively(roundToken);
 }
 
 // ====== LOAD DATA ======
 fetch("../data/licenses_only.json")
-  .then((r) => {
+  .then(r => {
     if (!r.ok) throw new Error(`HTTP ${r.status} - ${r.statusText}`);
     return r.json();
   })
-  .then((json) => {
+  .then(json => {
     const raw = normalizeAnimeList(json);
 
-    allAnimes = (Array.isArray(raw) ? raw : []).map((a) => {
+    allAnimes = (Array.isArray(raw) ? raw : []).map(a => {
       const title = getDisplayTitle(a);
       return {
         ...a,
@@ -1629,8 +1524,8 @@ fetch("../data/licenses_only.json")
     });
 
     GLOBAL_MEMBERS_DESC = allAnimes
-      .map((a) => +a._members || 0)
-      .filter((v) => Number.isFinite(v) && v > 0)
+      .map(a => +a._members || 0)
+      .filter(v => Number.isFinite(v) && v > 0)
       .sort((a, b) => b - a);
 
     allSongs = [];
@@ -1652,7 +1547,7 @@ fetch("../data/licenses_only.json")
       }
     }
   })
-  .catch((e) => {
+  .catch(e => {
     previewCountEl.textContent = "❌ Erreur chargement base : " + e.message;
     previewCountEl.classList.add("bad");
     applyBtn.disabled = true;
