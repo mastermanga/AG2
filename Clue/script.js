@@ -1,5 +1,5 @@
 /**********************
- * CLUE (avec timer)
+ * CLUE (avec timer) + PARCOURS
  * - 6 indices max visibles dès le début (2 colonnes)
  * - 1er indice révélé au lancement du round
  * - Ensuite :
@@ -9,6 +9,10 @@
  *   - mauvaise réponse à 6/6
  *   - OU timer écoulé à 6/6
  * - Score: 3000 puis -500 par indice supplémentaire
+ *
+ * ✅ Parcours:
+ *   - si ?parcours=1 => auto-start + cache bouton menu + postMessage score
+ *   - filtres via URL params (pop/score/yearMin/yearMax/types/rounds) ou localStorage AG_parcours_filters
  **********************/
 
 const MAX_SCORE = 3000;
@@ -20,6 +24,67 @@ const MIN_TITLES_TO_START = 64;
 const GUESS_TIME_SEC = 10;
 let timerInterval = null;
 let timeLeft = GUESS_TIME_SEC;
+
+// =======================
+// PARCOURS (URL PARAMS + postMessage)
+// =======================
+const urlParams = new URLSearchParams(window.location.search);
+const IS_PARCOURS = urlParams.get("parcours") === "1";
+
+const PARAM_TYPES = urlParams.get("types"); // ex: "TV,Movie"
+const PARAM_POP = urlParams.get("popPercent") || urlParams.get("pop") || urlParams.get("popularity");
+const PARAM_SCORE = urlParams.get("scorePercent") || urlParams.get("score");
+const PARAM_YMIN = urlParams.get("yearMin") || urlParams.get("yMin");
+const PARAM_YMAX = urlParams.get("yearMax") || urlParams.get("yMax");
+const PARAM_ROUNDS = urlParams.get("rounds") || urlParams.get("roundCount");
+
+// même clé que ton Tournament
+const PARCOURS_CFG_KEY = "AG_parcours_filters";
+
+let parcoursSent = false;
+
+function loadParcoursCfg() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_CFG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function sendParcoursScore(score = 0, total = 1) {
+  if (parcoursSent) return;
+  parcoursSent = true;
+
+  try {
+    parent.postMessage(
+      {
+        parcoursScore: {
+          label: "Clue",
+          score,
+          total,
+        },
+      },
+      "*"
+    );
+  } catch (e) {
+    console.warn("postMessage parcours failed:", e);
+  }
+}
+
+// Anti-flash + cache bouton menu dès le départ (script chargé en bas => DOM présent)
+if (IS_PARCOURS) {
+  document.body.classList.add("game-started");
+
+  const backBtn = document.getElementById("back-to-menu");
+  if (backBtn) backBtn.style.display = "none";
+
+  const custom = document.getElementById("custom-panel");
+  if (custom) custom.style.display = "none";
+
+  const game = document.getElementById("game-panel");
+  if (game) game.style.display = "block";
+}
 
 // ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
@@ -254,13 +319,127 @@ let totalScore = 0;
 
 // ====== Round state ======
 let currentAnime = null;
-let revealSequence = [];   // exactement 6 items (random, sans doublon)
-let revealsShown = 0;      // nombre d’indices déjà révélés
-
+let revealSequence = []; // exactement 6 items (random, sans doublon)
+let revealsShown = 0; // nombre d’indices déjà révélés
 let gameEnded = false;
 
 let globalPopRank = new Map(); // Map<animeObject, rank>
 let globalPopTotal = 0;
+
+// =======================
+// PARCOURS helpers (apply params + abort + start)
+// =======================
+function applyParcoursParamsToUI() {
+  const cfg = loadParcoursCfg();
+  const has = (x) => x != null && x !== "";
+
+  const trySetInt = (el, val, min, max) => {
+    if (!el || !has(val)) return;
+    const n = parseInt(val, 10);
+    if (!Number.isFinite(n)) return;
+    el.value = String(Math.max(min, Math.min(max, n)));
+  };
+
+  // sliders (URL > localStorage)
+  trySetInt(popEl, has(PARAM_POP) ? PARAM_POP : cfg?.popPercent, 5, 100);
+  trySetInt(scoreEl, has(PARAM_SCORE) ? PARAM_SCORE : cfg?.scorePercent, 5, 100);
+  trySetInt(yearMinEl, has(PARAM_YMIN) ? PARAM_YMIN : cfg?.yearMin, 1950, 2026);
+  trySetInt(yearMaxEl, has(PARAM_YMAX) ? PARAM_YMAX : cfg?.yearMax, 1950, 2026);
+
+  // rounds : par défaut 1 en parcours (sauf si param explicite)
+  if (roundCountEl) {
+    const rawR =
+      (has(PARAM_ROUNDS) ? PARAM_ROUNDS : (cfg?.rounds ?? cfg?.roundCount ?? "")) || "";
+    const rr = clampInt(parseInt(rawR || "1", 10), 1, 100);
+    roundCountEl.value = String(rr);
+    if (!has(PARAM_ROUNDS) && !has(rawR)) roundCountEl.value = "1";
+  }
+
+  // types pills (URL > localStorage)
+  const typesList = has(PARAM_TYPES)
+    ? PARAM_TYPES.split(",").map((s) => s.trim()).filter(Boolean)
+    : Array.isArray(cfg?.types)
+    ? cfg.types
+    : null;
+
+  if (typesList && typesList.length) {
+    const want = new Set(typesList);
+    const pills = Array.from(document.querySelectorAll("#typePills .pill[data-type]"));
+    pills.forEach((p) => {
+      const t = p.dataset.type;
+      const on = want.has(t);
+      p.classList.toggle("active", on);
+      p.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // clamp + refresh labels + preview
+  clampYearSliders();
+
+  popValEl.textContent = popEl.value;
+  scoreValEl.textContent = scoreEl.value;
+  yearMinValEl.textContent = yearMinEl.value;
+  yearMaxValEl.textContent = yearMaxEl.value;
+
+  setRangePct(popEl);
+  setRangePct(scoreEl);
+  setRangePct(yearMinEl);
+  setRangePct(yearMaxEl);
+
+  updatePreview();
+}
+
+function parcoursAbort(message, score = 0, total = 1) {
+  showGame();
+  stopGuessTimer();
+  gameEnded = true;
+
+  const gameContainer = document.getElementById("container");
+  if (!gameContainer) return;
+
+  gameContainer.innerHTML = `
+    <div style="width:100%;max-width:720px;text-align:center;">
+      <div style="font-size:1.35rem;font-weight:900;opacity:0.95;margin-bottom:10px;">${message}</div>
+      <button id="parcoursContinue" class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
+        Continuer le parcours
+      </button>
+    </div>
+  `;
+
+  const btn = document.getElementById("parcoursContinue");
+  if (btn) {
+    btn.onclick = () => {
+      btn.disabled = true;
+      sendParcoursScore(score, total);
+    };
+  }
+}
+
+function startGameWithCurrentConfig() {
+  filteredAnimes = applyFilters();
+
+  if (filteredAnimes.length < MIN_TITLES_TO_START) {
+    updatePreview();
+    if (IS_PARCOURS) {
+      parcoursAbort(
+        `❌ Pool insuffisant : ${filteredAnimes.length} titres (min ${MIN_TITLES_TO_START}).`,
+        0,
+        1
+      );
+    }
+    return;
+  }
+
+  totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
+  // ✅ en parcours, 1 round par défaut si aucun param rounds
+  if (IS_PARCOURS && !PARAM_ROUNDS) totalRounds = 1;
+
+  currentRound = 1;
+  totalScore = 0;
+
+  showGame();
+  startNewRound();
+}
 
 // ====== Stopwords / extraction "3 mots" ======
 const STOP = new Set([
@@ -607,17 +786,39 @@ function endRound(roundScore, won, messageHtml) {
 
   totalScore += roundScore;
 
-  restartBtn.style.display = "inline-block";
-  restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
+  const isLast = currentRound >= totalRounds;
 
-  restartBtn.onclick = () => {
-    if (currentRound >= totalRounds) {
-      showFinalRecap();
-    } else {
+  restartBtn.style.display = "inline-block";
+
+  if (!isLast) {
+    restartBtn.textContent = "Round suivant";
+    restartBtn.disabled = false;
+    restartBtn.onclick = () => {
       currentRound += 1;
       startNewRound();
-    }
-  };
+    };
+    return;
+  }
+
+  // ✅ FIN SÉRIE
+  if (IS_PARCOURS) {
+    const totalMax = totalRounds * MAX_SCORE;
+    feedback.innerHTML =
+      messageHtml + `<br><br>Score total : <b>${totalScore}</b> / <b>${totalMax}</b>`;
+
+    restartBtn.textContent = "Continuer le parcours";
+    restartBtn.disabled = false;
+    restartBtn.onclick = () => {
+      restartBtn.disabled = true;
+      sendParcoursScore(totalScore, totalMax);
+    };
+  } else {
+    restartBtn.textContent = "Voir le score total";
+    restartBtn.disabled = false;
+    restartBtn.onclick = () => {
+      showFinalRecap();
+    };
+  }
 }
 
 function winRound() {
@@ -641,11 +842,33 @@ function timeoutLoseRound() {
 
 function showFinalRecap() {
   const gameContainer = document.getElementById("container");
+  const totalMax = totalRounds * MAX_SCORE;
+
+  if (IS_PARCOURS) {
+    gameContainer.innerHTML = `
+      <div style="width:100%;max-width:720px;text-align:center;">
+        <div style="font-size:1.35rem;font-weight:900;opacity:0.95;margin-bottom:10px;">🏁 Terminé !</div>
+        <div style="font-size:1.15rem;font-weight:900;margin-bottom:14px;">
+          Score total : <b>${totalScore}</b> / <b>${totalMax}</b>
+        </div>
+        <button id="parcoursContinue" class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
+          Continuer le parcours
+        </button>
+      </div>
+    `;
+
+    document.getElementById("parcoursContinue").onclick = (e) => {
+      e.currentTarget.disabled = true;
+      sendParcoursScore(totalScore, totalMax);
+    };
+    return;
+  }
+
   gameContainer.innerHTML = `
     <div style="width:100%;max-width:720px;text-align:center;">
       <div style="font-size:1.35rem;font-weight:900;opacity:0.95;margin-bottom:10px;">🏆 Série terminée !</div>
       <div style="font-size:1.15rem;font-weight:900;margin-bottom:14px;">
-        Score total : <b>${totalScore}</b> / <b>${totalRounds * MAX_SCORE}</b>
+        Score total : <b>${totalScore}</b> / <b>${totalMax}</b>
       </div>
       <button id="backToSettings" class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
         Retour réglages
@@ -838,20 +1061,8 @@ function initCustomUI() {
     });
   });
 
-  applyBtn.addEventListener("click", () => {
-    filteredAnimes = applyFilters();
-    if (filteredAnimes.length < MIN_TITLES_TO_START) {
-      updatePreview();
-      return;
-    }
-
-    totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
-    currentRound = 1;
-    totalScore = 0;
-
-    showGame();
-    startNewRound();
-  });
+  // ✅ remplace l'ancien handler par une fonction commune
+  applyBtn.addEventListener("click", startGameWithCurrentConfig);
 
   syncLabels();
 }
@@ -926,6 +1137,13 @@ fetch("../data/licenses_only.json")
 
     initCustomUI();
     updatePreview();
-    showCustomization();
+
+    // ✅ Parcours: appliquer params + auto-start
+    if (IS_PARCOURS) {
+      applyParcoursParamsToUI();
+      startGameWithCurrentConfig();
+    } else {
+      showCustomization();
+    }
   })
   .catch((e) => alert("Erreur chargement dataset: " + e));
