@@ -24,7 +24,10 @@ document.getElementById("back-to-menu").addEventListener("click", () => {
 });
 document.getElementById("themeToggle").addEventListener("click", () => {
   document.body.classList.toggle("light");
-  localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
+  localStorage.setItem(
+    "theme",
+    document.body.classList.contains("light") ? "light" : "dark"
+  );
 });
 window.addEventListener("DOMContentLoaded", () => {
   if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
@@ -754,6 +757,18 @@ const isParcours = urlParams.get("parcours") === "1";
 const parcoursCount = parseInt(urlParams.get("count") || "1", 10);
 const forcedMode = urlParams.get("mode"); // "anime" | "songs"
 
+// ✅ Label de sortie (parcours => Continuer le parcours)
+const EXIT_LABEL = isParcours ? "Continuer le parcours" : "Retour réglages";
+function exitToSettingsOrParcours() {
+  showCustomization();
+  updatePreview();
+  if (isParcours) {
+    try {
+      parent.postMessage({ parcoursScore: { label: "TopPick", score: 0, total: 0 } }, "*");
+    } catch {}
+  }
+}
+
 // ====== DATA ======
 let allAnimes = [];
 let allSongs = [];
@@ -1403,17 +1418,16 @@ confirmBtn.addEventListener("click", () => {
 
   nextBtn.style.display = "inline-block";
   const isLast = currentRound >= totalRounds;
-  nextBtn.textContent = isLast ? "Retour réglages" : "Round suivant";
+
+  // ✅ parcours: dernier bouton = "Continuer le parcours"
+  nextBtn.textContent = isLast ? EXIT_LABEL : "Round suivant";
+
   nextBtn.onclick = () => {
     if (!isLast) {
       currentRound++;
       startRound();
     } else {
-      showCustomization();
-      updatePreview();
-      if (isParcours) {
-        try { parent.postMessage({ parcoursScore: { label: "TopPick", score: 0, total: 0 } }, "*"); } catch {}
-      }
+      exitToSettingsOrParcours();
     }
   };
 });
@@ -1430,8 +1444,8 @@ function startRound() {
   if (!filteredPool || filteredPool.length < minNeeded) {
     resultDiv.textContent = "❌ Pas assez d’items disponibles avec ces filtres.";
     nextBtn.style.display = "inline-block";
-    nextBtn.textContent = "Retour réglages";
-    nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+    nextBtn.textContent = EXIT_LABEL;
+    nextBtn.onclick = exitToSettingsOrParcours;
     return;
   }
 
@@ -1459,8 +1473,8 @@ function startRound() {
         "❌ Impossible de créer un round de 6 songs sans dépasser 3 songs du même anime.\n" +
         "👉 Conseil: élargis tes filtres (Songs/Types/Années ou Top% Popularité/Score).";
       nextBtn.style.display = "inline-block";
-      nextBtn.textContent = "Retour réglages";
-      nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+      nextBtn.textContent = EXIT_LABEL;
+      nextBtn.onclick = exitToSettingsOrParcours;
       return;
     }
   } else {
@@ -1477,8 +1491,8 @@ function startRound() {
   if (!picks || picks.length < 6) {
     resultDiv.textContent = "❌ Impossible de sélectionner 6 items uniques avec ces filtres.";
     nextBtn.style.display = "inline-block";
-    nextBtn.textContent = "Retour réglages";
-    nextBtn.onclick = () => { showCustomization(); updatePreview(); };
+    nextBtn.textContent = EXIT_LABEL;
+    nextBtn.onclick = exitToSettingsOrParcours;
     return;
   }
 
