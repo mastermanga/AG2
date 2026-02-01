@@ -12,6 +12,7 @@
  *
  * ✅ Parcours:
  * - ?parcours=1 -> cache Menu, saute réglages, applique params URL / localStorage, autostart
+ * - Rounds du parcours: localStorage.parcoursSteps => [{type:"fusion", count: X}, ...]
  * - Fin -> bouton "Continuer le parcours" + postMessage {parcoursScore:{label,score,total}}
  * - Pool insuffisant -> écran abort + continuer
  **********************/
@@ -40,7 +41,12 @@ const PARAM_YMIN = urlParams.get("yearMin") || urlParams.get("yMin");
 const PARAM_YMAX = urlParams.get("yearMax") || urlParams.get("yMax");
 const PARAM_ROUNDS = urlParams.get("rounds") || urlParams.get("roundCount");
 
+// (fallback global filters si tu en as besoin)
 const PARCOURS_CFG_KEY = "AG_parcours_filters";
+
+// ✅ Rounds venant du menu parcours
+const PARCOURS_STEPS_KEY = "parcoursSteps";
+
 let parcoursSent = false;
 
 function loadParcoursCfg() {
@@ -50,6 +56,30 @@ function loadParcoursCfg() {
   } catch {
     return null;
   }
+}
+
+function loadParcoursSteps() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_STEPS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function getParcoursStepCount(stepType) {
+  const steps = loadParcoursSteps();
+  if (!steps) return null;
+
+  const st = steps.find(
+    (s) => String(s?.type || "").toLowerCase() === String(stepType).toLowerCase()
+  );
+
+  const c = st?.count;
+  const n = typeof c === "number" ? c : parseInt(c, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 // score/total = points (ex: 4200 / 9000)
@@ -320,6 +350,7 @@ function setScoreBar(score) {
 
 // =======================
 // PARCOURS -> appliquer params à l’UI
+// - priorités rounds: URL > parcoursSteps(fusion).count > AG_parcours_filters > default
 // =======================
 function applyParcoursParamsToUI() {
   const cfg = loadParcoursCfg() || {};
@@ -336,7 +367,7 @@ function applyParcoursParamsToUI() {
     el.value = String(n);
   };
 
-  // URL > localStorage
+  // URL > localStorage(cfg)
   trySetInt(popEl, has(PARAM_POP) ? PARAM_POP : cfg.popPercent, 5, 100, 5);
   trySetInt(scoreEl, has(PARAM_SCORE) ? PARAM_SCORE : cfg.scorePercent, 5, 100, 5);
   trySetInt(yearMinEl, has(PARAM_YMIN) ? PARAM_YMIN : cfg.yearMin, 1950, 2026, 1);
@@ -369,9 +400,14 @@ function applyParcoursParamsToUI() {
     });
   }
 
-  // Rounds (URL > cfg.roundCount)
-  const roundsVal = has(PARAM_ROUNDS) ? PARAM_ROUNDS : (cfg.roundCount ?? cfg.rounds);
-  if (roundCountEl && has(roundsVal)) {
+  // ✅ Rounds (URL > parcoursSteps["fusion"].count > cfg.roundCount)
+  const stepRounds = getParcoursStepCount("fusion");
+  const roundsVal =
+    has(PARAM_ROUNDS) ? PARAM_ROUNDS
+    : (stepRounds != null ? stepRounds
+    : (cfg.roundCount ?? cfg.rounds));
+
+  if (roundCountEl && roundsVal != null && roundsVal !== "") {
     roundCountEl.value = String(clampInt(parseInt(roundsVal, 10), 1, 100));
   }
 
@@ -435,18 +471,13 @@ function initCustomUI() {
     updatePreview();
   }
 
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) =>
-    el.addEventListener("input", syncLabels)
-  );
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
 
   // type pills
   document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.classList.toggle("active");
-      btn.setAttribute(
-        "aria-pressed",
-        btn.classList.contains("active") ? "true" : "false"
-      );
+      btn.setAttribute("aria-pressed", btn.classList.contains("active") ? "true" : "false");
       updatePreview();
     });
   });
@@ -477,9 +508,7 @@ function applyFilters() {
   const yearMin = parseInt(yearMinEl.value, 10);
   const yearMax = parseInt(yearMaxEl.value, 10);
 
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map(
-    (b) => b.dataset.type
-  );
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
   if (allowedTypes.length === 0) return [];
 
   let pool = allAnimes.filter((a) => {
@@ -503,9 +532,7 @@ function applyFilters() {
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
   // recheck après slicing
-  pool = pool.filter(
-    (a) => a._validCharacters.length >= 4 && a._validTopCharacters.length >= 4
-  );
+  pool = pool.filter((a) => a._validCharacters.length >= 4 && a._validTopCharacters.length >= 4);
 
   return pool;
 }
@@ -668,7 +695,6 @@ function resetRoundUI() {
 }
 
 function pickAnimeSafely() {
-  // filteredAnimes est déjà filtré, mais on reste safe
   if (!filteredAnimes.length) return null;
 
   for (let tries = 0; tries < 60; tries++) {
@@ -681,10 +707,8 @@ function pickAnimeSafely() {
 async function renderStage() {
   if (!currentAnime || gameEnded) return;
 
-  // stoppe un timer précédent pendant la génération
   stopStageTimer();
 
-  // Message de transition (mauvais/skip/timeout) affiché sur la nouvelle manche
   if (transitionMsg) {
     feedback.textContent = transitionMsg;
     feedback.className = "info";
@@ -720,7 +744,6 @@ async function renderStage() {
       container.appendChild(canvas);
       await drawFusion4(canvas, urls);
     } else {
-      // Manche 3 : 2 persos top, moitié/moitié (vertical ou horizontal)
       const top = currentAnime._validTopCharacters.slice(0, 2);
       const a = top[0];
       const b = top[1];
@@ -731,12 +754,9 @@ async function renderStage() {
       container.appendChild(canvas);
       await drawFusion2(canvas, a.image, b.image, orientation);
 
-      baseLabel = `${getStageLabel(stageIndex)} — split ${
-        orientation === "vertical" ? "vertical" : "horizontal"
-      }`;
+      baseLabel = `${getStageLabel(stageIndex)} — split ${orientation === "vertical" ? "vertical" : "horizontal"}`;
     }
 
-    // ✅ Timer démarre quand la fusion est prête
     startStageTimer(baseLabel);
   } catch (e) {
     container.innerHTML = `<div class="fusion-loading">⚠️ Image invalide, relance…</div>`;
@@ -762,7 +782,6 @@ function startNewRound() {
 function advanceStage(reason /* 'wrong' | 'skip' | 'timeout' */) {
   if (!currentAnime || gameEnded) return;
 
-  // on stoppe le timer dès qu’on quitte la manche
   stopStageTimer();
 
   if (stageIndex < STAGES - 1) {
@@ -772,7 +791,6 @@ function advanceStage(reason /* 'wrong' | 'skip' | 'timeout' */) {
     if (reason === "skip") transitionMsg = "⏭️ Manche suivante.";
     if (reason === "timeout") transitionMsg = "⏱️ Temps écoulé — manche suivante.";
 
-    // reset input
     input.value = "";
     submitBtn.disabled = true;
     suggestions.innerHTML = "";
@@ -780,7 +798,6 @@ function advanceStage(reason /* 'wrong' | 'skip' | 'timeout' */) {
 
     renderStage();
   } else {
-    // fin des manches -> perdu
     if (reason === "skip") loseRound("⏭️ Fin des manches !");
     else if (reason === "timeout") loseRound("⏱️ Temps écoulé.");
     else loseRound("❌ Mauvaise réponse.");
@@ -802,10 +819,8 @@ function endRound(roundScore, won, messageHtml) {
 
   totalScore += roundScore;
 
-  // Après fin : le bouton devient "Round suivant / Score total"
   restartBtn.style.display = "inline-block";
-  restartBtn.textContent =
-    currentRound < totalRounds ? "Round suivant" : "Voir le score total";
+  restartBtn.textContent = currentRound < totalRounds ? "Round suivant" : "Voir le score total";
 
   restartBtn.onclick = () => {
     if (currentRound >= totalRounds) {
@@ -821,9 +836,7 @@ function winRound() {
   const score = stageMaxScore(stageIndex);
   if (score > 0) launchFireworks();
 
-  const msg = `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>Gagné en <b>manche ${
-    stageIndex + 1
-  }</b> — Score : <b>${score}</b> / ${MAX_SCORE}`;
+  const msg = `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>Gagné en <b>manche ${stageIndex + 1}</b> — Score : <b>${score}</b> / ${MAX_SCORE}`;
   endRound(score, true, msg);
 }
 
@@ -854,11 +867,9 @@ function showFinalRecap() {
       if (btn) btn.disabled = true;
       sendParcoursScore(totalScore, totalMax);
     };
-
     return;
   }
 
-  // ✅ Standalone: comportement actuel
   gameContainer.innerHTML = `
     <div style="width:100%;max-width:520px;text-align:center;">
       <div style="font-size:1.35rem;font-weight:900;opacity:0.95;margin-bottom:10px;">🏆 Série terminée !</div>
@@ -884,7 +895,6 @@ function checkGuess() {
     return;
   }
 
-  // ✅ le joueur a tenté : on stoppe le timer
   stopStageTimer();
 
   const ok = normalizeTitle(guess) === normalizeTitle(currentAnime._title);
@@ -894,7 +904,6 @@ function checkGuess() {
     return;
   }
 
-  // mauvais -> manche suivante (ou perdu si manche 3)
   advanceStage("wrong");
 }
 
@@ -913,10 +922,7 @@ input.addEventListener("input", function () {
 
   matches.forEach((title) => {
     const div = document.createElement("div");
-    div.innerHTML = `<span>${title.replace(
-      new RegExp(val, "i"),
-      (m) => `<b>${m}</b>`
-    )}</span>`;
+    div.innerHTML = `<span>${title.replace(new RegExp(val, "i"), (m) => `<b>${m}</b>`)}</span>`;
     div.addEventListener("mousedown", (e) => {
       e.preventDefault();
       input.value = title;
@@ -952,9 +958,7 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
-    document
-      .querySelectorAll(".info-wrap.open")
-      .forEach((w) => w.classList.remove("open"));
+    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
   }
 });
 
@@ -972,8 +976,7 @@ function launchFireworks() {
     const speed = Math.random() * 5 + 2;
     return { x, y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 60 };
   }
-  for (let i = 0; i < 80; i++)
-    particles.push(createParticle(canvas.width / 2, canvas.height / 2));
+  for (let i = 0; i < 80; i++) particles.push(createParticle(canvas.width / 2, canvas.height / 2));
 
   function animate() {
     ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
@@ -1007,7 +1010,6 @@ fetch("../data/licenses_only.json")
     allAnimes = (Array.isArray(data) ? data : []).map((a) => {
       const title = getDisplayTitle(a);
 
-      // pre-filtrage images valides (enlève les "?")
       const validCharacters = (Array.isArray(a.characters) ? a.characters : [])
         .filter((c) => c && typeof c.name === "string" && c.name.trim())
         .filter((c) => isValidImageUrl(c.image));
