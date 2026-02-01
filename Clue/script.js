@@ -13,6 +13,7 @@
  * ✅ Parcours:
  *   - si ?parcours=1 => auto-start + cache bouton menu + postMessage score
  *   - filtres via URL params (pop/score/yearMin/yearMax/types/rounds) ou localStorage AG_parcours_filters
+ *   - rounds fallback: localStorage.parcoursSteps[0].count (ton cas)
  **********************/
 
 const MAX_SCORE = 3000;
@@ -172,11 +173,58 @@ function shuffleInPlace(arr) {
 
 function cleanSynopsis(s) {
   const raw = String(s || "");
-  return raw
-    .replace(/\[.*?\]/g, "")
-    .replace(/MAL Rewrite/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return raw.replace(/\[.*?\]/g, "").replace(/MAL Rewrite/gi, "").replace(/\s+/g, " ").trim();
+}
+
+// =======================
+// ✅ PARCOURS: fallback rounds depuis parcoursSteps[].count
+// =======================
+function getParcoursStepCountFallback() {
+  // 1) URL ?rounds= / ?roundCount=
+  if (PARAM_ROUNDS != null && PARAM_ROUNDS !== "") {
+    const n = parseInt(PARAM_ROUNDS, 10);
+    if (Number.isFinite(n)) return clampInt(n, 1, 100);
+  }
+
+  // 2) localStorage AG_parcours_filters (si tu l'utilises parfois)
+  const cfg = loadParcoursCfg();
+  const fromCfg = cfg?.rounds ?? cfg?.roundCount ?? cfg?.count;
+  if (fromCfg != null && fromCfg !== "") {
+    const n = parseInt(fromCfg, 10);
+    if (Number.isFinite(n)) return clampInt(n, 1, 100);
+  }
+
+  // 3) localStorage.parcoursSteps[0].count  ✅ (ton cas)
+  try {
+    const raw = localStorage.getItem("parcoursSteps");
+    if (raw) {
+      const steps = JSON.parse(raw);
+      if (Array.isArray(steps) && steps.length) {
+        // On prend l'étape courante (souvent index 0)
+        let stepObj = steps[0];
+
+        // Si jamais le parent passe un identifiant, on tente de matcher, sinon on garde [0]
+        const wanted =
+          (urlParams.get("type") || urlParams.get("game") || urlParams.get("step") || "")
+            .toLowerCase()
+            .trim();
+
+        if (wanted) {
+          const found = steps.find(
+            (s) => String(s?.type || "").toLowerCase().trim() === wanted
+          );
+          if (found) stepObj = found;
+        }
+
+        const c = parseInt(stepObj?.count, 10);
+        if (Number.isFinite(c)) return clampInt(c, 1, 100);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return 1;
 }
 
 // ====== DOM refs ======
@@ -206,7 +254,9 @@ const suggestions = document.getElementById("suggestions");
 const roundLabel = document.getElementById("roundLabel");
 
 const revealList = document.getElementById("revealList");
-const clueStep = document.getElementById("clueStep");
+const clueStep = document.get
+
+ElementById("clueStep");
 
 // score bar
 const scoreBar = document.getElementById("score-bar");
@@ -253,7 +303,6 @@ function setScoreBar(score) {
 }
 
 function currentPotentialScore() {
-  // 1 indice => 3000 ; 2 => 2500 ; ...
   const penalty = Math.max(0, (revealsShown - 1) * REVEAL_PENALTY);
   return Math.max(MAX_SCORE - penalty, 0);
 }
@@ -275,7 +324,6 @@ function startGuessTimer() {
   stopGuessTimer();
   if (gameEnded) return;
 
-  // Affiche le badge
   if (timerBadge) timerBadge.style.display = "inline-flex";
 
   timeLeft = GUESS_TIME_SEC;
@@ -293,13 +341,11 @@ function startGuessTimer() {
     if (timeLeft <= 0) {
       stopGuessTimer();
 
-      // ✅ si on est à 6/6 => perdu automatiquement
       if (revealsShown >= MAX_REVEALS_PER_ROUND) {
         timeoutLoseRound();
         return;
       }
 
-      // Sinon => indice suivant auto
       revealNextClue();
       feedback.textContent = "⏱️ Temps écoulé. Indice suivant.";
       feedback.className = "info";
@@ -313,21 +359,21 @@ let allAnimes = [];
 let filteredAnimes = [];
 
 // ====== Session ======
-totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
+let totalRounds = 1;
 let currentRound = 1;
 let totalScore = 0;
 
 // ====== Round state ======
 let currentAnime = null;
-let revealSequence = []; // exactement 6 items (random, sans doublon)
-let revealsShown = 0; // nombre d’indices déjà révélés
+let revealSequence = [];
+let revealsShown = 0;
 let gameEnded = false;
 
-let globalPopRank = new Map(); // Map<animeObject, rank>
+let globalPopRank = new Map();
 let globalPopTotal = 0;
 
 // =======================
-// PARCOURS helpers (apply params + abort + start)
+// PARCOURS -> appliquer params à l’UI
 // =======================
 function applyParcoursParamsToUI() {
   const cfg = loadParcoursCfg();
@@ -346,13 +392,10 @@ function applyParcoursParamsToUI() {
   trySetInt(yearMinEl, has(PARAM_YMIN) ? PARAM_YMIN : cfg?.yearMin, 1950, 2026);
   trySetInt(yearMaxEl, has(PARAM_YMAX) ? PARAM_YMAX : cfg?.yearMax, 1950, 2026);
 
-  // rounds : par défaut 1 en parcours (sauf si param explicite)
+  // ✅ rounds: URL > cfg > parcoursSteps[0].count
   if (roundCountEl) {
-    const rawR =
-      (has(PARAM_ROUNDS) ? PARAM_ROUNDS : (cfg?.rounds ?? cfg?.roundCount ?? "")) || "";
-    const rr = clampInt(parseInt(rawR || "1", 10), 1, 100);
+    const rr = getParcoursStepCountFallback();
     roundCountEl.value = String(rr);
-    if (!has(PARAM_ROUNDS) && !has(rawR)) roundCountEl.value = "1";
   }
 
   // types pills (URL > localStorage)
@@ -430,9 +473,13 @@ function startGameWithCurrentConfig() {
     return;
   }
 
+  // ✅ IMPORTANT: on ne force PLUS à 1 en parcours.
   totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
-  // ✅ en parcours, 1 round par défaut si aucun param rounds
-  if (IS_PARCOURS && !PARAM_ROUNDS) totalRounds = 1;
+
+  // si parcours et l'input est vide => fallback parcoursSteps
+  if (IS_PARCOURS && (!roundCountEl.value || roundCountEl.value === "0")) {
+    totalRounds = getParcoursStepCountFallback();
+  }
 
   currentRound = 1;
   totalScore = 0;
@@ -581,7 +628,7 @@ function computePopularityTopPercent(anime) {
   if (!rank || !globalPopTotal) return "";
 
   const pct = (rank / globalPopTotal) * 100;
-  const top = Math.min(100, Math.max(5, Math.ceil(pct / 5) * 5)); // arrondi par 5%
+  const top = Math.min(100, Math.max(5, Math.ceil(pct / 5) * 5));
   return `Top ${top}%`;
 }
 
@@ -632,7 +679,6 @@ function buildRevealPool(anime) {
   const ep = Number.isFinite(+anime.episodes) ? +anime.episodes : 0;
   if (ep > 0) items.push({ kind: "EPS", label: "Épisodes", value: ep });
 
-  // sécurité: si dataset manque des champs, on complète pour atteindre 6
   const fallbacks = [
     { kind: "TYPE", label: "Type", value: String(anime.type || "").trim() },
     { kind: "STATUS", label: "Statut", value: String(anime.status || "").trim() },
@@ -681,9 +727,7 @@ function setStepLabel() {
 }
 
 function renderValue(value) {
-  if (Array.isArray(value)) {
-    return value.filter(Boolean).join(", ");
-  }
+  if (Array.isArray(value)) return value.filter(Boolean).join(", ");
   return String(value ?? "").trim();
 }
 
@@ -718,7 +762,6 @@ function resetRoundUI() {
   suggestions.innerHTML = "";
 
   restartBtn.style.display = "none";
-  restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
 
   revealsShown = 0;
   revealSequence = [];
@@ -727,7 +770,6 @@ function resetRoundUI() {
   setStepLabel();
   setScoreBar(MAX_SCORE);
 
-  // ✅ reset timer affichage
   stopGuessTimer();
   timeLeft = GUESS_TIME_SEC;
   renderTimer();
@@ -747,11 +789,8 @@ function revealNextClue() {
   setStepLabel();
   setScoreBar(currentPotentialScore());
 
-  if (revealsShown >= MAX_REVEALS_PER_ROUND) {
-    passBtn.disabled = true;
-  }
+  if (revealsShown >= MAX_REVEALS_PER_ROUND) passBtn.disabled = true;
 
-  // ✅ à chaque indice révélé => timer 10s
   startGuessTimer();
 }
 
@@ -763,7 +802,6 @@ function startNewRound() {
 
   revealSequence = pool.slice(0, MAX_REVEALS_PER_ROUND);
 
-  // 1er indice direct (démarre le timer)
   revealNextClue();
 }
 
@@ -800,11 +838,9 @@ function endRound(roundScore, won, messageHtml) {
     return;
   }
 
-  // ✅ FIN SÉRIE
   if (IS_PARCOURS) {
     const totalMax = totalRounds * MAX_SCORE;
-    feedback.innerHTML =
-      messageHtml + `<br><br>Score total : <b>${totalScore}</b> / <b>${totalMax}</b>`;
+    feedback.innerHTML = messageHtml + `<br><br>Score total : <b>${totalScore}</b> / <b>${totalMax}</b>`;
 
     restartBtn.textContent = "Continuer le parcours";
     restartBtn.disabled = false;
@@ -815,9 +851,7 @@ function endRound(roundScore, won, messageHtml) {
   } else {
     restartBtn.textContent = "Voir le score total";
     restartBtn.disabled = false;
-    restartBtn.onclick = () => {
-      showFinalRecap();
-    };
+    restartBtn.onclick = () => showFinalRecap();
   }
 }
 
@@ -834,7 +868,6 @@ function loseRound() {
   endRound(0, false, msg);
 }
 
-// ✅ perdu par timeout (spécial)
 function timeoutLoseRound() {
   const msg = `⏱️ Temps écoulé…<br>Réponse : <b>${currentAnime._title}</b><br>Score : <b>0</b> / ${MAX_SCORE}`;
   endRound(0, false, msg);
@@ -856,7 +889,6 @@ function showFinalRecap() {
         </button>
       </div>
     `;
-
     document.getElementById("parcoursContinue").onclick = (e) => {
       e.currentTarget.disabled = true;
       sendParcoursScore(totalScore, totalMax);
@@ -889,7 +921,6 @@ function checkGuess() {
     return;
   }
 
-  // ✅ stop timer seulement si vrai essai
   stopGuessTimer();
 
   const g = normalizeGuess(guess);
@@ -901,7 +932,6 @@ function checkGuess() {
     return;
   }
 
-  // mauvaise réponse
   if (revealsShown >= MAX_REVEALS_PER_ROUND) {
     feedback.textContent = "❌ Mauvaise réponse. Fin du round.";
     feedback.className = "error";
@@ -909,7 +939,6 @@ function checkGuess() {
     return;
   }
 
-  // sinon, on débloque l'indice suivant
   revealNextClue();
   feedback.textContent = "❌ Mauvaise réponse. Indice suivant débloqué.";
   feedback.className = "info";
@@ -950,8 +979,8 @@ input.addEventListener("input", function () {
   feedback.textContent = "";
   feedback.className = "";
 
-  const titles = [...new Set(filteredAnimes.map(a => a._title))];
-  const matches = titles.filter(t => t.toLowerCase().includes(val)).slice(0, 7);
+  const titles = [...new Set(filteredAnimes.map((a) => a._title))];
+  const matches = titles.filter((t) => t.toLowerCase().includes(val)).slice(0, 7);
 
   matches.forEach((title) => {
     const div = document.createElement("div");
@@ -981,7 +1010,7 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach((w) => (w.classList.remove("open")));
+    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
   }
 });
 
@@ -1049,9 +1078,7 @@ function initCustomUI() {
     updatePreview();
   }
 
-  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) =>
-    el.addEventListener("input", syncLabels)
-  );
+  [popEl, scoreEl, yearMinEl, yearMaxEl].forEach((el) => el.addEventListener("input", syncLabels));
 
   document.querySelectorAll("#typePills .pill").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1061,7 +1088,6 @@ function initCustomUI() {
     });
   });
 
-  // ✅ remplace l'ancien handler par une fonction commune
   applyBtn.addEventListener("click", startGameWithCurrentConfig);
 
   syncLabels();
@@ -1129,7 +1155,7 @@ fetch("../data/licenses_only.json")
       };
     });
 
-    // === Pré-calcul popularité globale (base complète) ===
+    // Pré-calcul popularité globale
     const sortedByMembers = [...allAnimes].sort((a, b) => b._members - a._members);
     globalPopTotal = sortedByMembers.length;
     globalPopRank = new Map();
@@ -1138,7 +1164,6 @@ fetch("../data/licenses_only.json")
     initCustomUI();
     updatePreview();
 
-    // ✅ Parcours: appliquer params + auto-start
     if (IS_PARCOURS) {
       applyParcoursParamsToUI();
       startGameWithCurrentConfig();
