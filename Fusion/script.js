@@ -1,5 +1,5 @@
 /**********************
- * Fusion Quizz
+ * Fusion Quizz (COMPLET + Parcours)
  * - Dataset: ../data/licenses_only.json
  * - Personnalisation: popularité/score/années/types + rounds
  * - 1 round = 1 licence/anime à deviner
@@ -9,6 +9,11 @@
  *   3) 2 persos top (top_characters[0..1]) -> fusion moitié/moitié (vertical ou horizontal)
  * - Mauvais guess OU bouton "Suivant" -> manche suivante
  * - Score max : 3000 / 2000 / 1000
+ *
+ * ✅ Parcours:
+ * - ?parcours=1 -> cache Menu, saute réglages, applique params URL / localStorage, autostart
+ * - Fin -> bouton "Continuer le parcours" + postMessage {parcoursScore:{label,score,total}}
+ * - Pool insuffisant -> écran abort + continuer
  **********************/
 
 const MAX_SCORE = 3000;
@@ -21,6 +26,52 @@ const STAGE_TIME = 10; // ✅ 10s par manche
 // Taille interne du canvas (CSS scale ensuite)
 const CANVAS_W = 420;
 const CANVAS_H = 560;
+
+// =======================
+// PARCOURS (URL PARAMS)
+// =======================
+const urlParams = new URLSearchParams(window.location.search);
+const IS_PARCOURS = urlParams.get("parcours") === "1";
+
+const PARAM_TYPES = urlParams.get("types"); // ex: "TV,Movie"
+const PARAM_POP = urlParams.get("popPercent") || urlParams.get("pop") || urlParams.get("popularity");
+const PARAM_SCORE = urlParams.get("scorePercent") || urlParams.get("score");
+const PARAM_YMIN = urlParams.get("yearMin") || urlParams.get("yMin");
+const PARAM_YMAX = urlParams.get("yearMax") || urlParams.get("yMax");
+const PARAM_ROUNDS = urlParams.get("rounds") || urlParams.get("roundCount");
+
+const PARCOURS_CFG_KEY = "AG_parcours_filters";
+let parcoursSent = false;
+
+function loadParcoursCfg() {
+  try {
+    const raw = localStorage.getItem(PARCOURS_CFG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// score/total = points (ex: 4200 / 9000)
+function sendParcoursScore(score = 0, total = 1) {
+  if (parcoursSent) return;
+  parcoursSent = true;
+
+  try {
+    parent.postMessage(
+      {
+        parcoursScore: {
+          label: "Fusion",
+          score,
+          total,
+        },
+      },
+      "*"
+    );
+  } catch (e) {
+    console.warn("postMessage parcours failed:", e);
+  }
+}
 
 // ====== UI: menu + theme ======
 document.getElementById("back-to-menu").addEventListener("click", () => {
@@ -148,6 +199,17 @@ const roundLabel = document.getElementById("roundLabel");
 const scoreBar = document.getElementById("score-bar");
 const scoreBarLabel = document.getElementById("score-bar-label");
 
+// ✅ Anti-flash + layout parcours
+if (IS_PARCOURS) {
+  document.body.classList.add("game-started");
+
+  const backBtn = document.getElementById("back-to-menu");
+  if (backBtn) backBtn.style.display = "none";
+
+  if (customPanel) customPanel.style.display = "none";
+  if (gamePanel) gamePanel.style.display = "block";
+}
+
 // ====== Data ======
 let allAnimes = [];
 let filteredAnimes = [];
@@ -256,6 +318,105 @@ function setScoreBar(score) {
   scoreBarLabel.textContent = `${s} / ${MAX_SCORE}`;
 }
 
+// =======================
+// PARCOURS -> appliquer params à l’UI
+// =======================
+function applyParcoursParamsToUI() {
+  const cfg = loadParcoursCfg() || {};
+  const has = (x) => x != null && x !== "";
+
+  const trySetInt = (el, val, min, max, step = null) => {
+    if (!el || !has(val)) return;
+    let n = parseInt(val, 10);
+    if (!Number.isFinite(n)) return;
+
+    if (step) n = Math.round(n / step) * step;
+    n = clampInt(n, min, max);
+
+    el.value = String(n);
+  };
+
+  // URL > localStorage
+  trySetInt(popEl, has(PARAM_POP) ? PARAM_POP : cfg.popPercent, 5, 100, 5);
+  trySetInt(scoreEl, has(PARAM_SCORE) ? PARAM_SCORE : cfg.scorePercent, 5, 100, 5);
+  trySetInt(yearMinEl, has(PARAM_YMIN) ? PARAM_YMIN : cfg.yearMin, 1950, 2026, 1);
+  trySetInt(yearMaxEl, has(PARAM_YMAX) ? PARAM_YMAX : cfg.yearMax, 1950, 2026, 1);
+
+  // Types (URL > cfg.types)
+  const typesList = has(PARAM_TYPES)
+    ? PARAM_TYPES.split(",").map((s) => s.trim()).filter(Boolean)
+    : Array.isArray(cfg.types)
+    ? cfg.types
+    : null;
+
+  if (typesList && typesList.length) {
+    const want = new Set(typesList);
+    document.querySelectorAll("#typePills .pill").forEach((btn) => {
+      const t = btn.dataset.type;
+      const on = want.has(t);
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // Sécurité: au moins 1 type actif
+  if (document.querySelectorAll("#typePills .pill.active").length === 0) {
+    document.querySelectorAll("#typePills .pill").forEach((btn) => {
+      const t = btn.dataset.type;
+      const on = t === "TV" || t === "Movie";
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // Rounds (URL > cfg.roundCount)
+  const roundsVal = has(PARAM_ROUNDS) ? PARAM_ROUNDS : (cfg.roundCount ?? cfg.rounds);
+  if (roundCountEl && has(roundsVal)) {
+    roundCountEl.value = String(clampInt(parseInt(roundsVal, 10), 1, 100));
+  }
+
+  // Re-sync UI labels + slider fill
+  clampYearSliders();
+
+  popValEl.textContent = popEl.value;
+  scoreValEl.textContent = scoreEl.value;
+  yearMinValEl.textContent = yearMinEl.value;
+  yearMaxValEl.textContent = yearMaxEl.value;
+
+  setRangePct(popEl);
+  setRangePct(scoreEl);
+  setRangePct(yearMinEl);
+  setRangePct(yearMaxEl);
+
+  updatePreview();
+}
+
+function parcoursAbort(messageHtml, score = 0, total = 1) {
+  stopStageTimer();
+  gameEnded = true;
+
+  showGame();
+
+  // UI disable
+  input.disabled = true;
+  submitBtn.disabled = true;
+  suggestions.innerHTML = "";
+
+  timerDisplay.textContent = "";
+  feedback.innerHTML = messageHtml;
+  feedback.className = "error";
+
+  container.innerHTML = "";
+  setScoreBar(0);
+
+  restartBtn.style.display = "inline-block";
+  restartBtn.textContent = "Continuer le parcours";
+  restartBtn.onclick = () => {
+    restartBtn.disabled = true;
+    sendParcoursScore(score, total);
+  };
+}
+
 // ====== Init custom UI ======
 function initCustomUI() {
   function syncLabels() {
@@ -316,7 +477,9 @@ function applyFilters() {
   const yearMin = parseInt(yearMinEl.value, 10);
   const yearMax = parseInt(yearMaxEl.value, 10);
 
-  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map((b) => b.dataset.type);
+  const allowedTypes = [...document.querySelectorAll("#typePills .pill.active")].map(
+    (b) => b.dataset.type
+  );
   if (allowedTypes.length === 0) return [];
 
   let pool = allAnimes.filter((a) => {
@@ -340,7 +503,9 @@ function applyFilters() {
   pool = pool.slice(0, Math.ceil(pool.length * (scorePercent / 100)));
 
   // recheck après slicing
-  pool = pool.filter(a => a._validCharacters.length >= 4 && a._validTopCharacters.length >= 4);
+  pool = pool.filter(
+    (a) => a._validCharacters.length >= 4 && a._validTopCharacters.length >= 4
+  );
 
   return pool;
 }
@@ -396,10 +561,10 @@ async function drawFusion4(canvas, urls) {
 
   // Quadrants destination
   const dest = [
-    { dx: 0,     dy: 0,     dw: W/2, dh: H/2 }, // TL
-    { dx: W/2,   dy: 0,     dw: W/2, dh: H/2 }, // TR
-    { dx: 0,     dy: H/2,   dw: W/2, dh: H/2 }, // BL
-    { dx: W/2,   dy: H/2,   dw: W/2, dh: H/2 }, // BR
+    { dx: 0, dy: 0, dw: W / 2, dh: H / 2 }, // TL
+    { dx: W / 2, dy: 0, dw: W / 2, dh: H / 2 }, // TR
+    { dx: 0, dy: H / 2, dw: W / 2, dh: H / 2 }, // BL
+    { dx: W / 2, dy: H / 2, dw: W / 2, dh: H / 2 }, // BR
   ];
 
   // Quadrants source (on prend le quart correspondant)
@@ -407,10 +572,20 @@ async function drawFusion4(canvas, urls) {
     const sw = img.width / 2;
     const sh = img.height / 2;
 
-    let sx = 0, sy = 0;
-    if (i === 1) { sx = sw; sy = 0; }          // TR
-    if (i === 2) { sx = 0;  sy = sh; }         // BL
-    if (i === 3) { sx = sw; sy = sh; }         // BR
+    let sx = 0,
+      sy = 0;
+    if (i === 1) {
+      sx = sw;
+      sy = 0;
+    } // TR
+    if (i === 2) {
+      sx = 0;
+      sy = sh;
+    } // BL
+    if (i === 3) {
+      sx = sw;
+      sy = sh;
+    } // BR
 
     const d = dest[i];
     ctx.drawImage(img, sx, sy, sw, sh, d.dx, d.dy, d.dw, d.dh);
@@ -419,8 +594,8 @@ async function drawFusion4(canvas, urls) {
   // petite séparation (optionnel, ultra léger)
   ctx.globalAlpha = 0.12;
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(W/2 - 1, 0, 2, H);
-  ctx.fillRect(0, H/2 - 1, W, 2);
+  ctx.fillRect(W / 2 - 1, 0, 2, H);
+  ctx.fillRect(0, H / 2 - 1, W, 2);
   ctx.globalAlpha = 1;
 }
 
@@ -439,24 +614,24 @@ async function drawFusion2(canvas, urlA, urlB, orientation /* 'vertical' | 'hori
     const shA = imgA.height / 2;
     const shB = imgB.height / 2;
 
-    ctx.drawImage(imgA, 0, 0, imgA.width, shA, 0, 0, W, H/2);
-    ctx.drawImage(imgB, 0, shB, imgB.width, shB, 0, H/2, W, H/2);
+    ctx.drawImage(imgA, 0, 0, imgA.width, shA, 0, 0, W, H / 2);
+    ctx.drawImage(imgB, 0, shB, imgB.width, shB, 0, H / 2, W, H / 2);
 
     ctx.globalAlpha = 0.12;
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, H/2 - 1, W, 2);
+    ctx.fillRect(0, H / 2 - 1, W, 2);
     ctx.globalAlpha = 1;
   } else {
     // vertical (par défaut) : A = gauche, B = droite
     const swA = imgA.width / 2;
     const swB = imgB.width / 2;
 
-    ctx.drawImage(imgA, 0, 0, swA, imgA.height, 0, 0, W/2, H);
-    ctx.drawImage(imgB, swB, 0, swB, imgB.height, W/2, 0, W/2, H);
+    ctx.drawImage(imgA, 0, 0, swA, imgA.height, 0, 0, W / 2, H);
+    ctx.drawImage(imgB, swB, 0, swB, imgB.height, W / 2, 0, W / 2, H);
 
     ctx.globalAlpha = 0.12;
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(W/2 - 1, 0, 2, H);
+    ctx.fillRect(W / 2 - 1, 0, 2, H);
     ctx.globalAlpha = 1;
   }
 }
@@ -532,20 +707,18 @@ async function renderStage() {
   try {
     if (stageIndex === 0) {
       const picks = pickRandomUnique(currentAnime._validCharacters, 4);
-      const urls = picks.map(p => p.image);
+      const urls = picks.map((p) => p.image);
 
       container.innerHTML = "";
       container.appendChild(canvas);
       await drawFusion4(canvas, urls);
-
     } else if (stageIndex === 1) {
       const picks = pickRandomUnique(currentAnime._validTopCharacters, 4);
-      const urls = picks.map(p => p.image);
+      const urls = picks.map((p) => p.image);
 
       container.innerHTML = "";
       container.appendChild(canvas);
       await drawFusion4(canvas, urls);
-
     } else {
       // Manche 3 : 2 persos top, moitié/moitié (vertical ou horizontal)
       const top = currentAnime._validTopCharacters.slice(0, 2);
@@ -558,12 +731,13 @@ async function renderStage() {
       container.appendChild(canvas);
       await drawFusion2(canvas, a.image, b.image, orientation);
 
-      baseLabel = `${getStageLabel(stageIndex)} — split ${orientation === "vertical" ? "vertical" : "horizontal"}`;
+      baseLabel = `${getStageLabel(stageIndex)} — split ${
+        orientation === "vertical" ? "vertical" : "horizontal"
+      }`;
     }
 
     // ✅ Timer démarre quand la fusion est prête
     startStageTimer(baseLabel);
-
   } catch (e) {
     container.innerHTML = `<div class="fusion-loading">⚠️ Image invalide, relance…</div>`;
     setTimeout(() => {
@@ -630,7 +804,8 @@ function endRound(roundScore, won, messageHtml) {
 
   // Après fin : le bouton devient "Round suivant / Score total"
   restartBtn.style.display = "inline-block";
-  restartBtn.textContent = (currentRound < totalRounds) ? "Round suivant" : "Voir le score total";
+  restartBtn.textContent =
+    currentRound < totalRounds ? "Round suivant" : "Voir le score total";
 
   restartBtn.onclick = () => {
     if (currentRound >= totalRounds) {
@@ -646,7 +821,9 @@ function winRound() {
   const score = stageMaxScore(stageIndex);
   if (score > 0) launchFireworks();
 
-  const msg = `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>Gagné en <b>manche ${stageIndex + 1}</b> — Score : <b>${score}</b> / ${MAX_SCORE}`;
+  const msg = `🎉 Bonne réponse !<br><b>${currentAnime._title}</b><br>Gagné en <b>manche ${
+    stageIndex + 1
+  }</b> — Score : <b>${score}</b> / ${MAX_SCORE}`;
   endRound(score, true, msg);
 }
 
@@ -657,11 +834,36 @@ function loseRound(prefix) {
 
 function showFinalRecap() {
   const gameContainer = document.getElementById("container");
+  const totalMax = totalRounds * MAX_SCORE;
+
+  if (IS_PARCOURS) {
+    gameContainer.innerHTML = `
+      <div style="width:100%;max-width:520px;text-align:center;">
+        <div style="font-size:1.35rem;font-weight:900;opacity:0.95;margin-bottom:10px;">🏁 Série terminée !</div>
+        <div style="font-size:1.15rem;font-weight:900;margin-bottom:14px;">
+          Score total : <b>${totalScore}</b> / <b>${totalMax}</b>
+        </div>
+        <button id="continueParcours" class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
+          Continuer le parcours
+        </button>
+      </div>
+    `;
+
+    document.getElementById("continueParcours").onclick = () => {
+      const btn = document.getElementById("continueParcours");
+      if (btn) btn.disabled = true;
+      sendParcoursScore(totalScore, totalMax);
+    };
+
+    return;
+  }
+
+  // ✅ Standalone: comportement actuel
   gameContainer.innerHTML = `
     <div style="width:100%;max-width:520px;text-align:center;">
       <div style="font-size:1.35rem;font-weight:900;opacity:0.95;margin-bottom:10px;">🏆 Série terminée !</div>
       <div style="font-size:1.15rem;font-weight:900;margin-bottom:14px;">
-        Score total : <b>${totalScore}</b> / <b>${totalRounds * MAX_SCORE}</b>
+        Score total : <b>${totalScore}</b> / <b>${totalMax}</b>
       </div>
       <button id="backToSettings" class="menu-btn" style="font-size:1.05rem;padding:0.85rem 1.6rem;">
         Retour réglages
@@ -706,12 +908,15 @@ input.addEventListener("input", function () {
 
   if (!val) return;
 
-  const titles = [...new Set(filteredAnimes.map(a => a._title))];
-  const matches = titles.filter(t => t.toLowerCase().includes(val)).slice(0, 7);
+  const titles = [...new Set(filteredAnimes.map((a) => a._title))];
+  const matches = titles.filter((t) => t.toLowerCase().includes(val)).slice(0, 7);
 
   matches.forEach((title) => {
     const div = document.createElement("div");
-    div.innerHTML = `<span>${title.replace(new RegExp(val, "i"), (m) => `<b>${m}</b>`)}</span>`;
+    div.innerHTML = `<span>${title.replace(
+      new RegExp(val, "i"),
+      (m) => `<b>${m}</b>`
+    )}</span>`;
     div.addEventListener("mousedown", (e) => {
       e.preventDefault();
       input.value = title;
@@ -722,7 +927,7 @@ input.addEventListener("input", function () {
     suggestions.appendChild(div);
   });
 
-  submitBtn.disabled = !titles.map(t => t.toLowerCase()).includes(val);
+  submitBtn.disabled = !titles.map((t) => t.toLowerCase()).includes(val);
 });
 
 input.addEventListener("keydown", (e) => {
@@ -747,7 +952,9 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".info-wrap")) {
-    document.querySelectorAll(".info-wrap.open").forEach((w) => w.classList.remove("open"));
+    document
+      .querySelectorAll(".info-wrap.open")
+      .forEach((w) => w.classList.remove("open"));
   }
 });
 
@@ -765,7 +972,8 @@ function launchFireworks() {
     const speed = Math.random() * 5 + 2;
     return { x, y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 60 };
   }
-  for (let i = 0; i < 80; i++) particles.push(createParticle(canvas.width / 2, canvas.height / 2));
+  for (let i = 0; i < 80; i++)
+    particles.push(createParticle(canvas.width / 2, canvas.height / 2));
 
   function animate() {
     ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
@@ -801,12 +1009,12 @@ fetch("../data/licenses_only.json")
 
       // pre-filtrage images valides (enlève les "?")
       const validCharacters = (Array.isArray(a.characters) ? a.characters : [])
-        .filter(c => c && typeof c.name === "string" && c.name.trim())
-        .filter(c => isValidImageUrl(c.image));
+        .filter((c) => c && typeof c.name === "string" && c.name.trim())
+        .filter((c) => isValidImageUrl(c.image));
 
       const validTopCharacters = (Array.isArray(a.top_characters) ? a.top_characters : [])
-        .filter(c => c && typeof c.name === "string" && c.name.trim())
-        .filter(c => isValidImageUrl(c.image));
+        .filter((c) => c && typeof c.name === "string" && c.name.trim())
+        .filter((c) => isValidImageUrl(c.image));
 
       return {
         ...a,
@@ -823,6 +1031,29 @@ fetch("../data/licenses_only.json")
 
     initCustomUI();
     updatePreview();
-    showCustomization();
+
+    if (IS_PARCOURS) {
+      applyParcoursParamsToUI();
+
+      totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
+      currentRound = 1;
+      totalScore = 0;
+
+      filteredAnimes = applyFilters();
+      const count = filteredAnimes.length;
+
+      if (count < MIN_TITLES_TO_START) {
+        parcoursAbort(
+          `❌ Pool insuffisant : <b>${count}</b> titres (min <b>${MIN_TITLES_TO_START}</b>).`,
+          0,
+          totalRounds * MAX_SCORE
+        );
+      } else {
+        showGame();
+        startNewRound();
+      }
+    } else {
+      showCustomization();
+    }
   })
   .catch((e) => alert("Erreur chargement dataset: " + e.message));
