@@ -313,7 +313,7 @@ let allAnimes = [];
 let filteredAnimes = [];
 
 // ====== Session ======
-let totalRounds = 1;
+totalRounds = clampInt(parseInt(roundCountEl.value || "1", 10), 1, 100);
 let currentRound = 1;
 let totalScore = 0;
 
