@@ -16,12 +16,12 @@
 // CONFIG
 // =======================
 const DATA_URL = "../data/licenses_only.json";
-const TOTAL_MATCH_ITEMS = 32;
+const TOTAL_MATCH_ITEMS = 16;
 
-const MIN_REQUIRED_TITLES = 32;
-const MIN_REQUIRED_SONGS = 32;
+const MIN_REQUIRED_TITLES = 64;
+const MIN_REQUIRED_SONGS = 64;
 
-const THEME_POOL_SIZE = 32;
+const THEME_POOL_SIZE = 16;
 
 // Songs snippet
 const SONG_START_SEC = 45;
@@ -1259,10 +1259,10 @@ function startGame() {
     const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
     if (picked.length < TOTAL_MATCH_ITEMS) {
       if (IS_PARCOURS) {
-        parcoursAbort("❌ Impossible de sélectionner 32 items uniques.", 0, 1);
+        parcoursAbort(`❌ Impossible de sélectionner ${TOTAL_MATCH_ITEMS} items uniques.`, 0, 1);
         return;
       }
-      alert("Impossible de sélectionner 32 items uniques.");
+      alert(`Impossible de sélectionner ${TOTAL_MATCH_ITEMS} items uniques.`);
       showCustomization();
       return;
     }
@@ -1294,10 +1294,10 @@ function startGame() {
     const picked = pickUniqueN(theme.pool, TOTAL_MATCH_ITEMS);
     if (picked.length < TOTAL_MATCH_ITEMS) {
       if (IS_PARCOURS) {
-        parcoursAbort("❌ Impossible de sélectionner 32 items uniques.", 0, 1);
+        parcoursAbort(`❌ Impossible de sélectionner ${TOTAL_MATCH_ITEMS} items uniques.`, 0, 1);
         return;
       }
-      alert("Impossible de sélectionner 32 items uniques.");
+      alert(`Impossible de sélectionner ${TOTAL_MATCH_ITEMS} items uniques.`);
       showCustomization();
       return;
     }
